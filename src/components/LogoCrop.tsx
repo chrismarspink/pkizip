@@ -1,0 +1,447 @@
+'use client';
+
+/**
+ * LogoCrop — Canvas 기반 이미지 크롭 컴포넌트
+ *
+ * - 드래그앤드롭 이미지 업로드 (PNG/JPG/SVG/WebP)
+ * - 드래그로 크롭 영역 선택, 4모서리 핸들로 크기 조절
+ * - 크롭 박스 내부 드래그로 이동
+ * - 터치/마우스 공통 처리
+ * - 인증서 카드 (그린/노랑) 실시간 미리보기
+ * - PNG 다운로드
+ *
+ * 의존성: Canvas API만 사용, 외부 라이브러리 없음
+ */
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Upload, Download, Image as ImageIcon, RotateCcw } from 'lucide-react';
+
+interface LogoCropProps {
+  onCropComplete: (dataUrl: string) => void;
+}
+
+interface CropBox { x: number; y: number; w: number; h: number; }
+type DragMode = 'none' | 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'new';
+
+const CANVAS_W = 480;
+const CANVAS_H = 320;
+const HANDLE = 10;
+const MIN_SIZE = 20;
+
+export function LogoCrop({ onCropComplete }: LogoCropProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [imgFit, setImgFit] = useState<{ sx: number; sy: number; sw: number; sh: number }>({ sx: 0, sy: 0, sw: 0, sh: 0 });
+  const [crop, setCrop] = useState<CropBox>({ x: 0, y: 0, w: 0, h: 0 });
+  const [dragMode, setDragMode] = useState<DragMode>('none');
+  const [startPt, setStartPt] = useState<{ x: number; y: number } | null>(null);
+  const [startCrop, setStartCrop] = useState<CropBox | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // === 이미지 로드 ===
+  const loadImage = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        setImage(img);
+
+        // 이미지를 캔버스에 맞춰 비례 조정
+        const ratio = Math.min(CANVAS_W / img.width, CANVAS_H / img.height);
+        const sw = img.width * ratio;
+        const sh = img.height * ratio;
+        const sx = (CANVAS_W - sw) / 2;
+        const sy = (CANVAS_H - sh) / 2;
+        setImgFit({ sx, sy, sw, sh });
+
+        // 초기 크롭: 정사각형 (이미지 짧은 변의 80%)
+        const side = Math.min(sw, sh) * 0.8;
+        setCrop({
+          x: sx + (sw - side) / 2,
+          y: sy + (sh - side) / 2,
+          w: side,
+          h: side,
+        });
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) loadImage(f);
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.type.startsWith('image/')) loadImage(f);
+  };
+
+  // === Canvas 렌더링 ===
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // 배경
+    ctx.fillStyle = '#fafafa';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    if (!image) {
+      // 플레이스홀더
+      ctx.strokeStyle = '#d4d4d8';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(10, 10, CANVAS_W - 20, CANVAS_H - 20);
+      ctx.setLineDash([]);
+      return;
+    }
+
+    // 이미지
+    ctx.drawImage(image, imgFit.sx, imgFit.sy, imgFit.sw, imgFit.sh);
+
+    // 어두운 오버레이 (크롭 박스 외부)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, CANVAS_W, crop.y);
+    ctx.fillRect(0, crop.y, crop.x, crop.h);
+    ctx.fillRect(crop.x + crop.w, crop.y, CANVAS_W - crop.x - crop.w, crop.h);
+    ctx.fillRect(0, crop.y + crop.h, CANVAS_W, CANVAS_H - crop.y - crop.h);
+
+    // 크롭 박스 테두리
+    ctx.strokeStyle = '#1DC078';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
+
+    // 가이드 라인 (삼등분)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(crop.x + (crop.w / 3) * i, crop.y);
+      ctx.lineTo(crop.x + (crop.w / 3) * i, crop.y + crop.h);
+      ctx.moveTo(crop.x, crop.y + (crop.h / 3) * i);
+      ctx.lineTo(crop.x + crop.w, crop.y + (crop.h / 3) * i);
+      ctx.stroke();
+    }
+
+    // 4모서리 핸들
+    const corners = [
+      { x: crop.x, y: crop.y },
+      { x: crop.x + crop.w, y: crop.y },
+      { x: crop.x, y: crop.y + crop.h },
+      { x: crop.x + crop.w, y: crop.y + crop.h },
+    ];
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#1DC078';
+    ctx.lineWidth = 2;
+    for (const c of corners) {
+      ctx.fillRect(c.x - HANDLE / 2, c.y - HANDLE / 2, HANDLE, HANDLE);
+      ctx.strokeRect(c.x - HANDLE / 2, c.y - HANDLE / 2, HANDLE, HANDLE);
+    }
+  }, [image, imgFit, crop]);
+
+  // === 크롭 결과 생성 ===
+  useEffect(() => {
+    if (!image || crop.w < MIN_SIZE || crop.h < MIN_SIZE) return;
+    const hidden = hiddenCanvasRef.current;
+    if (!hidden) return;
+    const ctx = hidden.getContext('2d');
+    if (!ctx) return;
+
+    // 이미지 원본 좌표계로 변환
+    const scale = image.width / imgFit.sw;
+    const srcX = (crop.x - imgFit.sx) * scale;
+    const srcY = (crop.y - imgFit.sy) * scale;
+    const srcW = crop.w * scale;
+    const srcH = crop.h * scale;
+
+    hidden.width = Math.max(1, Math.round(srcW));
+    hidden.height = Math.max(1, Math.round(srcH));
+
+    ctx.clearRect(0, 0, hidden.width, hidden.height);
+    ctx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, hidden.width, hidden.height);
+
+    const dataUrl = hidden.toDataURL('image/png');
+    setPreviewUrl(dataUrl);
+    onCropComplete(dataUrl);
+  }, [image, imgFit, crop, onCropComplete]);
+
+  // === 마우스/터치 이벤트 ===
+  const getPt = (e: React.MouseEvent | React.TouchEvent): { x: number; y: number } => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = CANVAS_W / rect.width;
+    const scaleY = CANVAS_H / rect.height;
+    const pt = 'touches' in e ? e.touches[0] || e.changedTouches[0] : e;
+    return {
+      x: (pt.clientX - rect.left) * scaleX,
+      y: (pt.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const hitHandle = (x: number, y: number): DragMode => {
+    const c = crop;
+    const near = (hx: number, hy: number) =>
+      Math.abs(x - hx) <= HANDLE && Math.abs(y - hy) <= HANDLE;
+    if (near(c.x, c.y)) return 'nw';
+    if (near(c.x + c.w, c.y)) return 'ne';
+    if (near(c.x, c.y + c.h)) return 'sw';
+    if (near(c.x + c.w, c.y + c.h)) return 'se';
+    if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) return 'move';
+    if (image && x >= imgFit.sx && x <= imgFit.sx + imgFit.sw &&
+        y >= imgFit.sy && y <= imgFit.sy + imgFit.sh) return 'new';
+    return 'none';
+  };
+
+  const onDown = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!image) return;
+    e.preventDefault();
+    const pt = getPt(e);
+    const mode = hitHandle(pt.x, pt.y);
+    if (mode === 'none') return;
+    setDragMode(mode);
+    setStartPt(pt);
+    setStartCrop({ ...crop });
+
+    if (mode === 'new') {
+      setCrop({ x: pt.x, y: pt.y, w: 0, h: 0 });
+    }
+  };
+
+  const onMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (dragMode === 'none' || !startPt || !startCrop || !image) return;
+    e.preventDefault();
+    const pt = getPt(e);
+    const dx = pt.x - startPt.x;
+    const dy = pt.y - startPt.y;
+
+    const { sx, sy, sw, sh } = imgFit;
+    const clampX = (v: number) => Math.max(sx, Math.min(v, sx + sw));
+    const clampY = (v: number) => Math.max(sy, Math.min(v, sy + sh));
+
+    let next: CropBox = { ...startCrop };
+
+    // 정사각형 비율 강제 (1:1)
+    if (dragMode === 'move') {
+      next.x = clampX(startCrop.x + dx);
+      next.y = clampY(startCrop.y + dy);
+      if (next.x + next.w > sx + sw) next.x = sx + sw - next.w;
+      if (next.y + next.h > sy + sh) next.y = sy + sh - next.h;
+    } else if (dragMode === 'nw') {
+      // 우하단 고정, 좌상단 이동 (대각선 평균값으로 정사각형 유지)
+      const anchorX = startCrop.x + startCrop.w;
+      const anchorY = startCrop.y + startCrop.h;
+      const dragSize = Math.max(MIN_SIZE, Math.min(anchorX - clampX(startCrop.x + dx), anchorY - clampY(startCrop.y + dy)));
+      const side = Math.min(dragSize, anchorX - sx, anchorY - sy);
+      next.w = side; next.h = side;
+      next.x = anchorX - side; next.y = anchorY - side;
+    } else if (dragMode === 'ne') {
+      // 좌하단 고정
+      const anchorX = startCrop.x;
+      const anchorY = startCrop.y + startCrop.h;
+      const dragSize = Math.max(MIN_SIZE, Math.min(clampX(startCrop.x + startCrop.w + dx) - anchorX, anchorY - clampY(startCrop.y + dy)));
+      const side = Math.min(dragSize, sx + sw - anchorX, anchorY - sy);
+      next.w = side; next.h = side;
+      next.x = anchorX; next.y = anchorY - side;
+    } else if (dragMode === 'sw') {
+      // 우상단 고정
+      const anchorX = startCrop.x + startCrop.w;
+      const anchorY = startCrop.y;
+      const dragSize = Math.max(MIN_SIZE, Math.min(anchorX - clampX(startCrop.x + dx), clampY(startCrop.y + startCrop.h + dy) - anchorY));
+      const side = Math.min(dragSize, anchorX - sx, sy + sh - anchorY);
+      next.w = side; next.h = side;
+      next.x = anchorX - side; next.y = anchorY;
+    } else if (dragMode === 'se') {
+      // 좌상단 고정
+      const anchorX = startCrop.x;
+      const anchorY = startCrop.y;
+      const dragSize = Math.max(MIN_SIZE, Math.min(clampX(startCrop.x + startCrop.w + dx) - anchorX, clampY(startCrop.y + startCrop.h + dy) - anchorY));
+      const side = Math.min(dragSize, sx + sw - anchorX, sy + sh - anchorY);
+      next.w = side; next.h = side;
+      next.x = anchorX; next.y = anchorY;
+    } else if (dragMode === 'new') {
+      const endX = clampX(pt.x);
+      const endY = clampY(pt.y);
+      const side = Math.min(Math.abs(endX - startPt.x), Math.abs(endY - startPt.y));
+      next = {
+        x: endX < startPt.x ? startPt.x - side : startPt.x,
+        y: endY < startPt.y ? startPt.y - side : startPt.y,
+        w: side,
+        h: side,
+      };
+    }
+    setCrop(next);
+  };
+
+  const onUp = () => {
+    setDragMode('none');
+    setStartPt(null);
+    setStartCrop(null);
+    // new 모드에서 너무 작으면 취소
+    if (crop.w < MIN_SIZE || crop.h < MIN_SIZE) {
+      setCrop(prev => ({ ...prev, w: Math.max(MIN_SIZE, prev.w), h: Math.max(MIN_SIZE, prev.h) }));
+    }
+  };
+
+  const resetCrop = () => {
+    if (!image) return;
+    const cw = imgFit.sw * 0.8;
+    const ch = imgFit.sh * 0.8;
+    setCrop({
+      x: imgFit.sx + (imgFit.sw - cw) / 2,
+      y: imgFit.sy + (imgFit.sh - ch) / 2,
+      w: cw,
+      h: ch,
+    });
+  };
+
+  const downloadPng = () => {
+    if (!previewUrl) return;
+    const a = document.createElement('a');
+    a.href = previewUrl;
+    a.download = 'logo.png';
+    a.click();
+  };
+
+  // 커서 계산
+  const cursorFor = (mode: DragMode): string => {
+    switch (mode) {
+      case 'nw': case 'se': return 'nwse-resize';
+      case 'ne': case 'sw': return 'nesw-resize';
+      case 'move': return 'move';
+      case 'new': return 'crosshair';
+      default: return 'default';
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 업로드 영역 */}
+      {!image ? (
+        <div
+          ref={containerRef}
+          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`
+            w-full border-2 border-dashed rounded-2xl cursor-pointer transition-colors
+            flex flex-col items-center justify-center py-12 text-center
+            ${isDragOver ? 'border-[#1DC078] bg-[#1DC078]/5' : 'border-zinc-300 hover:border-zinc-400'}
+          `}
+        >
+          <Upload className="w-10 h-10 text-zinc-400 mb-2" />
+          <p className="text-sm font-medium text-zinc-700">이미지를 드래그하거나 클릭하여 선택</p>
+          <p className="text-xs text-zinc-400 mt-1">PNG, JPG, SVG, WebP 지원</p>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+        </div>
+      ) : (
+        <>
+          {/* 크롭 캔버스 */}
+          <div className="bg-zinc-100 rounded-2xl p-3">
+            <canvas
+              ref={canvasRef}
+              width={CANVAS_W}
+              height={CANVAS_H}
+              className="w-full rounded-xl touch-none"
+              style={{
+                cursor: cursorFor(dragMode === 'none' ? 'move' : dragMode),
+                aspectRatio: `${CANVAS_W}/${CANVAS_H}`,
+              }}
+              onMouseDown={onDown}
+              onMouseMove={onMove}
+              onMouseUp={onUp}
+              onMouseLeave={onUp}
+              onTouchStart={onDown}
+              onTouchMove={onMove}
+              onTouchEnd={onUp}
+            />
+          </div>
+
+          {/* 액션 */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 text-sm border border-zinc-200 rounded-xl px-4 py-2 hover:bg-zinc-50"
+            >
+              <ImageIcon className="w-4 h-4" /> 다른 이미지
+            </button>
+            <button
+              onClick={resetCrop}
+              className="flex items-center gap-1.5 text-sm border border-zinc-200 rounded-xl px-4 py-2 hover:bg-zinc-50"
+            >
+              <RotateCcw className="w-4 h-4" /> 크롭 초기화
+            </button>
+            <button
+              onClick={downloadPng}
+              className="flex items-center gap-1.5 text-sm border border-zinc-200 rounded-xl px-4 py-2 hover:bg-zinc-50"
+            >
+              <Download className="w-4 h-4" /> PNG 다운로드
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+          </div>
+
+          {/* 인증서 카드 미리보기 (그린/노랑) */}
+          {previewUrl && (
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-500 font-medium">인증서 카드 미리보기</p>
+              <div className="flex gap-3 flex-wrap">
+                <PreviewCard variant="green" logoUrl={previewUrl} />
+                <PreviewCard variant="yellow" logoUrl={previewUrl} />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 크롭 결과 추출용 hidden canvas */}
+      <canvas ref={hiddenCanvasRef} className="hidden" />
+    </div>
+  );
+}
+
+// === 인증서 카드 미리보기 ===
+function PreviewCard({ variant, logoUrl }: { variant: 'green' | 'yellow'; logoUrl: string }) {
+  const isGreen = variant === 'green';
+  return (
+    <div
+      className="relative overflow-hidden"
+      style={{
+        width: 320, height: 202, borderRadius: 14,
+        background: isGreen ? '#1DC078' : '#FFE500',
+        color: isGreen ? 'white' : '#1a1a1a',
+      }}
+    >
+      {/* 로고 영역: 좌상단 */}
+      <div
+        className="absolute top-3 left-3 flex items-center"
+        style={{ height: 22, maxWidth: 80 }}
+      >
+        <img
+          src={logoUrl}
+          alt=""
+          style={{
+            maxHeight: 22, maxWidth: 80, objectFit: 'contain',
+            filter: isGreen ? 'brightness(0) invert(1)' : 'none',
+          }}
+        />
+      </div>
+
+      {/* 예시 콘텐츠 */}
+      <div className="absolute inset-0 p-4 flex flex-col justify-end">
+        <div className="text-xs opacity-80">인증서</div>
+        <div className="text-xl font-bold mt-1">Sample Name</div>
+        <div className="text-[10px] opacity-60 mt-1">2036.04.15 까지</div>
+      </div>
+    </div>
+  );
+}

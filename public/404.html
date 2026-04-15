@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PKIZIP</title>
+  <script>
+    // SPA redirect for GitHub Pages
+    // 사용자가 /pkizip/files 같은 경로로 직접 접근/새로고침 시,
+    // GitHub Pages는 404를 반환하므로 이 페이지가 뜸.
+    // index.html로 리다이렉트하면서 원래 경로를 query로 전달.
+    var pathSegmentsToKeep = 1; // '/pkizip' 세그먼트 유지
+    var l = window.location;
+    l.replace(
+      l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+      l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+      l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+      (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+      l.hash
+    );
+  </script>
+</head>
+<body></body>
+</html>

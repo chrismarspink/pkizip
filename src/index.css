@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  --brand-primary: #1DC078;
+  --cert-yellow: #FFE500;
+  --cert-navy: #1A3C5E;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* 강제 라이트모드 — 다크모드 비활성화 */
+html {
+  color-scheme: light;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #f8f9fa;
+  color: #18181b;
+}
