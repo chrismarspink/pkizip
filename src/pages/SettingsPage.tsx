@@ -166,8 +166,8 @@ export function SettingsPage() {
           {metas.map(m => {
             const isActive = m.id === activeIdentityId && isKeyLoaded;
             return (
-              <div key={m.id} className={`rounded-xl border-2 p-4 transition-colors ${
-                isActive ? 'border-[#1DC078] bg-[#1DC078]/5' : 'border-zinc-100'
+              <div key={m.id} className={`rounded-xl border-2 p-4 transition-colors shadow-sm ${
+                isActive ? 'border-[#1DC078] bg-[#1DC078]/5' : 'border-zinc-300 bg-white'
               }`}>
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -210,13 +210,13 @@ export function SettingsPage() {
                       </button>
                     )}
                     {deleteConfirm === m.id ? (
-                      <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-1.5">
-                        <span className="text-[10px] text-red-600">니모닉 없이 복구 불가!</span>
-                        <button onClick={() => handleDelete(m.id)} className="text-[10px] text-red-600 font-bold">삭제</button>
-                        <button onClick={() => setDeleteConfirm(null)} className="text-[10px] text-zinc-400">취소</button>
+                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                        <span className="text-[11px] text-red-600 flex-1">니모닉 없이 복구 불가!</span>
+                        <button onClick={() => handleDelete(m.id)} className="text-[11px] text-white bg-red-500 hover:bg-red-600 rounded-md px-3 py-1 font-medium">삭제</button>
+                        <button onClick={() => setDeleteConfirm(null)} className="text-[11px] text-zinc-600 bg-zinc-200 hover:bg-zinc-300 rounded-md px-3 py-1">취소</button>
                       </div>
                     ) : (
-                      <button onClick={() => setDeleteConfirm(m.id)} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-red-500 border border-zinc-100 rounded-lg px-3 py-1.5">
+                      <button onClick={() => setDeleteConfirm(m.id)} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-red-500 border border-zinc-300 rounded-lg px-3 py-1.5">
                         <Trash2 className="w-3 h-3" /> 삭제
                       </button>
                     )}
@@ -224,7 +224,7 @@ export function SettingsPage() {
                 )}
 
                 {/* 생체 인증 토글 */}
-                <div className="mt-3 pt-3 border-t border-zinc-100">
+                <div className="mt-3 pt-3 border-t border-zinc-200">
                   {!biometricSupported ? (
                     <p className="text-[10px] text-zinc-400 flex items-center gap-1">
                       <Fingerprint className="w-3 h-3" /> 이 기기는 생체 인증을 지원하지 않습니다.
