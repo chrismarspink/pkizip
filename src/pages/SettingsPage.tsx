@@ -125,27 +125,18 @@ export function SettingsPage() {
     a.click();
   }, []);
 
-  // 생체 인증 등록
+  // 생체 인증 등록 (PRF 우선 → Fallback 자동)
   const handleRegisterBio = useCallback(async (id: string, name: string, pw: string) => {
     setBioRegistering(true);
     try {
       const seed = await loadIdentitySeed(id, pw);
-      await registerBiometric(id, name, seed);
+      const mode = await registerBiometric(id, name, seed);
       setBiometricMap(prev => ({ ...prev, [id]: true }));
       setBioRegisterId(null);
       setBioRegisterPw('');
-      toast.success('생체 인증 등록 완료');
+      toast.success(mode === 'prf' ? '생체 인증 등록 완료 (PRF)' : '생체 인증 등록 완료 (지문/얼굴)');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      // PRF 미지원 → 생체 인증 기능 비활성화 (에러 대신 안내)
-      if (msg.includes('PRF') || msg.includes('not allowed') || msg.includes('timed out')) {
-        setBiometricSupported(false); // 이 기기에서 숨김
-        setBioRegisterId(null);
-        setBioRegisterPw('');
-        toast('이 기기는 생체 인증을 지원하지 않습니다. PIN을 사용하세요.', { duration: 4000 });
-        return;
-      }
-      toast.error(msg || '생체 인증 등록 실패');
+      toast.error(err instanceof Error ? err.message : '생체 인증 등록 실패');
     } finally {
       setBioRegistering(false);
     }
@@ -236,7 +227,7 @@ export function SettingsPage() {
                 <div className="mt-3 pt-3 border-t border-zinc-200">
                   {!biometricSupported ? (
                     <p className="text-[10px] text-zinc-400 flex items-center gap-1">
-                      <Fingerprint className="w-3 h-3" /> 생체 인증 미지원 — PIN을 사용하세요
+                      <Fingerprint className="w-3 h-3" /> 이 브라우저는 생체 인증을 지원하지 않습니다
                     </p>
                   ) : bioRegisterId === m.id ? (
                     <div className="space-y-2">

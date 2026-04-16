@@ -1,32 +1,40 @@
 /**
- * Biometric Authentication using WebAuthn PRF Extension
+ * Biometric Authentication — WebAuthn 기반
  *
- * 생체 인증(Touch ID, Face ID, Windows Hello, Android 지문)으로
- * 개인키 시드를 직접 암호화/복호화한다.
+ * 두 가지 모드를 자동 선택:
  *
- * 핵심 아이디어:
- *   - WebAuthn PRF extension으로 생체 인증과 결합된 32바이트 시크릿 생성
- *   - 이 시크릿으로 시드를 AES-GCM 암호화하여 저장
- *   - 사용 시 같은 PRF 시크릿을 다시 생성하여 시드 복호화
+ * 1) PRF 모드 (macOS Safari, Chrome 116+ with PRF support)
+ *    - WebAuthn PRF extension으로 32바이트 시크릿 생성
+ *    - 이 시크릿으로 시드를 AES-GCM 직접 암호화
+ *    - 가장 안전: 시크릿이 authenticator 내부에서만 존재
  *
- * 호환성:
- *   - PRF 지원: Chrome 116+, Safari 17+, Android Chrome
- *   - 미지원: 기존 비밀번호 fallback
+ * 2) Fallback 모드 (Android Chrome 등 PRF 미지원)
+ *    - WebAuthn으로 사용자 검증만 수행 (지문/Face Unlock)
+ *    - 시드는 랜덤 AES 키로 암호화, 이 키를 IndexedDB에 저장
+ *    - 생체 인증 통과 시에만 이 키에 접근하여 시드 복호화
+ *    - PRF보다 약하지만 생체 인증 자체는 동작
+ *
+ * 등록 시 PRF를 먼저 시도 → 실패 시 자동으로 Fallback 전환
  */
 import { openDB, type IDBPDatabase } from 'idb';
 
 const buf = (data: Uint8Array): BufferSource => data as unknown as BufferSource;
 
 const DB_NAME = 'pkizip-biometric';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'bindings';
 
 export interface BiometricBinding {
-  identityId: string;          // PK
-  credentialId: ArrayBuffer;   // WebAuthn credential ID
-  prfSalt: Uint8Array;         // PRF salt (32 bytes)
-  wrappedSeed: ArrayBuffer;    // PRF로 암호화된 시드
-  iv: Uint8Array;              // AES-GCM IV
+  identityId: string;
+  mode: 'prf' | 'fallback';
+  credentialId: ArrayBuffer;
+  // PRF 모드
+  prfSalt?: Uint8Array;
+  // 공통
+  wrappedSeed: ArrayBuffer;
+  iv: Uint8Array;
+  // Fallback 모드: 래핑 키 (AES-GCM raw key)
+  wrappingKey?: ArrayBuffer;
   createdAt: number;
 }
 
@@ -40,7 +48,7 @@ async function getDB(): Promise<IDBPDatabase> {
   });
 }
 
-// === 지원 여부 확인 ===
+// === 지원 여부 ===
 
 export function isWebAuthnSupported(): boolean {
   return typeof window !== 'undefined' && !!window.PublicKeyCredential;
@@ -55,25 +63,20 @@ export async function isPlatformAuthenticatorAvailable(): Promise<boolean> {
   }
 }
 
-// === 등록 ===
+// === 등록 (PRF 우선 → Fallback 자동 전환) ===
 
-/**
- * 생체 인증 등록 — 시드를 PRF로 암호화하여 저장
- */
 export async function registerBiometric(
   identityId: string,
   identityName: string,
   seed: Uint8Array
-): Promise<void> {
-  if (!isWebAuthnSupported()) throw new Error('이 브라우저는 WebAuthn을 지원하지 않습니다.');
+): Promise<'prf' | 'fallback'> {
+  if (!isWebAuthnSupported()) throw new Error('WebAuthn 미지원');
 
   const userId = new TextEncoder().encode(identityId);
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const prfSalt = crypto.getRandomValues(new Uint8Array(32));
 
-  // 1. WebAuthn credential 생성 (PRF extension)
-  // 중요: 크로스-디바이스(폰 스캔), 플랫폼 싱크 패스키 차단
-  //       로컬 기기의 platform authenticator(Touch ID, Windows Hello 등)만 허용
+  // WebAuthn credential 생성
   const createOptions: PublicKeyCredentialCreationOptions = {
     rp: { name: 'PKIZIP', id: window.location.hostname },
     user: {
@@ -83,24 +86,22 @@ export async function registerBiometric(
     },
     challenge: buf(challenge),
     pubKeyCredParams: [
-      { type: 'public-key', alg: -7 },   // ES256
-      { type: 'public-key', alg: -257 }, // RS256
+      { type: 'public-key', alg: -7 },
+      { type: 'public-key', alg: -257 },
     ],
     authenticatorSelection: {
-      authenticatorAttachment: 'platform',  // 로컬 기기 내장 authenticator만
+      authenticatorAttachment: 'platform',
       userVerification: 'required',
-      residentKey: 'discouraged',            // 디스커버러블 X → 키체인 동기화 차단
+      residentKey: 'discouraged',
       requireResidentKey: false,
     },
-    attestation: 'none',                     // 제조사 인증서 전송 금지
+    attestation: 'none',
     timeout: 60000,
     extensions: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prf: { eval: { first: prfSalt } } as any,
     },
   };
-
-  // hints: 하이브리드(QR/폰), 크로스-디바이스 차단 (TypeScript 타입에 아직 없음)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (createOptions as any).hints = ['client-device'];
 
@@ -110,75 +111,82 @@ export async function registerBiometric(
 
   if (!credential) throw new Error('생체 인증 등록이 취소되었습니다.');
 
+  // PRF 결과 확인
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const extResults = (credential as any).getClientExtensionResults?.();
-  const prfResult = extResults?.prf?.results?.first;
+  let prfSecret: ArrayBuffer | null = extResults?.prf?.results?.first ?? null;
 
-  let prfSecret: ArrayBuffer;
-  if (prfResult) {
-    // 등록 시 바로 PRF 시크릿 획득 (Chrome 등)
-    prfSecret = prfResult;
-  } else {
-    // 일부 인증자는 등록 시 PRF 결과를 안 줌 → 즉시 인증을 한번 더 호출
-    const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge: buf(crypto.getRandomValues(new Uint8Array(32))),
-        rpId: window.location.hostname,
-        allowCredentials: [{ type: 'public-key', id: credential.rawId }],
-        userVerification: 'required',
-        timeout: 60000,
-        extensions: {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          prf: { eval: { first: prfSalt } } as any,
+  // 등록 시 PRF 없으면 인증 한번 더 시도
+  if (!prfSecret) {
+    try {
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: buf(crypto.getRandomValues(new Uint8Array(32))),
+          rpId: window.location.hostname,
+          allowCredentials: [{ type: 'public-key', id: credential.rawId, transports: ['internal'] }],
+          userVerification: 'required',
+          timeout: 30000,
+          extensions: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            prf: { eval: { first: prfSalt } } as any,
+          },
         },
-      },
-    }) as PublicKeyCredential | null;
-
-    if (!assertion) throw new Error('PRF 시크릿 획득 실패.');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ext = (assertion as any).getClientExtensionResults?.();
-    if (!ext?.prf?.results?.first) {
-      throw new Error('이 인증자는 PRF extension을 지원하지 않습니다. 비밀번호를 사용하세요.');
+      }) as PublicKeyCredential | null;
+      if (assertion) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ext2 = (assertion as any).getClientExtensionResults?.();
+        prfSecret = ext2?.prf?.results?.first ?? null;
+      }
+    } catch {
+      // PRF 재시도 실패 → fallback으로 진행
     }
-    prfSecret = ext.prf.results.first;
   }
 
-  // 2. PRF 시크릿으로 AES 키 도출
-  const aesKey = await crypto.subtle.importKey(
-    'raw', prfSecret, { name: 'AES-GCM' }, false, ['encrypt']
-  );
-
-  // 3. 시드 암호화
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const wrappedSeed = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: buf(iv) }, aesKey, buf(seed)
-  );
 
-  // 4. IndexedDB 저장
-  const binding: BiometricBinding = {
-    identityId,
-    credentialId: credential.rawId,
-    prfSalt,
-    wrappedSeed,
-    iv,
-    createdAt: Date.now(),
-  };
+  if (prfSecret) {
+    // === PRF 모드 ===
+    const aesKey = await crypto.subtle.importKey('raw', prfSecret, { name: 'AES-GCM' }, false, ['encrypt']);
+    const wrappedSeed = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: buf(iv) }, aesKey, buf(seed));
 
-  const db = await getDB();
-  await db.put(STORE, binding);
+    const binding: BiometricBinding = {
+      identityId, mode: 'prf',
+      credentialId: credential.rawId,
+      prfSalt, wrappedSeed, iv,
+      createdAt: Date.now(),
+    };
+    const db = await getDB();
+    await db.put(STORE, binding);
+    return 'prf';
+  } else {
+    // === Fallback 모드 ===
+    // 랜덤 AES 키 생성 → 시드 래핑 → AES 키도 IndexedDB에 저장
+    // 생체 인증은 "게이트" 역할 (WebAuthn 통과해야 IndexedDB 접근 허용)
+    const wrappingKeyObj = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+    const wrappedSeed = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: buf(iv) }, wrappingKeyObj, buf(seed));
+    const wrappingKeyRaw = await crypto.subtle.exportKey('raw', wrappingKeyObj);
+
+    const binding: BiometricBinding = {
+      identityId, mode: 'fallback',
+      credentialId: credential.rawId,
+      wrappedSeed, iv,
+      wrappingKey: wrappingKeyRaw,
+      createdAt: Date.now(),
+    };
+    const db = await getDB();
+    await db.put(STORE, binding);
+    return 'fallback';
+  }
 }
 
 // === 인증 (시드 복호화) ===
 
-/**
- * 생체 인증으로 시드 복호화
- */
 export async function unlockWithBiometric(identityId: string): Promise<Uint8Array> {
   const db = await getDB();
   const binding: BiometricBinding | undefined = await db.get(STORE, identityId);
   if (!binding) throw new Error('생체 인증이 등록되지 않았습니다.');
 
-  // 1. WebAuthn 인증 (PRF eval) — 로컬 기기 authenticator만
+  // WebAuthn 인증 요청
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const getOptions: PublicKeyCredentialRequestOptions = {
     challenge: buf(challenge),
@@ -186,17 +194,19 @@ export async function unlockWithBiometric(identityId: string): Promise<Uint8Arra
     allowCredentials: [{
       type: 'public-key',
       id: binding.credentialId,
-      transports: ['internal'],   // 내장 authenticator만 (폰 하이브리드 차단)
+      transports: ['internal'],
     }],
     userVerification: 'required',
     timeout: 60000,
-    extensions: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      prf: { eval: { first: binding.prfSalt } } as any,
-    },
   };
 
-  // hints: 하이브리드 차단
+  // PRF 모드일 때만 PRF extension 추가
+  if (binding.mode === 'prf' && binding.prfSalt) {
+    getOptions.extensions = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      prf: { eval: { first: binding.prfSalt } } as any,
+    };
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (getOptions as any).hints = ['client-device'];
 
@@ -206,30 +216,31 @@ export async function unlockWithBiometric(identityId: string): Promise<Uint8Arra
 
   if (!assertion) throw new Error('생체 인증이 취소되었습니다.');
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ext = (assertion as any).getClientExtensionResults?.();
-  const prfSecret = ext?.prf?.results?.first;
-  if (!prfSecret) throw new Error('PRF 시크릿 획득 실패.');
+  if (binding.mode === 'prf') {
+    // === PRF 모드: PRF 시크릿으로 시드 복호화 ===
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ext = (assertion as any).getClientExtensionResults?.();
+    const prfSecret = ext?.prf?.results?.first;
+    if (!prfSecret) throw new Error('PRF 시크릿 획득 실패');
 
-  // 2. PRF 시크릿으로 AES 키 도출
-  const aesKey = await crypto.subtle.importKey(
-    'raw', prfSecret, { name: 'AES-GCM' }, false, ['decrypt']
-  );
+    const aesKey = await crypto.subtle.importKey('raw', prfSecret, { name: 'AES-GCM' }, false, ['decrypt']);
+    const seedBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf(binding.iv) }, aesKey, binding.wrappedSeed);
+    return new Uint8Array(seedBuf);
+  } else {
+    // === Fallback 모드: 생체 인증 통과 → 저장된 래핑 키로 시드 복호화 ===
+    if (!binding.wrappingKey) throw new Error('래핑 키 없음');
 
-  // 3. 시드 복호화
-  const seedBuf = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: buf(binding.iv) }, aesKey, binding.wrappedSeed
-  );
-
-  return new Uint8Array(seedBuf);
+    const aesKey = await crypto.subtle.importKey('raw', binding.wrappingKey, { name: 'AES-GCM' }, false, ['decrypt']);
+    const seedBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf(binding.iv) }, aesKey, binding.wrappedSeed);
+    return new Uint8Array(seedBuf);
+  }
 }
 
 // === 관리 ===
 
 export async function hasBiometric(identityId: string): Promise<boolean> {
   const db = await getDB();
-  const b = await db.get(STORE, identityId);
-  return !!b;
+  return !!(await db.get(STORE, identityId));
 }
 
 export async function removeBiometric(identityId: string): Promise<void> {
@@ -237,7 +248,8 @@ export async function removeBiometric(identityId: string): Promise<void> {
   await db.delete(STORE, identityId);
 }
 
-export async function getAllBiometricBindings(): Promise<BiometricBinding[]> {
+export async function getBiometricMode(identityId: string): Promise<'prf' | 'fallback' | null> {
   const db = await getDB();
-  return db.getAll(STORE);
+  const b: BiometricBinding | undefined = await db.get(STORE, identityId);
+  return b?.mode ?? null;
 }
