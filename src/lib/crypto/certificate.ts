@@ -154,25 +154,24 @@ export async function generateSelfSignedCertificate(
   );
 
   // Logotype Extension (RFC 3709) — OID 1.3.6.1.5.5.7.1.12
-  // 간단히 PNG 바이트를 OCTET STRING으로 저장 (data URL → base64 디코드)
+  // 이미지 크기를 최종 방어선에서 강제 제한 (64KB 이하 JPEG)
   if (logotype) {
     try {
-      const base64 = logotype.replace(/^data:image\/[^;]+;base64,/, '');
-      const binary = atob(base64);
-      const logoBytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) logoBytes[i] = binary.charCodeAt(i);
-
-      certificate.extensions.push(
-        new pkijs.Extension({
-          extnID: '1.3.6.1.5.5.7.1.12',
-          critical: false,
-          extnValue: new asn1js.OctetString({
-            valueHex: logoBytes.buffer as ArrayBuffer,
-          }).toBER(false),
-        })
-      );
-    } catch {
-      // 로고 임베딩 실패 시 무시 (인증서 생성은 계속)
+      const safeBytes = await enforceLogotypeSize(logotype, 64 * 1024);
+      if (safeBytes && safeBytes.length > 0) {
+        certificate.extensions.push(
+          new pkijs.Extension({
+            extnID: '1.3.6.1.5.5.7.1.12',
+            critical: false,
+            extnValue: new asn1js.OctetString({
+              valueHex: safeBytes.buffer.slice(safeBytes.byteOffset, safeBytes.byteOffset + safeBytes.byteLength) as ArrayBuffer,
+            }).toBER(false),
+          })
+        );
+      }
+    } catch (err) {
+      console.warn('[PKIZIP] logotype 임베딩 스킵:', err);
+      // 실패해도 인증서 생성은 계속
     }
   }
 
@@ -269,4 +268,91 @@ function pemToDer(pem: string): ArrayBuffer {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes.buffer as ArrayBuffer;
+}
+
+/**
+ * Logotype 이미지 크기를 강제 제한 — 최종 방어선
+ *
+ * 이미 압축된 data URL이 들어와도 크기 초과 시 Canvas로 재로드하여
+ * JPEG로 재인코딩. 64KB 이하가 될 때까지 치수/품질을 단계적 축소.
+ *
+ * @returns 64KB 이하 JPEG 바이트. 실패 시 null.
+ */
+async function enforceLogotypeSize(
+  dataUrl: string,
+  maxBytes: number
+): Promise<Uint8Array | null> {
+  // 1) 먼저 현재 이미지 크기 확인
+  const base64 = dataUrl.replace(/^data:image\/[^;]+;base64,/, '');
+  const currentBytes = Math.floor((base64.length * 3) / 4);
+
+  console.log(`[PKIZIP] logotype 입력 크기: ${Math.round(currentBytes / 1024)}KB`);
+
+  // 이미 충분히 작으면 그대로 사용
+  if (currentBytes <= maxBytes) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  // 2) 크면 Canvas로 재로드 → JPEG 재인코딩
+  const img = await loadImageFromDataUrl(dataUrl);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const MAX_DIMS = [128, 96, 72, 56, 40, 32, 24];
+  const QUALITIES = [0.7, 0.5, 0.35, 0.2];
+
+  let best: Uint8Array | null = null;
+  let bestSize = Infinity;
+
+  for (const maxDim of MAX_DIMS) {
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+
+    canvas.width = w;
+    canvas.height = h;
+    ctx.clearRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    // 흰색 배경 (투명 알파 → 흰색)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+
+    for (const q of QUALITIES) {
+      const jpegDataUrl = canvas.toDataURL('image/jpeg', q);
+      const jpegBase64 = jpegDataUrl.split(',')[1] ?? '';
+      const padding = jpegBase64.endsWith('==') ? 2 : jpegBase64.endsWith('=') ? 1 : 0;
+      const size = Math.floor((jpegBase64.length * 3) / 4) - padding;
+
+      if (size < bestSize) {
+        bestSize = size;
+        const bin = atob(jpegBase64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        best = bytes;
+      }
+
+      if (size <= maxBytes) {
+        console.log(`[PKIZIP] logotype 재압축: ${w}x${h} JPEG q=${q} → ${Math.round(size / 1024)}KB`);
+        return best;
+      }
+    }
+  }
+
+  console.warn(`[PKIZIP] logotype 재압축 한계: ${Math.round(bestSize / 1024)}KB (목표 ${Math.round(maxBytes / 1024)}KB)`);
+  return best;
+}
+
+function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지 로드 실패'));
+    img.src = dataUrl;
+  });
 }

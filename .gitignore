@@ -34,3 +34,6 @@ next-env.d.ts
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Project context (no release)
+CLAUDE.md

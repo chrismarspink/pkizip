@@ -1,5 +1,6 @@
 import { useLocation, Link } from 'react-router-dom';
 import { Shield, FilePlus, FileArchive, ShieldCheck, Settings, Sparkles } from 'lucide-react';
+import { APP_VERSION } from '@/version';
 
 const NAV_ITEMS = [
   { path: '/', icon: FilePlus, label: '생성' },
@@ -14,10 +15,15 @@ export function SidebarNav() {
 
   return (
     <nav className="flex flex-col items-center py-4 gap-1 bg-white border-r border-zinc-200 w-[60px] shrink-0">
-      {/* PKIZIP 로고 */}
-      <Link to="/" className="mb-4" title="PKIZIP">
+      {/* PKIZIP 로고 (호버 시 버전 표시) */}
+      <Link to="/" className="mb-4 group relative" title={`PKIZIP v${APP_VERSION}`}>
         <div className="w-9 h-9 rounded-xl bg-[#1DC078] flex items-center justify-center">
           <Shield className="w-5 h-5 text-white" />
+        </div>
+        {/* 커스텀 버전 툴팁 */}
+        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1.5 bg-zinc-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-lg">
+          <div className="font-semibold">PKIZIP</div>
+          <div className="text-zinc-400 font-mono">v{APP_VERSION}</div>
         </div>
       </Link>
 

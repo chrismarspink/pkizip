@@ -1,0 +1,47 @@
+PKIZIP Changes
+==============
+
+## v1.0.1 — 2026-04-15
+
+### Added
+- 사이드바 로고 hover 시 버전 표시 (tooltip)
+- 로고 크롭 결과 크기 표시 (디버깅 용이)
+- 버전 관리 시작 (changes.txt)
+- package.json 직접 import로 버전 주입 (`src/version.ts`)
+
+### Fixed
+- 인증서 이미지 크기 **64KB 이하 보장** (기존 100KB에서 강화)
+  - 최대 치수 단계적 축소: 128 → 96 → 72 → 56 → 40 → 32
+  - JPEG 품질 반복 조정: 0.75 → 0.60 → 0.50 → 0.40 → 0.30 → 0.20
+  - 투명 배경 → 흰색으로 채움 (JPEG 호환)
+  - 정확한 base64 바이트 계산 (padding 고려)
+- PNG → JPEG 변환으로 인증서 크기 대폭 감소
+- 긴 파일명(UTF-8 한글 포함) 보존 — tar 100바이트 한계 우회
+  - tar 내부는 f0/f1/... 짧은 이름, metadata JSON에 원본 보존
+
+### Known Issues
+- v1.0.0에서 생성한 인증서는 여전히 대용량 (재생성 필요)
+
+
+## v1.0.0 — 2026-04-15 (initial release)
+
+### Features
+- Vite + React + TypeScript 기반 PWA
+- CMS 메시지 타입 4종: Compressed / Signed / Enveloped / Encrypted
+- BIP39 니모닉 + BIP32 HD 키 파생 (P-256 ECDSA/ECDH)
+- 자체서명 X.509 인증서 (RFC 3709 logotype extension 포함)
+- 다중 아이덴티티 관리 (이름별)
+- 로고 이미지 크롭 (Canvas API만 사용, 외부 라이브러리 없음)
+
+### Security
+- IndexedDB 전용 키 저장소 (플랫폼 키체인 동기화 차단)
+- 잠금 해제 3경로:
+  - 생체 인증 (WebAuthn PRF: Touch ID / Face ID / Windows Hello)
+  - PIN (4~6자리, PBKDF2 600,000 iterations)
+  - 비밀번호 (PBKDF2 600,000 iterations)
+- EncryptedMessage 내부 서명 포함 (복호화해야만 서명 확인 가능)
+- 완전 오프라인 동작
+
+### Deployment
+- GitHub Pages 자동 배포 (GitHub Actions)
+- URL: https://chrismarspink.github.io/pkizip/

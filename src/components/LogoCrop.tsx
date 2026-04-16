@@ -40,6 +40,7 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
   const [startPt, setStartPt] = useState<{ x: number; y: number } | null>(null);
   const [startCrop, setStartCrop] = useState<CropBox | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewSize, setPreviewSize] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // === 이미지 로드 ===
@@ -164,14 +165,13 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
     const srcW = crop.w * scale;
     const srcH = crop.h * scale;
 
-    hidden.width = Math.max(1, Math.round(srcW));
-    hidden.height = Math.max(1, Math.round(srcH));
-
-    ctx.clearRect(0, 0, hidden.width, hidden.height);
-    ctx.drawImage(image, srcX, srcY, srcW, srcH, 0, 0, hidden.width, hidden.height);
-
-    const dataUrl = hidden.toDataURL('image/png');
+    // 64KB 이하 보장 — 최대 치수 + JPEG 품질 반복 조정
+    const dataUrl = compressToTargetSize(ctx, hidden, image, srcX, srcY, srcW, srcH, 64 * 1024);
+    // base64 → 대략 바이트 수 (data:image/jpeg;base64, 프리픽스 제외)
+    const base64Only = dataUrl.split(',')[1] ?? '';
+    const bytes = Math.floor(base64Only.length * 0.75);
     setPreviewUrl(dataUrl);
+    setPreviewSize(bytes);
     onCropComplete(dataUrl);
   }, [image, imgFit, crop, onCropComplete]);
 
@@ -393,7 +393,17 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
           {/* 인증서 카드 미리보기 (그린/노랑) */}
           {previewUrl && (
             <div className="space-y-2">
-              <p className="text-xs text-zinc-500 font-medium">인증서 카드 미리보기</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-zinc-500 font-medium">인증서 카드 미리보기</p>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                  previewSize < 64 * 1024
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {formatBytes(previewSize)}
+                  {previewSize < 64 * 1024 ? ' ✓ 64KB 이하' : ' ⚠ 64KB 초과'}
+                </span>
+              </div>
               <div className="flex gap-3 flex-wrap">
                 <PreviewCard variant="green" logoUrl={previewUrl} />
                 <PreviewCard variant="yellow" logoUrl={previewUrl} />
@@ -444,4 +454,76 @@ function PreviewCard({ variant, logoUrl }: { variant: 'green' | 'yellow'; logoUr
       </div>
     </div>
   );
+}
+
+/**
+ * 크롭 결과를 목표 크기(바이트) 이하로 압축
+ *
+ * 전략:
+ *   1. 최대 치수를 256→192→128→96→64로 단계적으로 줄임
+ *   2. JPEG 품질을 0.85→0.7→0.55→0.4로 낮춤
+ *   3. 각 조합에서 base64 크기를 측정, 목표 이하면 반환
+ *   4. 모든 조합 실패 시 가장 작은 결과 반환
+ */
+function compressToTargetSize(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  image: HTMLImageElement,
+  sx: number, sy: number, sw: number, sh: number,
+  targetBytes: number
+): string {
+  // 작은 치수부터 시도 (빠르게 목표 도달)
+  const MAX_DIMS = [128, 96, 72, 56, 40, 32];
+  const QUALITIES = [0.75, 0.6, 0.5, 0.4, 0.3, 0.2];
+
+  // data URL 프리픽스(약 22자) + base64 확장(1.333배) + 인증서 ASN.1 오버헤드 고려
+  // 실제 저장되는 이진 크기를 목표로 역산: dataUrl.length * 0.72 ≈ 실제 바이트
+  const measureBytes = (dataUrl: string): number => {
+    const base64 = dataUrl.split(',')[1] ?? '';
+    // 패딩 고려한 정확한 계산: base64 길이 * 3/4 - padding
+    const padding = (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0);
+    return Math.floor((base64.length * 3) / 4) - padding;
+  };
+
+  let bestDataUrl = '';
+  let bestSize = Infinity;
+
+  for (const maxDim of MAX_DIMS) {
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
+
+    canvas.width = w;
+    canvas.height = h;
+    ctx.clearRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // JPEG 알파 채널 없음 → 투명 배경을 흰색으로
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, w, h);
+
+    for (const q of QUALITIES) {
+      const dataUrl = canvas.toDataURL('image/jpeg', q);
+      const bytes = measureBytes(dataUrl);
+
+      if (bytes < bestSize) {
+        bestSize = bytes;
+        bestDataUrl = dataUrl;
+      }
+      if (bytes <= targetBytes) {
+        return dataUrl;
+      }
+    }
+  }
+
+  return bestDataUrl;
+}
+
+function formatBytes(b: number): string {
+  if (b === 0) return '0 B';
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
 }
