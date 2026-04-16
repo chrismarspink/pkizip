@@ -10,7 +10,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "AGPL-3.0",
   "description": "",
   "dependencies": {
     "@noble/curves": "^2.2.0",
