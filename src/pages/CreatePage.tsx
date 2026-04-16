@@ -301,22 +301,24 @@ export function CreatePage() {
       {/* 페이지 타이틀 */}
       <h1 className="text-xl font-bold mb-6">PKIZIP 파일 생성</h1>
 
-      {/* 진행 바 */}
-      <div className="flex items-center mb-8 gap-1">
+      {/* 진행 바 — 모바일에서도 라벨 표시 */}
+      <div className="flex items-center mb-8">
         {STEPS.map((s, i) => {
           const done = i < stepIdx || step === 'done';
           const active = s.key === step;
           return (
-            <div key={s.key} className="flex items-center flex-1">
-              <div className={`flex items-center gap-1.5 ${done ? 'text-[#1DC078]' : active ? 'text-zinc-800' : 'text-zinc-400'}`}>
+            <div key={s.key} className="flex items-center flex-1 min-w-0">
+              <div className="flex flex-col items-center gap-0.5 shrink-0">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                  done ? 'bg-[#1DC078] border-[#1DC078] text-white' : active ? 'border-zinc-800' : 'border-zinc-300'
+                  done ? 'bg-[#1DC078] border-[#1DC078] text-white' : active ? 'border-zinc-800 text-zinc-800' : 'border-zinc-300 text-zinc-400'
                 }`}>
                   {done ? <Check className="w-4 h-4" /> : i + 1}
                 </div>
-                <span className="text-xs font-medium hidden sm:inline">{s.label}</span>
+                <span className={`text-[10px] font-medium leading-tight ${
+                  done ? 'text-[#1DC078]' : active ? 'text-zinc-800' : 'text-zinc-400'
+                }`}>{s.label}</span>
               </div>
-              {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-2 rounded ${done ? 'bg-[#1DC078]' : 'bg-zinc-200'}`} />}
+              {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-1.5 mt-[-12px] rounded ${done ? 'bg-[#1DC078]' : 'bg-zinc-200'}`} />}
             </div>
           );
         })}
