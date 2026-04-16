@@ -292,8 +292,8 @@ export function FilesTempPage() {
     <div className="max-w-3xl mx-auto px-4 py-6 lg:py-10">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold">파일-임시 (Task Stream 테스트)</h1>
-          <p className="text-sm text-zinc-500">AI Task Stream UI로 .pki 처리 과정을 실시간 표시</p>
+          <h1 className="text-xl font-bold">PKIZIP 파일 열기</h1>
+          <p className="text-sm text-zinc-500">.pki 파일을 열어 단계별로 분석합니다.</p>
         </div>
         <div className="flex gap-2">
           {items.length > 0 && (

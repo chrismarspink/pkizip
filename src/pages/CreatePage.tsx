@@ -298,6 +298,9 @@ export function CreatePage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
+      {/* 페이지 타이틀 */}
+      <h1 className="text-xl font-bold mb-6">PKIZIP 파일 생성</h1>
+
       {/* 진행 바 */}
       <div className="flex items-center mb-8 gap-1">
         {STEPS.map((s, i) => {
