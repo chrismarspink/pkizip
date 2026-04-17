@@ -289,7 +289,7 @@ export function FilesTempPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 lg:py-10">
+    <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold">PKIZIP 파일 열기</h1>
