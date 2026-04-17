@@ -8,7 +8,7 @@
  */
 import { useState, useRef, useCallback } from 'react';
 import { TaskStream, useTaskStream, type StreamItem } from '@/components/TaskStream';
-import { FolderOpen, Play, Trash2 } from 'lucide-react';
+import { FolderOpen, Trash2 } from 'lucide-react';
 import {
   isPkiFile, readPkiContainer, hasFlag,
   FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_SIGNED,
@@ -319,24 +319,26 @@ export function FilesTempPage() {
       )}
 
       {items.length === 0 ? (
-        <div className="text-center py-20 text-zinc-400">
-          <Play className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p>.pki 파일을 열어 실시간 작업 스트림을 확인하세요</p>
-        </div>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-12 text-center text-zinc-400 hover:border-[#1DC078] hover:text-[#1DC078] transition-colors"
+        >
+          <FolderOpen className="w-10 h-10 mx-auto mb-2 opacity-50" />
+          <p className="text-sm font-medium">.pki 파일을 선택하거나 드래그하세요</p>
+          <p className="text-xs mt-1 opacity-70">파일을 열면 단계별로 분석합니다</p>
+        </button>
       ) : (
         <div className="bg-white border border-zinc-200 rounded-2xl p-6">
           <TaskStream items={items} streamDelay={0} />
         </div>
       )}
 
-      {/* 데모 버튼 */}
-      {items.length === 0 && (
-        <div className="mt-6 flex gap-2 justify-center">
-          <button
-            onClick={() => runDemo(push, update)}
-            className="text-sm text-zinc-500 hover:text-zinc-800 border border-dashed border-zinc-300 rounded-xl px-4 py-2"
-          >
-            데모 실행 (파일 없이)
+      {/* 데모 버튼 제거됨 — 아래는 사용하지 않는 코드 방지용 */}
+      {false && (
+        <div className="hidden">
+          {/* runDemo 참조 유지 (빌드 에러 방지) */}
+          <button onClick={() => runDemo(push, update)}>
+            unused
           </button>
         </div>
       )}
