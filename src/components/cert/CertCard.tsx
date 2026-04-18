@@ -103,30 +103,17 @@ export function CertCard({ cert, identityName, isActive, pqcEnabled, onExport }:
       {/* 하단: 상세 정보 (항상 표시) */}
       <div className="bg-white px-5 py-4 space-y-2.5">
         <Row icon={<Mail className="w-3.5 h-3.5" />} label="이메일" value={cert.email} />
-        <Row icon={<Hash className="w-3.5 h-3.5" />} label="핑거프린트" value={`0x${cert.fingerprint}`} mono />
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex items-center gap-1.5 text-zinc-500 shrink-0 text-xs"><Hash className="w-3.5 h-3.5" /> 핑거프린트</span>
+          <span className="flex items-center gap-1.5 text-right">
+            <span className="text-xs font-mono truncate max-w-[180px] text-zinc-800" title={`0x${cert.fingerprint}`}>0x{cert.fingerprint}</span>
+            {pqcEnabled && <span className="text-[8px] bg-violet-100 text-violet-600 px-1 py-0.5 rounded font-bold shrink-0">ML-KEM</span>}
+            {pqcEnabled && <span className="text-[8px] bg-violet-100 text-violet-600 px-1 py-0.5 rounded font-bold shrink-0">ML-DSA</span>}
+          </span>
+        </div>
         <Row icon={<Calendar className="w-3.5 h-3.5" />} label="발급일" value={formatDate(cert.notBefore)} />
         <Row icon={<Calendar className="w-3.5 h-3.5" />} label="만료일" value={formatDate(cert.notAfter)} />
         <Row icon={<Hash className="w-3.5 h-3.5" />} label="시리얼" value={cert.serialNumber} mono small />
-
-        {/* PQC 인증서 표시 */}
-        {pqcEnabled && (
-          <div className="bg-violet-50 border border-violet-200 rounded-lg p-2.5 space-y-1">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-violet-700">
-              <ShieldCheck className="w-3.5 h-3.5" /> 양자 암호 인증서 포함
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-              <div className="bg-white rounded px-2 py-1 border border-violet-100">
-                <div className="text-violet-600 font-medium">ML-KEM-1024</div>
-                <div className="text-zinc-400">암호화용 (FIPS 203)</div>
-              </div>
-              <div className="bg-white rounded px-2 py-1 border border-violet-100">
-                <div className="text-violet-600 font-medium">ML-DSA-87</div>
-                <div className="text-zinc-400">서명용 (FIPS 204)</div>
-              </div>
-            </div>
-            <div className="text-[9px] text-violet-500">기존 인증서 + PQC 인증서 2벌이 함께 관리됩니다</div>
-          </div>
-        )}
 
         {/* 액션 버튼 */}
         <div className="flex gap-2 pt-2">
