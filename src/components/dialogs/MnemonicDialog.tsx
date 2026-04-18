@@ -121,20 +121,25 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       // PQC 번들 생성 (PQC 설정 활성 시)
       try {
         const pqcCfg = useAppStore.getState().pqcConfig;
+        console.log('[PKIZIP] PQC 설정 확인:', JSON.stringify(pqcCfg));
         if (pqcCfg.kemEnabled || pqcCfg.dsaEnabled) {
+          console.log('[PKIZIP] PQC 번들 생성 시작...');
           const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
           const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+          console.log('[PKIZIP] PQC 모듈 import 완료');
           const pqcBundle = await PQCBundle.create({
             mnemonic, password,
             subject: { name: commonName.trim(), email: email.trim() },
             mode: 'full',
           });
+          console.log('[PKIZIP] PQC 번들 생성됨, 인증서:', Object.keys(pqcBundle.data.certificates || {}));
           await PQCKeystore.save(pqcBundle, password, 'default');
-          console.log('[PKIZIP] PQC 번들 생성 완료:', pqcBundle.getPqcKeyId()?.slice(0, 16));
+          console.log('[PKIZIP] PQC 번들 IndexedDB 저장 완료. KeyId:', pqcBundle.getPqcKeyId()?.slice(0, 16));
+        } else {
+          console.log('[PKIZIP] PQC 비활성 — 번들 생성 스킵');
         }
       } catch (pqcErr) {
-        console.warn('[PKIZIP] PQC 번들 생성 스킵:', pqcErr);
-        // PQC 실패해도 기본 키 생성은 완료된 상태
+        console.error('[PKIZIP] PQC 번들 생성 실패:', pqcErr);
       }
 
       setStep('done');

@@ -64,8 +64,12 @@ export class PQCKeystore {
   }
 
   static async getInfo(bundleId = 'default') {
-    const r = await dbGet(bundleId);
-    return r?.metaPlain ?? null;
+    try {
+      const r = await dbGet(bundleId);
+      return r?.metaPlain ?? null;
+    } catch {
+      return null;  // DB 미존재 또는 스토어 없음
+    }
   }
 
   static async exportJSON(bundleId = 'default') {
