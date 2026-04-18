@@ -18,7 +18,7 @@ import {
 } from '@/lib/crypto/pin';
 
 export function SettingsPage() {
-  const { setKeyIdentity, setActiveIdentityId: storeSetActive, setIdentities, activeIdentityId, isKeyLoaded } = useAppStore();
+  const { setKeyIdentity, setActiveIdentityId: storeSetActive, setIdentities, activeIdentityId, isKeyLoaded, pqcConfig: pqcCfg } = useAppStore();
   const [metas, setMetas] = useState<EncryptedIdentity[]>([]);
   const [unlockId, setUnlockId] = useState<string | null>(null);
   const [unlockPw, setUnlockPw] = useState('');
@@ -184,9 +184,21 @@ export function SettingsPage() {
                   </span>
                 </div>
 
-                <div className="text-[10px] font-mono text-zinc-400 mb-3 flex items-center gap-1">
+                <div className="text-[10px] font-mono text-zinc-400 mb-2 flex items-center gap-1">
                   <Hash className="w-3 h-3" /> 0x{m.signingFingerprint}
                 </div>
+
+                {/* PQC 인증서 표시 */}
+                {(pqcCfg.kemEnabled || pqcCfg.dsaEnabled) && (
+                  <div className="flex items-center gap-2 mb-3 text-[10px] text-violet-600 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5">
+                    <Shield className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      양자 인증서 포함
+                      {pqcCfg.kemEnabled && ' · ML-KEM'}
+                      {pqcCfg.dsaEnabled && ' · ML-DSA'}
+                    </span>
+                  </div>
+                )}
 
                 {/* 잠금 해제 */}
                 {!isActive && unlockId === m.id ? (

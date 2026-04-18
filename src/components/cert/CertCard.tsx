@@ -108,6 +108,26 @@ export function CertCard({ cert, identityName, isActive, pqcEnabled, onExport }:
         <Row icon={<Calendar className="w-3.5 h-3.5" />} label="만료일" value={formatDate(cert.notAfter)} />
         <Row icon={<Hash className="w-3.5 h-3.5" />} label="시리얼" value={cert.serialNumber} mono small />
 
+        {/* PQC 인증서 표시 */}
+        {pqcEnabled && (
+          <div className="bg-violet-50 border border-violet-200 rounded-lg p-2.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-violet-700">
+              <ShieldCheck className="w-3.5 h-3.5" /> 양자 암호 인증서 포함
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+              <div className="bg-white rounded px-2 py-1 border border-violet-100">
+                <div className="text-violet-600 font-medium">ML-KEM-1024</div>
+                <div className="text-zinc-400">암호화용 (FIPS 203)</div>
+              </div>
+              <div className="bg-white rounded px-2 py-1 border border-violet-100">
+                <div className="text-violet-600 font-medium">ML-DSA-87</div>
+                <div className="text-zinc-400">서명용 (FIPS 204)</div>
+              </div>
+            </div>
+            <div className="text-[9px] text-violet-500">기존 인증서 + PQC 인증서 2벌이 함께 관리됩니다</div>
+          </div>
+        )}
+
         {/* 액션 버튼 */}
         <div className="flex gap-2 pt-2">
           <button onClick={handleCopyPem}
