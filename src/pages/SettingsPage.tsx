@@ -186,6 +186,7 @@ export function SettingsPage() {
 
                 <div className="text-[10px] font-mono text-zinc-400 mb-3 flex items-center gap-1.5 flex-wrap">
                   <Hash className="w-3 h-3" /> 0x{m.signingFingerprint}
+                  <span className="text-[9px] bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded font-sans font-bold">ECDSA</span>
                   {pqcCfg.kemEnabled && <span className="text-[9px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-sans font-bold">ML-KEM</span>}
                   {pqcCfg.dsaEnabled && <span className="text-[9px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-sans font-bold">ML-DSA</span>}
                 </div>
