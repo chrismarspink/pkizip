@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { CertCard } from './CertCard';
+import { useAppStore } from '@/lib/store/app-store';
 import type { StoredCertificate } from '@/lib/crypto/key-manager';
 
 interface CertWalletProps {
@@ -10,11 +11,10 @@ interface CertWalletProps {
   }>;
 }
 
-/**
- * 인증서 카드 리스트
- * 각 카드는 항상 상세 정보를 표시한다 (터치 펼침 불필요)
- */
 export function CertWallet({ certs }: CertWalletProps) {
+  const { pqcConfig } = useAppStore();
+  const pqcEnabled = pqcConfig.kemEnabled || pqcConfig.dsaEnabled;
+
   if (certs.length === 0) return null;
 
   return (
@@ -33,6 +33,7 @@ export function CertWallet({ certs }: CertWalletProps) {
               cert={item.cert}
               identityName={item.identityName}
               isActive={item.isActive}
+              pqcEnabled={pqcEnabled}
             />
           </motion.div>
         ))}
