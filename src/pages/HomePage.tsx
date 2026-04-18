@@ -12,11 +12,11 @@ export function HomePage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
-      {/* PKIZIP 타이포 제목 — 좌측 정렬 (다른 페이지와 동일) */}
+      {/* PKIZIP + 태그라인 — 좌측 정렬 */}
       <img
-        src={`${base}logo-typo.png`}
-        alt="PKIZIP"
-        className="h-10 mb-6 select-none"
+        src={`${base}logo-header.png`}
+        alt="PKIZIP — 12 words. Sign · Seal · Encrypt · Quantum-safe."
+        className="h-7 sm:h-8 mb-6 select-none self-start"
         draggable={false}
       />
 
@@ -45,11 +45,6 @@ export function HomePage() {
           <Import className="w-4 h-4" /> 기존 니모닉 복구
         </button>
       </div>
-
-      {/* 카피 */}
-      <p className="text-center text-xs text-zinc-400 mt-8">
-        12 words. Sign · Seal · Encrypt · Quantum-safe.
-      </p>
 
       {/* 니모닉 다이얼로그 */}
       <MnemonicDialog
