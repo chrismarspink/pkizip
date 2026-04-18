@@ -47,6 +47,7 @@ export class PQCKeystore {
       metaPlain: {
         mode: bundle.data.mode, subject: bundle.data.subject,
         created: bundle.data.created, kemKeyId: bundle.getPqcKeyId(),
+        certificates: bundle.data.certificates || {},  // 인증서는 공개 정보 → 평문
       },
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     };

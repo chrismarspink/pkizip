@@ -18,19 +18,70 @@ export function CertCard({ cert, identityName, isActive, pqcEnabled, onExport }:
   const expired = cert.notAfter < Date.now();
   const formatDate = (ts: number) => new Date(ts).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
-  const handleCopyPem = () => {
-    navigator.clipboard.writeText(cert.pemCertificate);
-    toast.success('PEM 인증서 복사됨');
+  const buildFullPem = async (): Promise<string> => {
+    let pem = `# PKIZIP Certificate Bundle\n# Subject: ${cert.commonName} <${cert.email}>\n# Date: ${new Date().toISOString()}\n\n`;
+    pem += `# === Classic Certificate (ECDSA P-256) ===\n`;
+    pem += cert.pemCertificate + '\n\n';
+
+    // PQC 번들에서 ML-KEM, ML-DSA 인증서 가져오기
+    if (pqcEnabled) {
+      try {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const req = indexedDB.open('pkizip-pqc-v3', 1);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+        const tx = db.transaction('bundles', 'readonly');
+        const bundle = await new Promise<any>((resolve) => {
+          const req = tx.objectStore('bundles').get('default');
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+        });
+        db.close();
+
+        const meta = bundle?.metaPlain;
+        if (meta?.certificates) {
+          if (meta.certificates.kem) {
+            pem += `# === ML-KEM-1024 Certificate (FIPS 203, RFC 9935) ===\n`;
+            pem += `# keyUsage: keyEncipherment\n`;
+            pem += meta.certificates.kem + '\n\n';
+          }
+          if (meta.certificates.dsa) {
+            pem += `# === ML-DSA-87 Certificate (FIPS 204, RFC 9881) ===\n`;
+            pem += `# keyUsage: digitalSignature, nonRepudiation\n`;
+            pem += meta.certificates.dsa + '\n\n';
+          }
+          if (meta.certificates.ecc) {
+            pem += `# === secp256k1 Certificate ===\n`;
+            pem += `# keyUsage: digitalSignature\n`;
+            pem += meta.certificates.ecc + '\n\n';
+          }
+          pem += `# PQC Key ID: ${meta.kemKeyId || 'N/A'}\n`;
+          pem += `# Mode: ${meta.mode || 'full'}\n`;
+        }
+      } catch {
+        // PQC 번들 없으면 무시
+      }
+    }
+
+    return pem;
   };
 
-  const handleExport = () => {
+  const handleCopyPem = async () => {
+    const pem = await buildFullPem();
+    navigator.clipboard.writeText(pem);
+    toast.success(pqcEnabled ? '인증서 번들 복사됨 (Classic + PQC 정보)' : 'PEM 인증서 복사됨');
+  };
+
+  const handleExport = async () => {
     if (onExport) { onExport(); return; }
-    const blob = new Blob([cert.pemCertificate], { type: 'application/x-pem-file' });
+    const pem = await buildFullPem();
+    const blob = new Blob([pem], { type: 'application/x-pem-file' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${cert.commonName.replace(/\s/g, '_')}_cert.pem`;
+    a.download = `${cert.commonName.replace(/\s/g, '_')}_certs.pem`;
     a.click();
-    toast.success('인증서 내보내기 완료');
+    toast.success(pqcEnabled ? '인증서 번들 내보내기 완료' : '인증서 내보내기 완료');
   };
 
   return (
