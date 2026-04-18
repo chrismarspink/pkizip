@@ -9,6 +9,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { TaskStream, useTaskStream, type StreamItem } from '@/components/TaskStream';
 import { FolderOpen, Trash2 } from 'lucide-react';
+import { PqcBadge } from '@/components/PqcBadge';
 import {
   isPkiFile, readPkiContainer, hasFlag,
   FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_SIGNED,
@@ -30,6 +31,7 @@ export function FilesTempPage() {
   const { keyIdentity } = useAppStore();
   const { items, push, update, reset } = useTaskStream();
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isPqcFile, setIsPqcFile] = useState(false);
   const [processing, setProcessing] = useState(false);
   const rawDataRef = useRef<Uint8Array | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +57,12 @@ export function FilesTempPage() {
     const isComp = hasFlag(h.flags, FLAG_COMPRESSED);
     const isPw = isEnc && h.encryption?.recipients[0]?.fingerprint === 'password';
 
+    // PQC 헤더 감지 (pqcHeader가 header에 포함되어 있을 수 있음)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pqcHeader = (h as any).pqcHeader;
+    const hasPqc = !!pqcHeader?.pqcProtected;
+    setIsPqcFile(hasPqc);
+
     const id = () => crypto.randomUUID();
 
     // Step 1: 파일 분석
@@ -63,6 +71,9 @@ export function FilesTempPage() {
     await sleep(500);
     push({ type: 'text', id: id(), content: `파일 크기: ${formatSize(rawData.length)}`, tone: 'muted' });
     push({ type: 'text', id: id(), content: `플래그: ${[isComp && '압축', isSig && '서명', isEnc && '암호화'].filter(Boolean).join(', ')}`, tone: 'muted' });
+    if (hasPqc) {
+      push({ type: 'text', id: id(), content: `🔐 양자 암호 보호 (${pqcHeader.algorithms?.kem || 'ML-KEM'} + ${pqcHeader.algorithms?.dsa || 'ML-DSA'})`, tone: 'success' });
+    }
     update(analyzeId, { status: 'done' });
 
     await sleep(300);
@@ -314,6 +325,7 @@ export function FilesTempPage() {
       {fileName && (
         <div className="mb-6 px-4 py-2 bg-zinc-100 rounded-xl flex items-center gap-2 text-sm">
           <FolderOpen className="w-4 h-4 text-zinc-500" />
+          <PqcBadge pqc={isPqcFile} size="sm" />
           <span className="font-mono text-zinc-700 truncate">{fileName}</span>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { ShieldCheck, Mail, Hash, Calendar, Copy, Download } from 'lucide-react';
 import { Identicon } from './Identicon';
+import { PqcBadge } from '@/components/PqcBadge';
 import type { StoredCertificate } from '@/lib/crypto/key-manager';
 import { toast } from 'sonner';
 
@@ -8,10 +9,11 @@ interface CertCardProps {
   cert: StoredCertificate;
   identityName: string;
   isActive?: boolean;
+  pqcEnabled?: boolean;
   onExport?: () => void;
 }
 
-export function CertCard({ cert, identityName, isActive, onExport }: CertCardProps) {
+export function CertCard({ cert, identityName, isActive, pqcEnabled, onExport }: CertCardProps) {
   const days = Math.max(0, Math.floor((cert.notAfter - Date.now()) / 86400000));
   const expired = cert.notAfter < Date.now();
   const formatDate = (ts: number) => new Date(ts).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -53,10 +55,13 @@ export function CertCard({ cert, identityName, isActive, onExport }: CertCardPro
               <ShieldCheck className="w-4 h-4" />
             </div>
             <span className="text-xs font-medium opacity-80">인증서</span>
+            <PqcBadge pqc={!!pqcEnabled} size="sm" />
           </div>
-          {isActive && (
-            <span className="text-[10px] bg-white/25 px-2.5 py-0.5 rounded-full font-medium">활성</span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {isActive && (
+              <span className="text-[10px] bg-white/25 px-2.5 py-0.5 rounded-full font-medium">활성</span>
+            )}
+          </div>
         </div>
 
         {/* 중앙: 아바타/로고 + 이름 */}

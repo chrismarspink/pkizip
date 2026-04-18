@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CertWallet } from '@/components/cert/CertWallet';
 import { Identicon } from '@/components/cert/Identicon';
+import { PqcBadge } from '@/components/PqcBadge';
 import { Shield, KeyRound, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getAllIdentityMetas, getAllCertificates, getActiveIdentityId, getAllKeyRingEntries, type StoredCertificate, type PublicKeyEntry } from '@/lib/crypto/key-manager';

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FilePlus, X, ChevronRight, Check, Loader2, Download, Shield, PenTool, Lock, Package } from 'lucide-react';
+import { PqcBadge } from '@/components/PqcBadge';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
 import { serializeEntries } from '@/lib/compression/compressor';
@@ -513,10 +514,17 @@ export function CreatePage() {
             <h2 className="text-lg font-bold mb-1">생성 완료</h2>
             <p className="text-sm text-zinc-500 mb-6">{resultInfo}</p>
 
-            <div className="bg-white border border-zinc-200 rounded-xl p-4 max-w-sm mx-auto text-sm space-y-1 text-left mb-6">
-              <div className="flex justify-between"><span className="text-zinc-500">파일명</span><span className="font-mono text-xs">{resultName}</span></div>
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 max-w-sm mx-auto text-sm space-y-1.5 text-left mb-6">
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500">파일명</span>
+                <span className="font-mono text-xs">{resultName}</span>
+              </div>
               <div className="flex justify-between"><span className="text-zinc-500">크기</span><span>{formatSize(resultData.length)}</span></div>
               <div className="flex justify-between"><span className="text-zinc-500">파일 수</span><span>{files.length}개</span></div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500">보호</span>
+                <PqcBadge pqc={options.enveloped || options.sign} size="md" />
+              </div>
             </div>
 
             <div className="flex gap-3 justify-center">
