@@ -1,0 +1,53 @@
+{
+  "pqc": {
+    "version": 3,
+
+    "bundle": {
+      "defaultMode": "full",
+      "defaultValidity": 1095,
+      "derivationPaths": {
+        "ecc": "m/44'/60'/0'/0/0",
+        "kem": "m/9000'/1024'/0'/0",
+        "dsa": "m/9000'/87'/0'/0"
+      }
+    },
+
+    "default": {
+      "kem": {
+        "enabled": true,
+        "mode": "hybrid",
+        "algorithm": "ML-KEM-1024",
+        "applyTo": ["enveloped", "encrypted"]
+      },
+      "dsa": {
+        "enabled": true,
+        "mode": "hybrid",
+        "algorithm": "ML-DSA-87",
+        "applyTo": ["signed", "detached"]
+      },
+      "kdf": "HKDF-SHA3-512",
+      "sym": "AES-256-GCM"
+    },
+
+    "certificates": [
+      {
+        "id": "cert-legacy-vendor",
+        "comment": "PQC 미지원 외부 수신자",
+        "kem": { "mode": "classical" },
+        "dsa": { "mode": "classical" }
+      },
+      {
+        "id": "cert-internal-hsm",
+        "comment": "내부 HSM — PQC 전용",
+        "kem": { "mode": "pqc-only" },
+        "dsa": { "mode": "pqc-only" }
+      },
+      {
+        "id": "cert-partner-kem-only",
+        "comment": "파트너사 — KEM만 PQC",
+        "kem": { "mode": "hybrid" },
+        "dsa": { "mode": "classical" }
+      }
+    ]
+  }
+}
