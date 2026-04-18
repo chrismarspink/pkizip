@@ -118,6 +118,25 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         createdAt: m.createdAt,
       })));
 
+      // PQC 번들 생성 (PQC 설정 활성 시)
+      try {
+        const pqcCfg = useAppStore.getState().pqcConfig;
+        if (pqcCfg.kemEnabled || pqcCfg.dsaEnabled) {
+          const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
+          const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+          const pqcBundle = await PQCBundle.create({
+            mnemonic, password,
+            subject: { name: commonName.trim(), email: email.trim() },
+            mode: 'full',
+          });
+          await PQCKeystore.save(pqcBundle, password, 'default');
+          console.log('[PKIZIP] PQC 번들 생성 완료:', pqcBundle.getPqcKeyId()?.slice(0, 16));
+        }
+      } catch (pqcErr) {
+        console.warn('[PKIZIP] PQC 번들 생성 스킵:', pqcErr);
+        // PQC 실패해도 기본 키 생성은 완료된 상태
+      }
+
       setStep('done');
     } catch (err) {
       setError(err instanceof Error ? err.message : '키 생성 실패');
