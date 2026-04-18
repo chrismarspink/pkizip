@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
+import { HomePage } from '@/pages/HomePage';
 import { CreatePage } from '@/pages/CreatePage';
 import { FilesTempPage } from '@/pages/FilesTempPage';
 import { CertsPage } from '@/pages/CertsPage';
@@ -13,7 +14,8 @@ export function App() {
     <BrowserRouter basename={basename}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<CreatePage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/create" element={<CreatePage />} />
           <Route path="/files" element={<FilesTempPage />} />
           <Route path="/certs" element={<CertsPage />} />
           <Route path="/settings" element={<SettingsPage />} />

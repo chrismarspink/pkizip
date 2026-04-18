@@ -1,9 +1,10 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Shield, FilePlus, FileArchive, ShieldCheck, Settings } from 'lucide-react';
+import { Shield, Home, FilePlus, FileArchive, ShieldCheck, Settings } from 'lucide-react';
 import { APP_VERSION } from '@/version';
 
 const NAV_ITEMS = [
-  { path: '/', icon: FilePlus, label: '생성' },
+  { path: '/', icon: Home, label: '홈' },
+  { path: '/create', icon: FilePlus, label: '생성' },
   { path: '/files', icon: FileArchive, label: '파일' },
   { path: '/certs', icon: ShieldCheck, label: '인증서' },
   { path: '/settings', icon: Settings, label: '설정' },
