@@ -341,27 +341,27 @@ export function SettingsPage() {
 // ══ PQC 설정 컴포넌트 ══
 
 function PQCSettings() {
+  const { pqcConfig: storeConfig, setPqcConfig } = useAppStore();
   const [config, setConfig] = useState<{
     kem: { enabled: boolean; mode: string };
     dsa: { enabled: boolean; mode: string };
   }>({
-    kem: { enabled: true, mode: 'hybrid' },
-    dsa: { enabled: true, mode: 'hybrid' },
+    kem: { enabled: storeConfig.kemEnabled, mode: storeConfig.kemMode },
+    dsa: { enabled: storeConfig.dsaEnabled, mode: storeConfig.dsaMode },
   });
   const [expanded, setExpanded] = useState(false);
 
-  // 실제 pqc-config.json은 파일 시스템이라 런타임에서 직접 수정 불가
-  // 여기서는 UI 상태만 표시 + localStorage에 오버라이드 저장
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('pkizip-pqc-ui-config');
-      if (saved) setConfig(JSON.parse(saved));
-    } catch { /* ignore */ }
-  }, []);
+    // 스토어 → 로컬 상태 동기화
+    setConfig({
+      kem: { enabled: storeConfig.kemEnabled, mode: storeConfig.kemMode },
+      dsa: { enabled: storeConfig.dsaEnabled, mode: storeConfig.dsaMode },
+    });
+  }, [storeConfig]);
 
   const saveConfig = (next: typeof config) => {
     setConfig(next);
-    localStorage.setItem('pkizip-pqc-ui-config', JSON.stringify(next));
+    setPqcConfig({ kemEnabled: next.kem.enabled, kemMode: next.kem.mode, dsaEnabled: next.dsa.enabled, dsaMode: next.dsa.mode });
     toast.success('PQC 설정 저장됨');
   };
 

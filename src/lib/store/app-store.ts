@@ -40,6 +40,10 @@ interface AppState {
   certificate: CertificateInfo | null;
   setCertificate: (cert: CertificateInfo | null) => void;
 
+  // === PQC 설정 ===
+  pqcConfig: { kemEnabled: boolean; kemMode: string; dsaEnabled: boolean; dsaMode: string };
+  setPqcConfig: (cfg: { kemEnabled: boolean; kemMode: string; dsaEnabled: boolean; dsaMode: string }) => void;
+
   // === 아카이브 ===
   archiveName: string | null;
   archiveHeader: PkiHeader | null;
@@ -86,6 +90,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   certificate: null,
   setCertificate: (certificate) => set({ certificate }),
+
+  // PQC 설정 (localStorage에서 초기화)
+  pqcConfig: (() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('pkizip-pqc-ui-config') : null;
+      if (saved) {
+        const p = JSON.parse(saved);
+        return { kemEnabled: p.kem?.enabled ?? true, kemMode: p.kem?.mode ?? 'hybrid', dsaEnabled: p.dsa?.enabled ?? true, dsaMode: p.dsa?.mode ?? 'hybrid' };
+      }
+    } catch {}
+    return { kemEnabled: true, kemMode: 'hybrid', dsaEnabled: true, dsaMode: 'hybrid' };
+  })(),
+  setPqcConfig: (pqcConfig) => {
+    set({ pqcConfig });
+    try { localStorage.setItem('pkizip-pqc-ui-config', JSON.stringify({ kem: { enabled: pqcConfig.kemEnabled, mode: pqcConfig.kemMode }, dsa: { enabled: pqcConfig.dsaEnabled, mode: pqcConfig.dsaMode } })); } catch {}
+  },
 
   // 아카이브
   archiveName: null,
