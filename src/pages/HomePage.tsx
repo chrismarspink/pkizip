@@ -15,7 +15,7 @@ export function HomePage() {
       <img
         src={`${import.meta.env.BASE_URL}logo-owl.png`}
         alt="PKIZIP"
-        className="w-48 max-w-[50vw] mb-10 select-none"
+        className="w-64 max-w-[65vw] mb-10 select-none"
         draggable={false}
       />
 
