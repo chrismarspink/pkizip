@@ -26,41 +26,34 @@ export function CertCard({ cert, identityName, isActive, pqcEnabled, onExport }:
     // PQC 번들에서 ML-KEM, ML-DSA 인증서 가져오기
     if (pqcEnabled) {
       try {
-        const db = await new Promise<IDBDatabase>((resolve, reject) => {
-          const req = indexedDB.open('pkizip-pqc-v3', 1);
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-        const tx = db.transaction('bundles', 'readonly');
-        const bundle = await new Promise<any>((resolve) => {
-          const req = tx.objectStore('bundles').get('default');
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => resolve(null);
-        });
-        db.close();
+        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+        const info = await PQCKeystore.getInfo('default');
+        console.log('[PKIZIP] PQC 번들 info:', info);
 
-        const meta = bundle?.metaPlain;
-        if (meta?.certificates) {
-          if (meta.certificates.kem) {
+        if (info?.certificates) {
+          if (info.certificates.kem) {
             pem += `# === ML-KEM-1024 Certificate (FIPS 203, RFC 9935) ===\n`;
             pem += `# keyUsage: keyEncipherment\n`;
-            pem += meta.certificates.kem + '\n\n';
+            pem += info.certificates.kem + '\n\n';
           }
-          if (meta.certificates.dsa) {
+          if (info.certificates.dsa) {
             pem += `# === ML-DSA-87 Certificate (FIPS 204, RFC 9881) ===\n`;
             pem += `# keyUsage: digitalSignature, nonRepudiation\n`;
-            pem += meta.certificates.dsa + '\n\n';
+            pem += info.certificates.dsa + '\n\n';
           }
-          if (meta.certificates.ecc) {
+          if (info.certificates.ecc) {
             pem += `# === secp256k1 Certificate ===\n`;
             pem += `# keyUsage: digitalSignature\n`;
-            pem += meta.certificates.ecc + '\n\n';
+            pem += info.certificates.ecc + '\n\n';
           }
-          pem += `# PQC Key ID: ${meta.kemKeyId || 'N/A'}\n`;
-          pem += `# Mode: ${meta.mode || 'full'}\n`;
+          pem += `# PQC Key ID: ${info.kemKeyId || 'N/A'}\n`;
+          pem += `# Mode: ${info.mode || 'full'}\n`;
+        } else {
+          pem += `# PQC 번들이 없습니다. 새 니모닉 생성 시 PQC 활성화 상태에서 생성하세요.\n`;
         }
-      } catch {
-        // PQC 번들 없으면 무시
+      } catch (err) {
+        console.warn('[PKIZIP] PQC 인증서 로드 실패:', err);
+        pem += `# PQC 인증서 로드 실패\n`;
       }
     }
 
