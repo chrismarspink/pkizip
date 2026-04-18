@@ -2,10 +2,14 @@
  * PKI Operations - 고수준 통합 API
  *
  * 압축 + 암호화 + 서명을 통합하여 .pki 컨테이너를 생성/열기
- * WinZip-style 워크플로우를 지원하는 메인 엔트리 포인트
+ *
+ * 압축 전략 (CMS RFC 3274 호환):
+ *   단일 파일 → ZLIB (id-alg-zlibCompress, OID 1.2.840.113549.1.9.16.3.8)
+ *   다중 파일 → ZIP  (PKWARE APPNOTE, 폴더 구조 보존)
  */
+import { compress, decompress } from '../compression/compressor';
 import type { FileEntry } from '../compression/compressor';
-import { serializeEntries, deserializeEntries } from '../compression/compressor';
+import { toInputFiles, toFileEntries } from '../compression/compression-types';
 import {
   encryptForRecipients,
   decryptAsRecipient,
@@ -81,14 +85,13 @@ export interface OpenResult {
  * 봉인 (Seal) - 파일들을 압축 + 암호화 + 서명하여 .pki 생성
  *
  * 워크플로우:
- *   1. 파일 직렬화 (다중 파일 → 단일 바이너리)
- *   2. 압축 (Deflate)
- *   3. 암호화 (AES-256-GCM, 다중 수신자 ECDH)
- *   4. 서명 (ECDSA P-256)
- *   5. .pki 컨테이너 패킹
+ *   1. 파일 압축 (단일→ZLIB, 다중→ZIP)
+ *   2. 암호화 (AES-256-GCM, 다중 수신자 ECDH)
+ *   3. 서명 (ECDSA P-256)
+ *   4. .pki 컨테이너 패킹
  */
 export async function seal(options: SealOptions): Promise<SealResult> {
-  const { files, compress = true, encrypt, sign } = options;
+  const { files, compress: doCompress = true, encrypt, sign } = options;
 
   if (files.length === 0) {
     throw new Error('최소 1개의 파일이 필요합니다.');
@@ -97,22 +100,21 @@ export async function seal(options: SealOptions): Promise<SealResult> {
   let flags = 0;
   if (files.length > 1) flags = setFlag(flags, FLAG_MULTI_FILE);
 
-  // 1. 파일 직렬화 (메타데이터 + ZIP 압축)
-  let payload: Uint8Array;
+  // 1. 파일 압축 (CMS RFC 3274 호환)
   const originalSize = files.reduce((sum, f) => sum + f.size, 0);
+  const inputFiles = toInputFiles(files);
+  const compressResult = compress(inputFiles);
+  let payload = compressResult.data;
 
-  if (compress) {
-    payload = serializeEntries(files);
+  if (doCompress) {
     flags = setFlag(flags, FLAG_COMPRESSED);
-  } else {
-    payload = serializeEntries(files);
   }
 
   // 2. 파일 정보 헤더 구성
   const fileInfos: PkiFileInfo[] = files.map(f => ({
     name: f.name,
     originalSize: f.size,
-    compressedSize: 0, // 나중에 업데이트
+    compressedSize: 0,
     hash: uint8ArrayToHex(computeHash(f.data)),
     type: f.type,
     lastModified: f.lastModified,
@@ -124,6 +126,12 @@ export async function seal(options: SealOptions): Promise<SealResult> {
     flags,
     createdAt: Date.now(),
     files: fileInfos,
+    compression: {
+      method: compressResult.method,
+      oid: compressResult.algorithmOID,
+      entries: compressResult.fileCount,
+      originalSize: compressResult.originalSize,
+    },
   };
 
   // 3. 암호화
@@ -163,8 +171,8 @@ export async function seal(options: SealOptions): Promise<SealResult> {
   const container: PkiContainer = { header, payload };
   const pkiData = writePkiContainer(container);
 
-  // 파일별 압축 크기 업데이트
-  const avgRatio = payload.length / originalSize;
+  // 파일별 압축 크기 업데이트 (비율 배분)
+  const avgRatio = compressResult.compressedSize / compressResult.originalSize;
   header.files.forEach(f => {
     f.compressedSize = Math.round(f.originalSize * avgRatio);
   });
@@ -226,7 +234,7 @@ export async function open(
       return {
         files: header.files.map(f => ({
           name: f.name,
-          data: new Uint8Array(0), // 빈 데이터
+          data: new Uint8Array(0),
           size: f.originalSize,
           lastModified: f.lastModified,
           type: f.type,
@@ -256,8 +264,9 @@ export async function open(
     payload = decrypted.plaintext;
   }
 
-  // 3. 압축 해제 + 파일 복원
-  const files = deserializeEntries(payload);
+  // 3. 압축 해제 + 파일 복원 (포맷 자동 감지: ZIP/ZLIB/레거시)
+  const decompressed = decompress(payload);
+  const files = toFileEntries(decompressed.files);
 
   return {
     files,

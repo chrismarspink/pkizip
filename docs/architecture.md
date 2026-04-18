@@ -53,7 +53,7 @@ BIP39 니모닉에서 키를 파생하고, NIST 양자 내성 암호(PQC)를 하
 | `@noble/post-quantum` | 0.2 | ML-KEM-1024, ML-DSA-87 (PQC) |
 | `pkijs` | 3.x | X.509 인증서 생성/파싱 (ASN.1) |
 | `asn1js` | 3.x | ASN.1 DER 인코딩/디코딩 |
-| `fflate` | 0.8 | gzip 압축/해제 |
+| `fflate` | 0.8 | ZLIB/ZIP/gzip 압축/해제 |
 | Web Crypto API (내장) | — | AES-256-GCM, ECDSA, ECDH, PBKDF2 |
 
 ### 2-4. 상태 관리 & 저장
@@ -140,7 +140,9 @@ pkizip/
         │   └── inner-payload.ts    암호화 내부 서명 포맷
         │
         ├── compression/
-        │   └── compressor.ts       tar + gzip (메타데이터 보존)
+        │   ├── compression-types.ts 공유 타입 (InputFile, CompressResult, FileEntry)
+        │   ├── archive.ts          ZIP 아카이브 빌더/파서 (fflate zipSync)
+        │   └── compressor.ts       CMS RFC 3274 호환 압축 (ZLIB/ZIP + 레거시 호환)
         │
         ├── store/
         │   ├── app-store.ts        Zustand 전역 상태
@@ -166,7 +168,7 @@ pkizip/
 
 | 타입 | 내용 | 키 필요 |
 |------|------|--------|
-| CompressedMessage | tar.gz 압축만 | ✗ |
+| CompressedMessage | ZLIB/ZIP 압축 (RFC 3274) | ✗ |
 | SignedMessage | 압축 + ECDSA P-256 서명 | ✓ |
 | EnvelopedMessage | 압축 + 서명 + ECDH 공개키 다중 수신자 암호화 | ✓ |
 | EncryptedMessage | 압축 + AES-256-GCM 비밀번호 암호화 (선택적 서명) | ✗ |
@@ -233,19 +235,48 @@ Flags 비트마스크:
 
 ```
 encrypt(
-  inner-payload: [1B flags][4B sig-len][signatures JSON][compressed tar.gz]
+  inner-payload: [1B flags][4B sig-len][signatures JSON][ZLIB 또는 ZIP 데이터]
 )
 ```
 
-### 압축 (tar.gz)
+### 압축 (CMS RFC 3274 호환)
+
+압축 전략:
+- **단일 파일** → ZLIB 직접 압축 (RFC 1950 스트림)
+- **다중 파일/폴더** → ZIP 아카이브 (PKWARE APPNOTE, ISO 21320)
 
 ```
-[4B meta-length][metadata JSON][tar.gz 데이터]
+CompressedData (RFC 3274)
+├── version: 0
+├── compressionAlgorithm: id-alg-zlibCompress (OID 1.2.840.113549.1.9.16.3.8)
+└── encapContentInfo
+      └── eContent: OCTET STRING
+            ├── [단일 파일] ZLIB(원본 데이터)  — RFC 1950 헤더 + DEFLATE + Adler-32
+            └── [다중 파일] ZIP 아카이브 바이트  — 표준 ZIP 뷰어로 열림
 ```
 
-- tar 내부 파일명: `f0`, `f1`, ... (100바이트 한계 우회)
-- metadata JSON에 원본 파일명 (UTF-8 한글) 완전 보존
-- gzip 레벨 6
+ZIP 내부 압축:
+- 이미 압축된 파일(PDF, JPEG, ZIP, MP4 등) → STORE(무압축) — CPU 절약
+- 텍스트/비압축 파일 → DEFLATE level 6
+- 256B 미만 파일 → STORE
+- 파일명 UTF-8 인코딩 (EFS bit 11 설정)
+- 디렉토리 구조 보존 ('/' 경로 구분자)
+
+PkiHeader의 `compression` 필드:
+```json
+{
+  "compression": {
+    "method": "zip",
+    "oid": "1.2.840.113549.1.9.16.3.8",
+    "entries": 3,
+    "originalSize": 1048576
+  }
+}
+```
+
+레거시 역호환 (읽기 전용):
+- v1: `[4B metaLen][JSON array][tar.gz]` — 자동 감지
+- v2: `[4B metaLen][JSON {version:2}][per-file deflate]` — 자동 감지
 
 ---
 
@@ -381,6 +412,10 @@ PWA 서비스 워커 (Workbox): `precache` 모드, autoUpdate.
 | 표준 | 내용 |
 |------|------|
 | RFC 5652 | CMS (Cryptographic Message Syntax) |
+| RFC 3274 | CMS Compressed Data (id-alg-zlibCompress) |
+| RFC 1950 | ZLIB Compressed Data Format |
+| PKWARE APPNOTE 6.3.10 | ZIP File Format |
+| ISO/IEC 21320-1:2015 | Document Container File (ZIP 기반) |
 | NIST FIPS 203 | ML-KEM-1024 |
 | NIST FIPS 204 | ML-DSA-87 |
 | RFC 9935 | ML-KEM X.509 인증서 |
@@ -422,7 +457,7 @@ PWA 서비스 워커 (Workbox): `precache` 모드, autoUpdate.
 | pkijs | X.509 인증서 |
 | asn1js | ASN.1 |
 | pvtsutils | pkijs 유틸 |
-| fflate | gzip |
+| fflate | ZLIB/ZIP/gzip 압축 |
 
 ### Dev
 

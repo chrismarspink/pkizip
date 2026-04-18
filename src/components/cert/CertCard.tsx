@@ -1,188 +1,216 @@
-import { motion } from 'framer-motion';
-import { ShieldCheck, Mail, Hash, Calendar, Copy, Download } from 'lucide-react';
-import { Identicon } from './Identicon';
-import { PqcBadge } from '@/components/PqcBadge';
+/**
+ * CertCard — 3면 스와이프 인증서 카드
+ *
+ * 면 0: 앞면 (비주얼, Identicon, 이름, 유효기간)
+ * 면 1: 상세 (이메일, 핑거프린트, 시리얼, PEM 복사/내보내기)
+ * 면 2: 설정 (잠금해제, 생체인증, PIN, 삭제)
+ *
+ * 전환: Framer Motion 수평 슬라이드 + 드래그 제스처
+ */
+import { useState, useCallback } from 'react';
+import { motion, AnimatePresence, type PanInfo } from 'framer-motion';
+import { CardFaceFront } from './CardFaceFront';
+import { CardFaceDetail } from './CardFaceDetail';
+import { CardFaceSettings } from './CardFaceSettings';
 import type { StoredCertificate } from '@/lib/crypto/key-manager';
 import { toast } from 'sonner';
 
-interface CertCardProps {
+export interface CertCardProps {
   cert: StoredCertificate;
+  identityId: string;
   identityName: string;
-  isActive?: boolean;
-  pqcEnabled?: boolean;
-  onExport?: () => void;
+  isActive: boolean;
+  pqcEnabled: boolean;
+
+  // 생체/PIN 상태
+  biometricSupported: boolean;
+  hasBiometric: boolean;
+  hasPin: boolean;
+
+  // 액션 핸들러
+  onRegisterBiometric: (pw: string) => Promise<void>;
+  onRemoveBiometric: () => void;
+  onRegisterPin: (pw: string, pin: string) => Promise<void>;
+  onRemovePin: () => void;
+  onUnlock: (pw: string) => void;
+  onExportCert: () => void;
+  onDelete: () => void;
+
+  initialFace?: 0 | 1 | 2;
 }
 
-export function CertCard({ cert, identityName, isActive, pqcEnabled, onExport }: CertCardProps) {
-  const days = Math.max(0, Math.floor((cert.notAfter - Date.now()) / 86400000));
-  const expired = cert.notAfter < Date.now();
-  const formatDate = (ts: number) => new Date(ts).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+const FACE_LABELS = ['앞면', '상세 정보', '설정'] as const;
 
-  const buildFullPem = async (): Promise<string> => {
+export function CertCard(props: CertCardProps) {
+  const {
+    cert, identityId, identityName, isActive, pqcEnabled,
+    biometricSupported, hasBiometric, hasPin,
+    onRegisterBiometric, onRemoveBiometric,
+    onRegisterPin, onRemovePin,
+    onUnlock, onExportCert, onDelete,
+    initialFace = 0,
+  } = props;
+
+  const [face, setFace] = useState<0 | 1 | 2>(initialFace);
+  const [dir, setDir] = useState(0);
+
+  const goTo = useCallback((next: 0 | 1 | 2) => {
+    setDir(next > face ? 1 : -1);
+    setFace(next);
+  }, [face]);
+
+  const handleDragEnd = useCallback((_: unknown, info: PanInfo) => {
+    if (info.offset.x < -50 && face < 2) goTo((face + 1) as 1 | 2);
+    if (info.offset.x > 50 && face > 0) goTo((face - 1) as 0 | 1);
+  }, [face, goTo]);
+
+  // PEM 복사
+  const handleCopyPem = useCallback(async () => {
     let pem = `# PKIZIP Certificate Bundle\n# Subject: ${cert.commonName} <${cert.email}>\n# Date: ${new Date().toISOString()}\n\n`;
     pem += `# === Classic Certificate (ECDSA P-256) ===\n`;
     pem += cert.pemCertificate + '\n\n';
 
-    // PQC 번들에서 ML-KEM, ML-DSA 인증서 가져오기
     if (pqcEnabled) {
       try {
         const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
         const info = await PQCKeystore.getInfo('default');
-        console.log('[PKIZIP] PQC 번들 info:', info);
-
         if (info?.certificates) {
           if (info.certificates.kem) {
             pem += `# === ML-KEM-1024 Certificate (FIPS 203, RFC 9935) ===\n`;
-            pem += `# keyUsage: keyEncipherment\n`;
             pem += info.certificates.kem + '\n\n';
           }
           if (info.certificates.dsa) {
             pem += `# === ML-DSA-87 Certificate (FIPS 204, RFC 9881) ===\n`;
-            pem += `# keyUsage: digitalSignature, nonRepudiation\n`;
             pem += info.certificates.dsa + '\n\n';
           }
           if (info.certificates.ecc) {
             pem += `# === secp256k1 Certificate ===\n`;
-            pem += `# keyUsage: digitalSignature\n`;
             pem += info.certificates.ecc + '\n\n';
           }
           pem += `# PQC Key ID: ${info.kemKeyId || 'N/A'}\n`;
-          pem += `# Mode: ${info.mode || 'full'}\n`;
-        } else {
-          pem += `# PQC 번들이 없습니다. 새 니모닉 생성 시 PQC 활성화 상태에서 생성하세요.\n`;
         }
-      } catch (err) {
-        console.warn('[PKIZIP] PQC 인증서 로드 실패:', err);
+      } catch {
         pem += `# PQC 인증서 로드 실패\n`;
       }
     }
 
-    return pem;
-  };
-
-  const handleCopyPem = async () => {
-    const pem = await buildFullPem();
     navigator.clipboard.writeText(pem);
-    toast.success(pqcEnabled ? '인증서 번들 복사됨 (Classic + PQC 정보)' : 'PEM 인증서 복사됨');
-  };
+    toast.success(pqcEnabled ? '인증서 번들 복사됨 (Classic + PQC)' : 'PEM 인증서 복사됨');
+  }, [cert, pqcEnabled]);
 
-  const handleExport = async () => {
-    if (onExport) { onExport(); return; }
-    const pem = await buildFullPem();
+  // PEM 내보내기
+  const handleExport = useCallback(async () => {
+    let pem = cert.pemCertificate;
+    if (pqcEnabled) {
+      try {
+        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+        const info = await PQCKeystore.getInfo('default');
+        if (info?.certificates) {
+          if (info.certificates.kem) pem += '\n' + info.certificates.kem;
+          if (info.certificates.dsa) pem += '\n' + info.certificates.dsa;
+          if (info.certificates.ecc) pem += '\n' + info.certificates.ecc;
+        }
+      } catch { /* ignore */ }
+    }
     const blob = new Blob([pem], { type: 'application/x-pem-file' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${cert.commonName.replace(/\s/g, '_')}_certs.pem`;
     a.click();
     toast.success(pqcEnabled ? '인증서 번들 내보내기 완료' : '인증서 내보내기 완료');
+  }, [cert, pqcEnabled]);
+
+  // 현재 면 렌더
+  const renderFace = () => {
+    switch (face) {
+      case 0:
+        return (
+          <CardFaceFront
+            cert={cert}
+            identityName={identityName}
+            isActive={isActive}
+            pqcEnabled={pqcEnabled}
+          />
+        );
+      case 1:
+        return (
+          <CardFaceDetail
+            cert={cert}
+            pqcEnabled={pqcEnabled}
+            onCopyPem={handleCopyPem}
+            onExport={handleExport}
+          />
+        );
+      case 2:
+        return (
+          <CardFaceSettings
+            identityId={identityId}
+            identityName={identityName}
+            signingFingerprint={cert.fingerprint}
+            isActive={isActive}
+            biometricSupported={biometricSupported}
+            hasBiometric={hasBiometric}
+            hasPin={hasPin}
+            onRegisterBiometric={onRegisterBiometric}
+            onRemoveBiometric={onRemoveBiometric}
+            onRegisterPin={onRegisterPin}
+            onRemovePin={onRemovePin}
+            onUnlock={onUnlock}
+            onExportCert={onExportCert}
+            onDelete={onDelete}
+          />
+        );
+    }
   };
 
   return (
-    <motion.div
-      layout
-      layoutId={`cert-${cert.fingerprint}`}
+    <div
       className="rounded-2xl overflow-hidden shadow-lg"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      role="region"
+      aria-label={`인증서 카드, 현재 ${FACE_LABELS[face]}`}
     >
-      {/* 상단: 카드 비주얼 */}
-      <div className={`p-5 text-white relative ${
-        isActive
-          ? 'bg-gradient-to-br from-[#1DC078] to-[#0f9d58]'
-          : 'bg-gradient-to-br from-zinc-600 to-zinc-700'
-      }`}>
-        {/* 헤더 라인 */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-medium opacity-80">인증서</span>
-            <PqcBadge pqc={!!pqcEnabled} size="sm" />
-          </div>
-          <div className="flex items-center gap-1.5">
-            {isActive && (
-              <span className="text-[10px] bg-white/25 px-2.5 py-0.5 rounded-full font-medium">활성</span>
-            )}
-          </div>
-        </div>
-
-        {/* 중앙: 아바타/로고 + 이름 */}
-        <div className="flex items-center gap-4 my-4">
-          <div className="w-24 h-24 rounded-xl bg-white shrink-0 overflow-hidden flex items-center justify-center">
-            {cert.logotype ? (
-              <img
-                src={cert.logotype}
-                alt=""
-                className="w-full h-full object-cover"
-                style={{ aspectRatio: '1/1' }}
-              />
-            ) : (
-              <Identicon value={cert.fingerprint} size={96} />
-            )}
-          </div>
-          <div className="flex-1 min-w-0 text-right">
-            <div className="text-2xl font-bold tracking-wide truncate">{cert.commonName}</div>
-            <div className="text-xs opacity-70 mt-0.5">{identityName}</div>
-          </div>
-        </div>
-
-        {/* 하단 라인 */}
-        <div className="flex items-end justify-between mt-2">
-          <div className="text-[10px] opacity-60 space-y-0.5">
-            <div className="flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" /> PKIZIP 자체서명 인증서
-            </div>
-            <div>{formatDate(cert.notAfter)} 까지</div>
-          </div>
-          <div className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-            expired ? 'bg-red-500/40' : days < 30 ? 'bg-amber-500/40' : 'bg-white/20'
-          }`}>
-            {expired ? '만료됨' : `${days}일 남음`}
-          </div>
-        </div>
+      {/* 카드 면 영역 */}
+      <div className="overflow-hidden">
+        <AnimatePresence initial={false} custom={dir} mode="wait">
+          <motion.div
+            key={face}
+            custom={dir}
+            variants={{
+              enter: (d: number) => ({ x: d > 0 ? 300 : -300, opacity: 0 }),
+              center: { x: 0, opacity: 1 },
+              exit: (d: number) => ({ x: d > 0 ? -300 : 300, opacity: 0 }),
+            }}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ type: 'spring' as const, stiffness: 300, damping: 30 }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.15}
+            onDragEnd={handleDragEnd}
+            style={{ touchAction: 'pan-y' }}
+          >
+            {renderFace()}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* 하단: 상세 정보 (항상 표시) */}
-      <div className="bg-white px-5 py-4 space-y-2.5">
-        <Row icon={<Mail className="w-3.5 h-3.5" />} label="이메일" value={cert.email} />
-        <div className="flex items-center justify-between gap-2 text-sm">
-          <span className="flex items-center gap-1.5 text-zinc-500 shrink-0 text-xs"><Hash className="w-3.5 h-3.5" /> 핑거프린트</span>
-          <span className="flex items-center gap-1.5 text-right">
-            <span className="text-xs font-mono truncate max-w-[180px] text-zinc-800" title={`0x${cert.fingerprint}`}>0x{cert.fingerprint}</span>
-            {pqcEnabled && <span className="text-[8px] bg-violet-100 text-violet-600 px-1 py-0.5 rounded font-bold shrink-0">ML-KEM</span>}
-            {pqcEnabled && <span className="text-[8px] bg-violet-100 text-violet-600 px-1 py-0.5 rounded font-bold shrink-0">ML-DSA</span>}
-          </span>
-        </div>
-        <Row icon={<Calendar className="w-3.5 h-3.5" />} label="발급일" value={formatDate(cert.notBefore)} />
-        <Row icon={<Calendar className="w-3.5 h-3.5" />} label="만료일" value={formatDate(cert.notAfter)} />
-        <Row icon={<Hash className="w-3.5 h-3.5" />} label="시리얼" value={cert.serialNumber} mono small />
-
-        {/* 액션 버튼 */}
-        <div className="flex gap-2 pt-2">
-          <button onClick={handleCopyPem}
-            className="flex-1 flex items-center justify-center gap-1.5 text-xs border border-zinc-200 rounded-xl py-2 text-zinc-600 hover:bg-zinc-50 transition-colors">
-            <Copy className="w-3 h-3" /> PEM 복사
-          </button>
-          <button onClick={handleExport}
-            className="flex-1 flex items-center justify-center gap-1.5 text-xs border border-zinc-200 rounded-xl py-2 text-zinc-600 hover:bg-zinc-50 transition-colors">
-            <Download className="w-3 h-3" /> 내보내기
-          </button>
-        </div>
+      {/* 인디케이터 도트 */}
+      <div className="flex justify-center gap-2 py-2.5 bg-zinc-50">
+        {([0, 1, 2] as const).map(i => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            aria-label={FACE_LABELS[i]}
+            tabIndex={0}
+            className={`h-1.5 rounded-full transition-all duration-200 ${
+              face === i
+                ? 'bg-[#1DC078] w-4'
+                : 'bg-zinc-300 w-1.5 hover:bg-zinc-400'
+            }`}
+          />
+        ))}
       </div>
-    </motion.div>
-  );
-}
-
-function Row({ icon, label, value, mono, small }: {
-  icon: React.ReactNode; label: string; value: string; mono?: boolean; small?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2 text-sm">
-      <span className="flex items-center gap-1.5 text-zinc-500 shrink-0 text-xs">{icon} {label}</span>
-      <span className={`text-right truncate max-w-[220px] text-zinc-800 ${mono ? 'font-mono' : ''} ${small ? 'text-[9px]' : 'text-xs'}`}
-        title={value}>{value}</span>
     </div>
   );
 }

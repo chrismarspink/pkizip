@@ -402,7 +402,7 @@ export function CreatePage() {
 
             <div className="bg-white border border-zinc-200 rounded-xl p-3 mt-3 text-xs text-zinc-600">
               생성 타입: <span className="font-bold text-zinc-800">{cmsType}Message</span>
-              <PqcBadge pqc={pqcConfig.kemEnabled || pqcConfig.dsaEnabled} size="sm" />
+              {(options.sign || options.enveloped) && <PqcBadge pqc={pqcConfig.kemEnabled || pqcConfig.dsaEnabled} size="sm" />}
             </div>
 
             {/* 키 잠금 해제 인라인 */}
@@ -522,10 +522,12 @@ export function CreatePage() {
               </div>
               <div className="flex justify-between"><span className="text-zinc-500">크기</span><span>{formatSize(resultData.length)}</span></div>
               <div className="flex justify-between"><span className="text-zinc-500">파일 수</span><span>{files.length}개</span></div>
-              <div className="flex justify-between items-center">
-                <span className="text-zinc-500">보호</span>
-                <PqcBadge pqc={pqcConfig.kemEnabled || pqcConfig.dsaEnabled} size="md" />
-              </div>
+              {(options.sign || options.enveloped) && (
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500">보호</span>
+                  <PqcBadge pqc={pqcConfig.kemEnabled || pqcConfig.dsaEnabled} size="md" />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 justify-center">

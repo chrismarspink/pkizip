@@ -36,6 +36,17 @@ export interface PkiHeader {
   createdAt: number;
   creatorFingerprint?: string;
   files: PkiFileInfo[];
+  /** 압축 메타 (v3+, RFC 3274 호환) */
+  compression?: {
+    /** 압축 방법: zlib (단일파일, RFC 3274) | zip (다중파일, PKWARE APPNOTE) */
+    method: 'zlib' | 'zip';
+    /** CMS AlgorithmIdentifier OID (RFC 3274 id-alg-zlibCompress) */
+    oid: string;
+    /** 파일 수 */
+    entries: number;
+    /** 원본 총 바이트 */
+    originalSize: number;
+  };
   encryption?: {
     algorithm: 'AES-256-GCM';
     iv: string;               // Base64
