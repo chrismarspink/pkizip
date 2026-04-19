@@ -135,6 +135,9 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
           console.log('[PKIZIP] PQC 번들 생성됨, 인증서:', Object.keys(pqcBundle.data.certificates || {}));
           await PQCKeystore.save(pqcBundle, password, 'default');
           console.log('[PKIZIP] PQC 번들 IndexedDB 저장 완료. KeyId:', pqcBundle.getPqcKeyId()?.slice(0, 16));
+          // 저장 검증
+          const verify = await PQCKeystore.getInfo('default');
+          console.log('[PKIZIP] PQC 저장 검증:', verify ? { hasCerts: !!verify.certificates, certKeys: Object.keys(verify.certificates || {}), kemKeyId: verify.kemKeyId?.slice(0, 16) } : 'FAILED - null');
         } else {
           console.log('[PKIZIP] PQC 비활성 — 번들 생성 스킵');
         }

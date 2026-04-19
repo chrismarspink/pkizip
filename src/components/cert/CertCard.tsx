@@ -73,7 +73,17 @@ export function CertCard(props: CertCardProps) {
     if (pqcEnabled) {
       try {
         const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
-        const info = await PQCKeystore.getInfo('default');
+        // 번들 ID 'default'로 조회 시도, 없으면 전체 DB 스캔
+        let info = await PQCKeystore.getInfo('default');
+        if (!info) {
+          // DB에 다른 번들 ID로 저장되었을 수 있음 — exportJSON으로 전체 확인
+          try {
+            const json = await PQCKeystore.exportJSON('default');
+            console.log('[PKIZIP] PEM복사 - exportJSON 시도:', json ? 'exists' : 'null');
+          } catch {
+            console.log('[PKIZIP] PEM복사 - DB에 default 번들 없음');
+          }
+        }
         console.log('[PKIZIP] PEM복사 - PQC getInfo 결과:', info ? { certificates: !!info.certificates, kemKeyId: info.kemKeyId?.slice(0, 16), keys: info.certificates ? Object.keys(info.certificates) : 'none' } : 'null');
 
         if (info?.certificates) {
