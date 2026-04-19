@@ -16,7 +16,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Download, Image as ImageIcon, RotateCcw } from 'lucide-react';
 
 /** 카드 색상 프리셋 */
-const CARD_COLORS = [
+export const CARD_COLORS = [
   { id: 'navy',    label: 'Navy',    bg: 'linear-gradient(135deg, #175DDC, #0C3276)' },
   { id: 'violet',  label: 'Violet',  bg: 'linear-gradient(135deg, #7C3AED, #4C1D95)' },
   { id: 'teal',    label: 'Teal',    bg: 'linear-gradient(135deg, #0D9488, #134E4A)' },
@@ -53,6 +53,10 @@ interface LogoCropProps {
   onCropComplete: (dataUrl: string) => void;
   cardColor?: CardColorId;
   onCardColorChange?: (color: CardColorId) => void;
+  /** 미리보기에 표시할 이름 */
+  previewName?: string;
+  /** 미리보기에 표시할 이메일 */
+  previewEmail?: string;
 }
 
 interface CropBox { x: number; y: number; w: number; h: number; }
@@ -63,7 +67,7 @@ const CANVAS_H = 320;
 const HANDLE = 10;
 const MIN_SIZE = 20;
 
-export function LogoCrop({ onCropComplete, cardColor = DEFAULT_CARD_COLOR, onCardColorChange }: LogoCropProps) {
+export function LogoCrop({ onCropComplete, cardColor = DEFAULT_CARD_COLOR, onCardColorChange, previewName, previewEmail }: LogoCropProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -440,7 +444,7 @@ export function LogoCrop({ onCropComplete, cardColor = DEFAULT_CARD_COLOR, onCar
                   {previewSize < 64 * 1024 ? ' ✓ 64KB 이하' : ' ⚠ 64KB 초과'}
                 </span>
               </div>
-              <PreviewCard logoUrl={previewUrl} background={getCardBackground(cardColor)} />
+              <PreviewCard logoUrl={previewUrl} background={getCardBackground(cardColor)} name={previewName} email={previewEmail} />
               {/* 컬러 피커 */}
               <CardColorPicker cardColor={cardColor} onChange={onCardColorChange} />
             </div>
@@ -520,7 +524,13 @@ function CardColorPicker({ cardColor, onChange }: { cardColor: string; onChange?
 }
 
 // === 인증서 카드 미리보기 ===
-function PreviewCard({ logoUrl, background }: { logoUrl: string; background?: string }) {
+function PreviewCard({ logoUrl, background, name, email }: {
+  logoUrl: string; background?: string; name?: string; email?: string;
+}) {
+  const validUntil = new Date();
+  validUntil.setFullYear(validUntil.getFullYear() + 10);
+  const dateStr = validUntil.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
   return (
     <div
       className="relative overflow-hidden"
@@ -531,25 +541,19 @@ function PreviewCard({ logoUrl, background }: { logoUrl: string; background?: st
       }}
     >
       {/* 로고 영역: 좌상단 */}
-      <div
-        className="absolute top-3 left-3 flex items-center"
-        style={{ height: 22, maxWidth: 80 }}
-      >
-        <img
-          src={logoUrl}
-          alt=""
-          style={{
-            maxHeight: 22, maxWidth: 80, objectFit: 'contain',
-            filter: 'brightness(0) invert(1)',
-          }}
-        />
+      <div className="absolute top-3 left-3 flex items-center" style={{ height: 22, maxWidth: 80 }}>
+        <img src={logoUrl} alt="" style={{ maxHeight: 22, maxWidth: 80, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
       </div>
-
-      {/* 예시 콘텐츠 */}
+      {/* 활성 배지 */}
+      <div className="absolute top-3 right-3">
+        <span className="text-[9px] bg-white/25 px-2 py-0.5 rounded-full font-medium">활성</span>
+      </div>
+      {/* 콘텐츠 */}
       <div className="absolute inset-0 p-4 flex flex-col justify-end">
-        <div className="text-xs opacity-80">인증서</div>
-        <div className="text-xl font-bold mt-1">Sample Name</div>
-        <div className="text-[10px] opacity-60 mt-1">2036.04.15 까지</div>
+        <div className="text-[10px] opacity-70">PKIZIP 자체서명 인증서</div>
+        <div className="text-xl font-bold mt-0.5 truncate">{name || 'Sample Name'}</div>
+        {email && <div className="text-[10px] opacity-60 truncate">{email}</div>}
+        <div className="text-[10px] opacity-50 mt-1">{dateStr} 까지</div>
       </div>
     </div>
   );

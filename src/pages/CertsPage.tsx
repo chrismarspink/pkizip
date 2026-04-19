@@ -15,7 +15,7 @@ import type { CertCardProps } from '@/components/cert/CertCard';
 import {
   getAllIdentityMetas, getAllCertificates, getActiveIdentityId,
   getAllKeyRingEntries, loadIdentitySeed, deleteIdentity,
-  setActiveIdentityId,
+  setActiveIdentityId, saveCertificate,
   type StoredCertificate, type EncryptedIdentity, type PublicKeyEntry,
 } from '@/lib/crypto/key-manager';
 import { deriveKeyIdentity } from '@/lib/crypto/hd-key';
@@ -199,6 +199,12 @@ export function CertsPage() {
         onRemovePin: () => handleRemovePin(m.id),
         onUnlock: (pw: string) => handleUnlock(m.id, pw),
         onDelete: () => handleDelete(m.id),
+        onCardColorChange: async (color: string) => {
+          const updated = { ...cert, cardColor: color };
+          await saveCertificate(updated);
+          // 로컬 상태 갱신
+          setCerts(prev => { const next = new Map(prev); next.set(cert.fingerprint, updated); return next; });
+        },
       } satisfies Omit<CertCardProps, 'initialFace'>;
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);

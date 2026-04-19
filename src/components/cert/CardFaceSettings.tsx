@@ -3,7 +3,8 @@
  * 생체/PIN/삭제
  */
 import { useState } from 'react';
-import { Key, Fingerprint, Trash2 } from 'lucide-react';
+import { Key, Fingerprint, Trash2, Palette } from 'lucide-react';
+import { CARD_COLORS, getCardBackground, type CardColorId } from '@/components/LogoCrop';
 
 interface CardFaceSettingsProps {
   identityId: string;
@@ -13,12 +14,14 @@ interface CardFaceSettingsProps {
   biometricSupported: boolean;
   hasBiometric: boolean;
   hasPin: boolean;
+  cardColor?: string;
   onRegisterBiometric: (pw: string) => void;
   onRemoveBiometric: () => void;
   onRegisterPin: (pw: string, pin: string) => void;
   onRemovePin: () => void;
   onUnlock: (pw: string) => void;
   onDelete: () => void;
+  onCardColorChange?: (color: string) => void;
 }
 
 export function CardFaceSettings({
@@ -35,6 +38,8 @@ export function CardFaceSettings({
   onRemovePin,
   onUnlock,
   onDelete,
+  cardColor,
+  onCardColorChange,
 }: CardFaceSettingsProps) {
   const [unlockPw, setUnlockPw] = useState('');
   const [showUnlock, setShowUnlock] = useState(false);
@@ -156,7 +161,20 @@ export function CardFaceSettings({
         )}
       </div>
 
-      {/* 하단 액션 (인증서 다운로드는 면 1 "내보내기"와 중복이므로 삭제만 남김) */}
+      {/* 카드 컬러 */}
+      <div className="py-2 border-t border-zinc-100">
+        <p className="text-[10px] text-zinc-400 mb-1.5 flex items-center gap-1"><Palette className="w-3 h-3" /> 카드 컬러</p>
+        <div className="flex gap-1.5 flex-wrap">
+          {CARD_COLORS.map(c => (
+            <button key={c.id} onClick={() => onCardColorChange?.(c.id)} title={c.label}
+              className={`w-6 h-6 rounded-md border-2 transition-all ${
+                cardColor === c.id ? 'border-zinc-800 scale-110' : 'border-transparent hover:border-zinc-300'
+              }`} style={{ background: c.bg }} />
+          ))}
+        </div>
+      </div>
+
+      {/* 하단 액션 */}
       <div className="flex gap-2 pt-3 mt-auto border-t border-zinc-200">
         {deleteConfirm ? (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2">

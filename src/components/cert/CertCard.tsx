@@ -34,6 +34,7 @@ export interface CertCardProps {
   onRemovePin: () => void;
   onUnlock: (pw: string) => void;
   onDelete: () => void;
+  onCardColorChange?: (color: string) => void;
 
   initialFace?: 0 | 1 | 2;
 }
@@ -46,7 +47,7 @@ export function CertCard(props: CertCardProps) {
     biometricSupported, hasBiometric, hasPin,
     onRegisterBiometric, onRemoveBiometric,
     onRegisterPin, onRemovePin,
-    onUnlock, onDelete,
+    onUnlock, onDelete, onCardColorChange,
     initialFace = 0,
   } = props;
 
@@ -137,6 +138,8 @@ export function CertCard(props: CertCardProps) {
             onRemovePin={onRemovePin}
             onUnlock={onUnlock}
             onDelete={onDelete}
+            cardColor={cert.cardColor}
+            onCardColorChange={onCardColorChange}
           />
         );
     }

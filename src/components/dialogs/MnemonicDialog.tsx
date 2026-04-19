@@ -340,6 +340,8 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
               onCropComplete={(dataUrl) => setLogotype(dataUrl)}
               cardColor={cardColor as any}
               onCardColorChange={setCardColor}
+              previewName={commonName || undefined}
+              previewEmail={email || undefined}
             />
             <div className="flex justify-end mt-4 pt-4 border-t border-zinc-100">
               <Btn onClick={() => setShowLogoCrop(false)}>완료</Btn>
