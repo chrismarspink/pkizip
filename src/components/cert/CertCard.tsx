@@ -21,7 +21,6 @@ export interface CertCardProps {
   identityName: string;
   isActive: boolean;
   pqcEnabled: boolean;
-  hasPqcBundle: boolean;
 
   // 생체/PIN 상태
   biometricSupported: boolean;
@@ -36,7 +35,6 @@ export interface CertCardProps {
   onUnlock: (pw: string) => void;
   onExportCert: () => void;
   onDelete: () => void;
-  onPqcBundleCreated: () => void;
 
   initialFace?: 0 | 1 | 2;
 }
@@ -45,11 +43,11 @@ const FACE_LABELS = ['앞면', '상세 정보', '설정'] as const;
 
 export function CertCard(props: CertCardProps) {
   const {
-    cert, identityId, identityName, isActive, pqcEnabled, hasPqcBundle,
+    cert, identityId, identityName, isActive, pqcEnabled,
     biometricSupported, hasBiometric, hasPin,
     onRegisterBiometric, onRemoveBiometric,
     onRegisterPin, onRemovePin,
-    onUnlock, onExportCert, onDelete, onPqcBundleCreated,
+    onUnlock, onExportCert, onDelete,
     initialFace = 0,
   } = props;
 
@@ -66,91 +64,53 @@ export function CertCard(props: CertCardProps) {
     if (info.offset.x > 50 && face > 0) goTo((face - 1) as 0 | 1);
   }, [face, goTo]);
 
-  // PEM 복사
-  const handleCopyPem = useCallback(async () => {
+  // PEM 빌드 (복사/내보내기 공통)
+  const buildFullPem = useCallback(() => {
     let pem = `# PKIZIP Certificate Bundle\n# Subject: ${cert.commonName} <${cert.email}>\n# Date: ${new Date().toISOString()}\n\n`;
     pem += `# === Classic Certificate (ECDSA P-256) ===\n`;
     pem += cert.pemCertificate + '\n\n';
 
-    if (pqcEnabled) {
-      try {
-        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
-        // 번들 ID 'default'로 조회 시도, 없으면 전체 DB 스캔
-        let info = await PQCKeystore.getInfo('default');
-        if (!info) {
-          // DB에 다른 번들 ID로 저장되었을 수 있음 — exportJSON으로 전체 확인
-          try {
-            const json = await PQCKeystore.exportJSON('default');
-            console.log('[PKIZIP] PEM복사 - exportJSON 시도:', json ? 'exists' : 'null');
-          } catch {
-            console.log('[PKIZIP] PEM복사 - DB에 default 번들 없음');
-          }
-        }
-        console.log('[PKIZIP] PEM복사 - PQC getInfo 결과:', info ? { certificates: !!info.certificates, kemKeyId: info.kemKeyId?.slice(0, 16), keys: info.certificates ? Object.keys(info.certificates) : 'none' } : 'null');
-
-        if (info?.certificates) {
-          const c = info.certificates;
-          if (c.kem) {
-            pem += `# === ML-KEM-1024 Certificate (FIPS 203, RFC 9935) ===\n`;
-            pem += `# keyUsage: keyEncipherment\n`;
-            pem += c.kem + '\n\n';
-          }
-          if (c.dsa) {
-            pem += `# === ML-DSA-87 Certificate (FIPS 204, RFC 9881) ===\n`;
-            pem += `# keyUsage: digitalSignature, nonRepudiation\n`;
-            pem += c.dsa + '\n\n';
-          }
-          if (c.ecc) {
-            pem += `# === secp256k1 Certificate ===\n`;
-            pem += `# keyUsage: digitalSignature\n`;
-            pem += c.ecc + '\n\n';
-          }
-          pem += `# PQC Key ID: ${info.kemKeyId || 'N/A'}\n`;
-          pem += `# Mode: ${info.mode || 'full'}\n`;
-        } else {
-          console.warn('[PKIZIP] PEM복사 - PQC 번들에 인증서 없음. 니모닉 재생성 필요.');
-          pem += `# PQC 번들에 인증서가 없습니다. PQC 활성 상태에서 니모닉을 재생성하세요.\n`;
-        }
-      } catch (err) {
-        console.warn('[PKIZIP] PEM복사 - PQC 로드 실패:', err);
-        pem += `# PQC 인증서 로드 실패\n`;
+    const c = cert.pqcCertificates;
+    if (c) {
+      if (c.kem) {
+        pem += `# === ML-KEM-1024 Certificate (FIPS 203, RFC 9935) ===\n`;
+        pem += `# keyUsage: keyEncipherment\n`;
+        pem += c.kem + '\n\n';
       }
+      if (c.dsa) {
+        pem += `# === ML-DSA-87 Certificate (FIPS 204, RFC 9881) ===\n`;
+        pem += `# keyUsage: digitalSignature, nonRepudiation\n`;
+        pem += c.dsa + '\n\n';
+      }
+      if (c.ecc) {
+        pem += `# === secp256k1 Certificate ===\n`;
+        pem += `# keyUsage: digitalSignature\n`;
+        pem += c.ecc + '\n\n';
+      }
+      if (cert.pqcKeyId) pem += `# PQC Key ID: ${cert.pqcKeyId}\n`;
     }
 
+    return pem;
+  }, [cert]);
+
+  // PEM 복사
+  const handleCopyPem = useCallback(() => {
+    const pem = buildFullPem();
     navigator.clipboard.writeText(pem);
-    const certCount = (pem.match(/-----PKIZIP-CERT-/g) || []).length + (pem.match(/-----BEGIN CERTIFICATE-----/g) || []).length;
-    toast.success(certCount > 1 ? `인증서 번들 복사됨 (${certCount}개)` : 'PEM 인증서 복사됨');
-  }, [cert, pqcEnabled]);
+    const count = (pem.match(/-----PKIZIP-CERT-|-----BEGIN CERTIFICATE-----/g) || []).length;
+    toast.success(count > 1 ? `인증서 번들 복사됨 (${count}개)` : 'PEM 인증서 복사됨');
+  }, [buildFullPem]);
 
   // PEM 내보내기
-  const handleExport = useCallback(async () => {
-    let pem = `# PKIZIP Certificate Bundle\n# Subject: ${cert.commonName} <${cert.email}>\n# Date: ${new Date().toISOString()}\n\n`;
-    pem += `# === Classic Certificate (ECDSA P-256) ===\n`;
-    pem += cert.pemCertificate + '\n\n';
-
-    if (pqcEnabled) {
-      try {
-        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
-        const info = await PQCKeystore.getInfo('default');
-        if (info?.certificates) {
-          const c = info.certificates;
-          if (c.kem) pem += `# === ML-KEM-1024 Certificate ===\n` + c.kem + '\n\n';
-          if (c.dsa) pem += `# === ML-DSA-87 Certificate ===\n` + c.dsa + '\n\n';
-          if (c.ecc) pem += `# === secp256k1 Certificate ===\n` + c.ecc + '\n\n';
-          pem += `# PQC Key ID: ${info.kemKeyId || 'N/A'}\n`;
-        }
-      } catch (err) {
-        console.warn('[PKIZIP] 내보내기 PQC 로드 실패:', err);
-      }
-    }
-
+  const handleExport = useCallback(() => {
+    const pem = buildFullPem();
     const blob = new Blob([pem], { type: 'application/x-pem-file' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${cert.commonName.replace(/\s/g, '_')}_certs.pem`;
     a.click();
     toast.success('인증서 내보내기 완료');
-  }, [cert, pqcEnabled]);
+  }, [cert.commonName, buildFullPem]);
 
   // 현재 면 렌더
   const renderFace = () => {
@@ -183,8 +143,6 @@ export function CertCard(props: CertCardProps) {
             biometricSupported={biometricSupported}
             hasBiometric={hasBiometric}
             hasPin={hasPin}
-            pqcEnabled={pqcEnabled}
-            hasPqcBundle={hasPqcBundle}
             onRegisterBiometric={onRegisterBiometric}
             onRemoveBiometric={onRemoveBiometric}
             onRegisterPin={onRegisterPin}
@@ -192,7 +150,6 @@ export function CertCard(props: CertCardProps) {
             onUnlock={onUnlock}
             onExportCert={onExportCert}
             onDelete={onDelete}
-            onPqcBundleCreated={onPqcBundleCreated}
           />
         );
     }

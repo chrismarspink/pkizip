@@ -49,6 +49,13 @@ export interface StoredCertificate {
   pemCertificate: string;
   createdAt: number;
   logotype?: string;  // data URL (PNG) — 카드 로고
+  /** PQC 인증서 (공개 정보, 키 생성 시 항상 함께 생성) */
+  pqcCertificates?: {
+    kem?: string;   // ML-KEM-1024 PEM
+    dsa?: string;   // ML-DSA-87 PEM
+    ecc?: string;   // secp256k1 PEM
+  };
+  pqcKeyId?: string;
 }
 
 async function getDB(): Promise<IDBPDatabase> {

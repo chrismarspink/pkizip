@@ -1,10 +1,9 @@
 /**
  * CardFaceSettings — 인증서 카드 뒷면 2 (면 2)
- * 생체/PIN/삭제 + PQC 번들 생성
+ * 생체/PIN/삭제
  */
 import { useState } from 'react';
-import { Key, Fingerprint, Download, Trash2, Shield } from 'lucide-react';
-import { toast } from 'sonner';
+import { Key, Fingerprint, Download, Trash2 } from 'lucide-react';
 
 interface CardFaceSettingsProps {
   identityId: string;
@@ -14,8 +13,6 @@ interface CardFaceSettingsProps {
   biometricSupported: boolean;
   hasBiometric: boolean;
   hasPin: boolean;
-  pqcEnabled: boolean;
-  hasPqcBundle: boolean;
   onRegisterBiometric: (pw: string) => void;
   onRemoveBiometric: () => void;
   onRegisterPin: (pw: string, pin: string) => void;
@@ -23,7 +20,6 @@ interface CardFaceSettingsProps {
   onUnlock: (pw: string) => void;
   onExportCert: () => void;
   onDelete: () => void;
-  onPqcBundleCreated: () => void;
 }
 
 export function CardFaceSettings({
@@ -34,8 +30,6 @@ export function CardFaceSettings({
   biometricSupported,
   hasBiometric,
   hasPin,
-  pqcEnabled,
-  hasPqcBundle,
   onRegisterBiometric,
   onRemoveBiometric,
   onRegisterPin,
@@ -43,7 +37,6 @@ export function CardFaceSettings({
   onUnlock,
   onExportCert,
   onDelete,
-  onPqcBundleCreated,
 }: CardFaceSettingsProps) {
   const [unlockPw, setUnlockPw] = useState('');
   const [showUnlock, setShowUnlock] = useState(false);
@@ -56,12 +49,6 @@ export function CardFaceSettings({
   const [pinRegistering, setPinRegistering] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
-  // PQC 번들 생성
-  const [showPqcForm, setShowPqcForm] = useState(false);
-  const [pqcMnemonic, setPqcMnemonic] = useState('');
-  const [pqcPassword, setPqcPassword] = useState('');
-  const [pqcCreating, setPqcCreating] = useState(false);
-
   const handleBioSubmit = async () => {
     setBioRegistering(true);
     try { await onRegisterBiometric(bioRegPw); setShowBioReg(false); setBioRegPw(''); }
@@ -72,38 +59,6 @@ export function CardFaceSettings({
     setPinRegistering(true);
     try { await onRegisterPin(pinRegPw, pinValue); setShowPinReg(false); setPinRegPw(''); setPinValue(''); }
     finally { setPinRegistering(false); }
-  };
-
-  const handleCreatePqcBundle = async () => {
-    const words = pqcMnemonic.trim().toLowerCase().split(/\s+/);
-    if (words.length !== 12) { toast.error('니모닉은 12단어'); return; }
-    if (pqcPassword.length < 8) { toast.error('비밀번호 8자 이상'); return; }
-    setPqcCreating(true);
-    try {
-      const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
-      const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
-      const bundle = await PQCBundle.create({
-        mnemonic: pqcMnemonic.trim().toLowerCase(),
-        password: pqcPassword,
-        subject: { name: identityName, email: '' },
-        mode: 'full',
-      });
-      await PQCKeystore.save(bundle, pqcPassword, 'default');
-      const verify = await PQCKeystore.getInfo('default');
-      if (verify?.certificates) {
-        toast.success('PQC 번들 생성 완료 (ML-KEM + ML-DSA + secp256k1)');
-        setShowPqcForm(false);
-        setPqcMnemonic(''); setPqcPassword('');
-        onPqcBundleCreated();
-      } else {
-        toast.error('PQC 번들 저장 실패');
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'PQC 번들 생성 실패');
-      console.error('[PKIZIP] PQC 번들 수동 생성 실패:', err);
-    } finally {
-      setPqcCreating(false);
-    }
   };
 
   return (
@@ -194,47 +149,6 @@ export function CardFaceSettings({
           </button>
         )}
       </div>
-
-      {/* PQC 번들 생성 (활성인데 번들 없을 때) */}
-      {pqcEnabled && !hasPqcBundle && (
-        <div className="py-2 border-t border-zinc-100">
-          {showPqcForm ? (
-            <div className="space-y-2">
-              <p className="text-[10px] text-zinc-600">니모닉 12단어 + 키 비밀번호를 입력하면 PQC 번들을 생성합니다.</p>
-              <textarea
-                value={pqcMnemonic} onChange={e => setPqcMnemonic(e.target.value)}
-                placeholder="12단어 니모닉 (공백 구분)"
-                rows={2}
-                className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 resize-none"
-              />
-              <div className="flex gap-2">
-                <input type="password" value={pqcPassword} onChange={e => setPqcPassword(e.target.value)} placeholder="키 비밀번호"
-                  className="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
-                  onKeyDown={e => e.key === 'Enter' && handleCreatePqcBundle()} />
-                <button onClick={handleCreatePqcBundle} disabled={pqcCreating}
-                  className="bg-violet-600 text-white text-xs px-3 py-2 rounded-lg disabled:opacity-50">
-                  {pqcCreating ? '생성 중...' : 'PQC 생성'}
-                </button>
-                <button onClick={() => { setShowPqcForm(false); setPqcMnemonic(''); setPqcPassword(''); }} className="text-xs text-zinc-400">취소</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowPqcForm(true)}
-              className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 transition-colors">
-              <Shield className="w-3.5 h-3.5" /> PQC 번들 생성 (ML-KEM + ML-DSA)
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* PQC 번들 있음 표시 */}
-      {pqcEnabled && hasPqcBundle && (
-        <div className="py-2 border-t border-zinc-100">
-          <span className="flex items-center gap-1.5 text-xs text-violet-600 font-medium">
-            <Shield className="w-3.5 h-3.5" /> PQC 번들 활성 (ML-KEM + ML-DSA)
-          </span>
-        </div>
-      )}
 
       {/* 하단 액션 */}
       <div className="flex gap-2 pt-3 mt-auto border-t border-zinc-200">

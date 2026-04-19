@@ -83,6 +83,29 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         encryption: identity.encryptionKey.fingerprint,
       }, { commonName: commonName.trim(), email: email.trim() });
 
+      // PQC 번들 항상 생성 (설정 무관 — 인증서 3개 한 번에 생성)
+      let pqcCerts: { kem?: string; dsa?: string; ecc?: string } | undefined;
+      let pqcKeyId: string | undefined;
+      try {
+        const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
+        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+        const pqcBundle = await PQCBundle.create({
+          mnemonic, password,
+          subject: { name: commonName.trim(), email: email.trim() },
+          mode: 'full',
+        });
+        pqcCerts = pqcBundle.data.certificates;
+        pqcKeyId = pqcBundle.getPqcKeyId() ?? undefined;
+        console.log('[PKIZIP] PQC 인증서 생성:', Object.keys(pqcCerts || {}));
+
+        // PQC 개인키 저장 (암호화 운용시 필요)
+        await PQCKeystore.save(pqcBundle, password, 'default');
+        console.log('[PKIZIP] PQC 키 저장 완료. KeyId:', pqcKeyId?.slice(0, 16));
+      } catch (pqcErr) {
+        console.error('[PKIZIP] PQC 생성 실패 (classic 인증서는 정상):', pqcErr);
+      }
+
+      // 인증서 저장 (classic + PQC 인증서 한 번에)
       const storedCert: StoredCertificate = {
         fingerprint: identity.signingKey.fingerprint,
         commonName: commonName.trim(), email: email.trim(),
@@ -90,6 +113,8 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         notBefore: cert.notBefore.getTime(), notAfter: cert.notAfter.getTime(),
         pemCertificate: cert.pemCertificate, createdAt: Date.now(),
         logotype: logotype ?? undefined,
+        pqcCertificates: pqcCerts,
+        pqcKeyId,
       };
       await saveCertificate(storedCert);
 
@@ -117,33 +142,6 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         signingFingerprint: m.signingFingerprint, encryptionFingerprint: m.encryptionFingerprint,
         createdAt: m.createdAt,
       })));
-
-      // PQC 번들 생성 (PQC 설정 활성 시)
-      try {
-        const pqcCfg = useAppStore.getState().pqcConfig;
-        console.log('[PKIZIP] PQC 설정 확인:', JSON.stringify(pqcCfg));
-        if (pqcCfg.kemEnabled || pqcCfg.dsaEnabled) {
-          console.log('[PKIZIP] PQC 번들 생성 시작...');
-          const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
-          const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
-          console.log('[PKIZIP] PQC 모듈 import 완료');
-          const pqcBundle = await PQCBundle.create({
-            mnemonic, password,
-            subject: { name: commonName.trim(), email: email.trim() },
-            mode: 'full',
-          });
-          console.log('[PKIZIP] PQC 번들 생성됨, 인증서:', Object.keys(pqcBundle.data.certificates || {}));
-          await PQCKeystore.save(pqcBundle, password, 'default');
-          console.log('[PKIZIP] PQC 번들 IndexedDB 저장 완료. KeyId:', pqcBundle.getPqcKeyId()?.slice(0, 16));
-          // 저장 검증
-          const verify = await PQCKeystore.getInfo('default');
-          console.log('[PKIZIP] PQC 저장 검증:', verify ? { hasCerts: !!verify.certificates, certKeys: Object.keys(verify.certificates || {}), kemKeyId: verify.kemKeyId?.slice(0, 16) } : 'FAILED - null');
-        } else {
-          console.log('[PKIZIP] PQC 비활성 — 번들 생성 스킵');
-        }
-      } catch (pqcErr) {
-        console.error('[PKIZIP] PQC 번들 생성 실패:', pqcErr);
-      }
 
       setStep('done');
     } catch (err) {
