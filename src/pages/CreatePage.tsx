@@ -157,6 +157,26 @@ export function CreatePage() {
       const { loadIdentitySeed } = await import('@/lib/crypto/key-manager');
       const seed = await loadIdentitySeed(tid, unlockPw);
       await applyIdentity(seed);
+
+      // 비밀번호로 잠금 해제 성공 → PQC 인스턴스도 초기화
+      try {
+        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+        const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
+        const { PQCShield } = await import('@/lib/pqc/pqc-shield.js');
+        const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
+        const bundle = await PQCKeystore.load(unlockPw, 'default', { PQCBundleClass: PQCBundle });
+        useAppStore.getState().setPqcInstances(
+          PQCShield.fromBundle(bundle.getKEMKeyPair()),
+          PQCSigner.fromBundle(bundle.getDSAKeyPair()),
+        );
+        console.log('[PKIZIP] CreatePage: PQC 인스턴스 초기화 완료');
+      } catch (pqcErr) {
+        console.warn('[PKIZIP] CreatePage: PQC 초기화 실패:', pqcErr);
+        if (cryptoMode !== 'classic') {
+          toast.error('PQC 키 로드 실패 — Classic 모드로 전환하거나 니모닉을 재생성하세요.');
+        }
+      }
+
       return true;
     } catch {
       toast.error('비밀번호가 틀렸습니다.');
@@ -394,44 +414,42 @@ export function CreatePage() {
             <h2 className="text-lg font-bold mb-1">CMS 타입 선택</h2>
             <p className="text-sm text-zinc-500 mb-4">파일 보호 옵션을 선택하세요.</p>
 
-            <div className="space-y-3">
-              <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title="압축" desc="ZLIB/ZIP 압축" />
-              <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title="서명 (Signed)" desc="전자서명" disabled={!hasAnyIdentity} />
-              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#1DC078]" />} title="공개키 암호화 (Enveloped)" desc="수신자 공개키 + 서명" disabled={!hasAnyIdentity} />
-              <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title="비밀번호 암호화 (Encrypted)" desc="AES-256-GCM 비밀번호" />
+            {/* 암호 모드 선택 (최상단) */}
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 mb-3 space-y-2">
+              <label className="text-xs font-medium text-zinc-700">암호 알고리즘</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'classic', label: 'Classic', desc: 'ECDSA / ECDH', color: 'zinc' },
+                  { value: 'hybrid', label: 'Hybrid', desc: 'Classic + PQC', color: 'green' },
+                  { value: 'pqc-only', label: 'PQC Only', desc: 'ML-KEM / ML-DSA', color: 'violet' },
+                ] as const).map(m => {
+                  const selected = cryptoMode === m.value;
+                  return (
+                    <button key={m.value} onClick={() => setCryptoMode(m.value)}
+                      className={`text-left rounded-lg px-3 py-2.5 border-2 transition-all ${
+                        selected
+                          ? m.color === 'violet' ? 'border-violet-500 bg-violet-50'
+                          : m.color === 'green' ? 'border-[#1DC078] bg-[#1DC078]/5'
+                          : 'border-zinc-800 bg-zinc-50'
+                          : 'border-zinc-100 hover:border-zinc-300'
+                      }`}>
+                      <div className={`text-xs font-bold ${selected
+                        ? m.color === 'violet' ? 'text-violet-700' : m.color === 'green' ? 'text-[#1DC078]' : 'text-zinc-800'
+                        : 'text-zinc-500'
+                      }`}>{m.label}</div>
+                      <div className="text-[10px] text-zinc-400 mt-0.5">{m.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* 암호 모드 선택 (서명 또는 공개키 암호화 시) */}
-            {(options.sign || options.enveloped) && (
-              <div className="bg-white border border-zinc-200 rounded-xl p-4 mt-3 space-y-2">
-                <label className="text-xs font-medium text-zinc-700">암호 알고리즘</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    { value: 'classic', label: 'Classic', desc: 'ECDSA / ECDH (P-256)', color: 'zinc' },
-                    { value: 'hybrid', label: 'Hybrid', desc: 'Classic + PQC 병행', color: 'green' },
-                    { value: 'pqc-only', label: 'PQC Only', desc: 'ML-KEM / ML-DSA', color: 'violet' },
-                  ] as const).map(m => {
-                    const selected = cryptoMode === m.value;
-                    return (
-                      <button key={m.value} onClick={() => setCryptoMode(m.value)}
-                        className={`text-left rounded-lg px-3 py-2.5 border-2 transition-all ${
-                          selected
-                            ? m.color === 'violet' ? 'border-violet-500 bg-violet-50'
-                            : m.color === 'green' ? 'border-[#1DC078] bg-[#1DC078]/5'
-                            : 'border-zinc-800 bg-zinc-50'
-                            : 'border-zinc-100 hover:border-zinc-300'
-                        }`}>
-                        <div className={`text-xs font-bold ${selected
-                          ? m.color === 'violet' ? 'text-violet-700' : m.color === 'green' ? 'text-[#1DC078]' : 'text-zinc-800'
-                          : 'text-zinc-500'
-                        }`}>{m.label}</div>
-                        <div className="text-[10px] text-zinc-400 mt-0.5">{m.desc}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <div className="space-y-3">
+              <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title="압축" desc="ZLIB/ZIP 압축" />
+              <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title="서명 (Signed)" desc={cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명' : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명' : 'ECDSA P-256 전자서명'} disabled={!hasAnyIdentity} />
+              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#1DC078]" />} title="공개키 암호화 (Enveloped)" desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
+              <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title="비밀번호 암호화 (Encrypted)" desc="AES-256-GCM 비밀번호" />
+            </div>
 
             {/* 서명 인증서 선택 */}
             {(options.sign || options.enveloped) && identities.length > 0 && (
