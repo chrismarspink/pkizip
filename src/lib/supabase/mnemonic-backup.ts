@@ -21,7 +21,7 @@ async function deriveKey(password: string, salt: Uint8Array, usage: KeyUsage[]):
     'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 600_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' },
     km,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -54,7 +54,7 @@ export async function backupMnemonic(
       identity_id: identityId,
       encrypted_blob: toB64(new Uint8Array(ct)),
       kdf_salt: toB64(salt),
-      kdf_iterations: 600_000,
+      kdf_iterations: 100_000,
       iv: toB64(iv),
       hint: hint ?? null,
       updated_at: new Date().toISOString(),
