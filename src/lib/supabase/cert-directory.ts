@@ -29,8 +29,9 @@ export async function uploadCertBundle(bundle: {
   if (!/^[a-z0-9-]{3,32}$/.test(bundle.username)) {
     throw new Error('username은 소문자·숫자·하이픈 3~32자만 가능합니다');
   }
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('로그인 필요');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('로그인 필요');
+  const user = session.user;
 
   const { error } = await supabase.from('cert_bundles').upsert(
     { ...bundle, user_id: user.id, is_public: true, updated_at: new Date().toISOString() },
@@ -50,8 +51,9 @@ export async function getMyCertBundle(): Promise<CertBundle | null> {
 
 /** 인증서 번들 삭제 */
 export async function deleteCertBundle(): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('로그인 필요');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('로그인 필요');
+  const user = session.user;
   const { error } = await supabase.from('cert_bundles').delete().eq('user_id', user.id);
   if (error) throw new Error(`삭제 실패: ${error.message}`);
 }

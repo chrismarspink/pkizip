@@ -46,10 +46,11 @@ export async function backupMnemonic(
     key,
     new TextEncoder().encode(mnemonic),
   );
-  console.log('[PKIZIP-backup] encrypt 완료, getUser...');
+  console.log('[PKIZIP-backup] encrypt 완료, getSession...');
 
-  const { data: { user } } = await supabase.auth.getUser();
-  console.log('[PKIZIP-backup] getUser:', user?.id ?? 'null');
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
+  console.log('[PKIZIP-backup] session user:', user?.id ?? 'null');
   if (!user) throw new Error('로그인 필요');
 
   const { error } = await supabase.from('mnemonic_backups').upsert(
