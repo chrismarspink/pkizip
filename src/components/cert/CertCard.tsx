@@ -33,7 +33,6 @@ export interface CertCardProps {
   onRegisterPin: (pw: string, pin: string) => Promise<void>;
   onRemovePin: () => void;
   onUnlock: (pw: string) => void;
-  onExportCert: () => void;
   onDelete: () => void;
 
   initialFace?: 0 | 1 | 2;
@@ -47,7 +46,7 @@ export function CertCard(props: CertCardProps) {
     biometricSupported, hasBiometric, hasPin,
     onRegisterBiometric, onRemoveBiometric,
     onRegisterPin, onRemovePin,
-    onUnlock, onExportCert, onDelete,
+    onUnlock, onDelete,
     initialFace = 0,
   } = props;
 
@@ -137,7 +136,6 @@ export function CertCard(props: CertCardProps) {
             onRegisterPin={onRegisterPin}
             onRemovePin={onRemovePin}
             onUnlock={onUnlock}
-            onExportCert={onExportCert}
             onDelete={onDelete}
           />
         );

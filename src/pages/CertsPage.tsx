@@ -15,7 +15,7 @@ import type { CertCardProps } from '@/components/cert/CertCard';
 import {
   getAllIdentityMetas, getAllCertificates, getActiveIdentityId,
   getAllKeyRingEntries, loadIdentitySeed, deleteIdentity,
-  setActiveIdentityId, getCertificate,
+  setActiveIdentityId,
   type StoredCertificate, type EncryptedIdentity, type PublicKeyEntry,
 } from '@/lib/crypto/key-manager';
 import { deriveKeyIdentity } from '@/lib/crypto/hd-key';
@@ -132,21 +132,6 @@ export function CertsPage() {
     }
   }, [activeIdentityId, setKeyIdentity, storeSetActive]);
 
-  // ── 핸들러: 인증서 내보내기 ──
-  const handleExportCert = useCallback(async (fp: string) => {
-    try {
-      const cert = await getCertificate(fp);
-      if (!cert) { toast.error('인증서를 찾을 수 없습니다.'); return; }
-      const blob = new Blob([cert.pemCertificate], { type: 'application/x-pem-file' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${cert.commonName}_cert.pem`;
-      a.click();
-    } catch (err) {
-      toast.error(`인증서 내보내기 실패: ${err instanceof Error ? err.message : '오류'}`);
-    }
-  }, []);
-
   // ── 핸들러: 생체 인증 등록 ──
   const handleRegisterBio = useCallback(async (id: string, name: string, pw: string) => {
     try {
@@ -213,7 +198,6 @@ export function CertsPage() {
         onRegisterPin: (pw: string, pin: string) => handleRegisterPin(m.id, pw, pin),
         onRemovePin: () => handleRemovePin(m.id),
         onUnlock: (pw: string) => handleUnlock(m.id, pw),
-        onExportCert: () => handleExportCert(m.signingFingerprint),
         onDelete: () => handleDelete(m.id),
       } satisfies Omit<CertCardProps, 'initialFace'>;
     })
