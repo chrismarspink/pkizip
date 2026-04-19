@@ -49,7 +49,6 @@ BIP39 니모닉에서 키를 파생하고, NIST 양자 내성 암호(PQC)를 하
 | `@scure/bip32` | 2.x | BIP32 HD 키 파생 |
 | `@noble/curves` | 2.x | P-256 타원곡선 (ECDSA 서명, ECDH 키 합의) |
 | `@noble/hashes` | 2.x | SHA-256, SHA3-512, HKDF, PBKDF2 |
-| `@noble/secp256k1` | 2.x | secp256k1 키 파생 (블록체인 호환) |
 | `@noble/post-quantum` | 0.2 | ML-KEM-1024, ML-DSA-87 (PQC) |
 | `pkijs` | 3.x | X.509 인증서 생성/파싱 (ASN.1) |
 | `asn1js` | 3.x | ASN.1 DER 인코딩/디코딩 |
@@ -151,10 +150,10 @@ pkizip/
         └── pqc/                    양자 내성 암호 (PQC)
             ├── pqc-config.json     전역/인증서별 PQC 설정
             ├── pqc-banner.js       콘솔 배너 + pqcHeader 생성
-            ├── pqc-derive.js       니모닉 → 3벌 키 결정론적 도출
+            ├── pqc-derive.js       니모닉 → 2벌 PQC 키 결정론적 도출
             ├── pqc-shield.js       ML-KEM-1024 CEK 캡슐화 엔진
             ├── pqc-signer.js       ML-DSA-87 전자서명 엔진
-            ├── pqc-bundle.js       .pkizip 3-cert 번들 관리
+            ├── pqc-bundle.js       .pkizip 2-cert PQC 번들 관리
             ├── pqc-keystore.js     번들 IndexedDB 저장소
             ├── pqc-bridge.js       pki.js 투명 연동 레이어
             └── pqc-demo.js         통합 테스트 (10 시나리오)
@@ -187,8 +186,8 @@ pkizip/
 ```
 
 - 동일 니모닉 + 동일 패스워드 → 항상 동일 키 (결정론적)
-- secp256k1 경로는 블록체인 호환 (BIP44 이더리움)
 - PQC 경로는 PKIZIP 전용 (purpose 9000')
+- secp256k1 경로는 제거됨 (블록체인 호환 불필요)
 
 ### 4-3. 잠금 해제 경로 (3중)
 
@@ -200,6 +199,9 @@ pkizip/
 | PIN | PBKDF2-SHA256 (600,000회) + AES-256-GCM | 양호 |
 
 ### 4-4. 양자 내성 암호 (PQC)
+
+인증서 3개: ECDSA P-256 (classic, pkijs 생성), ML-KEM-1024, ML-DSA-87.
+PQC 번들은 ML-KEM-1024 + ML-DSA-87 2벌만 포함 (secp256k1 제거).
 
 | 알고리즘 | NIST 표준 | 용도 |
 |---------|----------|------|
@@ -352,13 +354,11 @@ PkiHeader의 `compression` 필드:
   "subject": { "name", "email" },
   "derivation": {
     "paths": {
-      "ecc": "m/44'/60'/0'/0/0",
       "kem": "m/9000'/1024'/0'/0",
       "dsa": "m/9000'/87'/0'/0"
     }
   },
   "certificates": {
-    "ecc": "<PEM secp256k1>",
     "kem": "<PEM ML-KEM-1024, RFC 9935>",
     "dsa": "<PEM ML-DSA-87, RFC 9881>"
   },
@@ -366,15 +366,16 @@ PkiHeader의 `compression` 필드:
     "algorithm": "AES-256-GCM",
     "kdf": "PBKDF2-SHA256",
     "iterations": 600000,
-    "salt_ecc/kem/dsa": "<각 독립 salt>",
-    "iv_ecc/kem/dsa": "<각 독립 IV>",
-    "cipher_ecc/kem/dsa": "<각 독립 암호문>"
+    "salt_kem/dsa": "<각 독립 salt>",
+    "iv_kem/dsa": "<각 독립 IV>",
+    "cipher_kem/dsa": "<각 독립 암호문>"
   },
   "pqcHeader": { ... }
 }
 ```
 
-키 3벌은 동일 패스워드지만 **독립 salt**로 PBKDF2 수행 → 수학적 독립.
+키 2벌은 동일 패스워드지만 **독립 salt**로 PBKDF2 수행 → 수학적 독립.
+(secp256k1 키는 제거됨 — 블록체인 호환 불필요)
 
 ---
 
@@ -399,7 +400,6 @@ PWA 서비스 워커 (Workbox): `precache` 모드, autoUpdate.
 
 | 알고리즘 | 개인키 | 공개키 | 서명 |
 |---------|--------|--------|------|
-| secp256k1 | 32B | 33B (compressed) | 64B |
 | ECDSA P-256 | 32B | 65B (uncompressed) | 64B |
 | ML-KEM-1024 | 3,168B | 1,568B | — |
 | ML-DSA-87 | 4,896B | 2,592B | 4,627B |
@@ -452,7 +452,6 @@ PWA 서비스 워커 (Workbox): `precache` 모드, autoUpdate.
 | @scure/bip32 | BIP32 HD 키 |
 | @noble/curves | P-256 ECDSA/ECDH |
 | @noble/hashes | SHA-256, SHA3-512, HKDF |
-| @noble/secp256k1 | secp256k1 |
 | @noble/post-quantum | ML-KEM-1024, ML-DSA-87 |
 | pkijs | X.509 인증서 |
 | asn1js | ASN.1 |

@@ -203,8 +203,6 @@ PKIZIP 경로:
 | ECDH P-256 암호화 | `m/44'/60'/0'/1/{n}` | 내부 변경(change=1) |
 | ML-KEM-1024 | `m/9000'/1024'/0'/0` | PKIZIP 전용 purpose |
 | ML-DSA-87 | `m/9000'/87'/0'/0` | PKIZIP 전용 purpose |
-| secp256k1 | `m/44'/60'/0'/0/0` | 블록체인 호환 |
-
 `9000'`: PKIZIP 전용 purpose (BIP43 미할당 범위)
 
 ---
@@ -262,16 +260,6 @@ PKIZIP 사용: SignedMessage 전자서명, 인증서 자체서명
 
 PKIZIP 사용: EnvelopedMessage 다중 수신자 키 합의
 - Ephemeral 키쌍 생성 → ECDH → KEK → AES-KW(CEK)
-
-### secp256k1 (SEC 2)
-
-| 항목 | 값 |
-|------|-----|
-| 곡선 | Koblitz secp256k1 |
-| 키 크기 | 개인키 32B, 공개키 33B (compressed) |
-| 용도 | 블록체인 호환 (이더리움/비트코인) |
-
-PKIZIP 사용: PQC 번들 내 secp256k1 키 (향후 블록체인 앵커링 대비)
 
 ---
 
@@ -340,7 +328,6 @@ TBSCertificate ::= SEQUENCE {
 
 | 인증서 | keyUsage | 근거 |
 |--------|----------|------|
-| secp256k1 | digitalSignature | RFC 5480 |
 | ML-KEM-1024 | keyEncipherment **ONLY** | RFC 9935 §4 |
 | ML-DSA-87 | digitalSignature, nonRepudiation | RFC 9881 §4 |
 
@@ -471,7 +458,6 @@ const writable = await fileHandle.createWritable()
 | 2.16.840.1.101.3.4.1.46 | AES-256-GCM | NIST |
 | 1.2.840.10045.4.3.2 | ECDSA-with-SHA256 | RFC 5758 |
 | 1.2.840.10045.3.1.7 | P-256 (prime256v1) | RFC 5480 |
-| 1.3.132.0.10 | secp256k1 | SEC 2 |
 | 2.16.840.1.101.3.4.4.3 | ML-KEM-1024 | RFC 9935 |
 | 2.16.840.1.101.3.4.3.19 | ML-DSA-87 | RFC 9881 |
 | 2.16.840.1.101.3.4.2.10 | SHA3-512 | NIST FIPS 202 |

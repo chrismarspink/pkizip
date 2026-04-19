@@ -7,11 +7,11 @@ export function printBundleCreateBanner({ mode, paths, timestamp = new Date().to
 ╔════════════════════════════════════════════════════════════╗
 ║  🔐  pkizip 양자 암호 키 번들 생성                          ║
 ╠════════════════════════════════════════════════════════════╣
-║  모드    : ${mode}  (secp256k1 + ML-KEM-1024 + ML-DSA-87)
+║  모드    : ${mode}  (ML-KEM-1024 + ML-DSA-87)
 ║  KEM     : ML-KEM-1024   NIST FIPS 203   RFC 9935
 ║  DSA     : ML-DSA-87     NIST FIPS 204   RFC 9881
-║  인증서  : 3개 생성 완료
-║  경로    : ${paths?.ecc || ''} | ${paths?.kem || ''} | ${paths?.dsa || ''}
+║  인증서  : 2개 생성 완료
+║  경로    : ${paths?.kem || ''} | ${paths?.dsa || ''}
 ║  생성 일시: ${timestamp}
 ╚════════════════════════════════════════════════════════════╝`);
 }

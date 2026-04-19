@@ -12,7 +12,6 @@ declare module '@/lib/pqc/pqc-bundle.js' {
     static restore(mnemonic: string, password: string, opts?: any): Promise<PQCBundle>;
     serialize(): string;
     getInfo(): any;
-    getECCKeyPair(): any;
     getKEMKeyPair(): any;
     getDSAKeyPair(): any;
     getPqcKeyId(): string | null;
@@ -77,7 +76,6 @@ declare module '@/lib/pqc/pqc-bridge.js' {
 declare module '@/lib/pqc/pqc-derive.js' {
   export class PQCDerive {
     static deriveAll(mnemonic: string, password?: string): Promise<{
-      ecc: { privateKey: Uint8Array; publicKey: Uint8Array; path: string };
       kem: { secretKey: Uint8Array; publicKey: Uint8Array; path: string };
       dsa: { secretKey: Uint8Array; publicKey: Uint8Array; path: string };
     }>;

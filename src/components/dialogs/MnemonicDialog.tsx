@@ -84,7 +84,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       }, { commonName: commonName.trim(), email: email.trim() });
 
       // PQC 번들 항상 생성 (설정 무관 — 인증서 3개 한 번에 생성)
-      let pqcCerts: { kem?: string; dsa?: string; ecc?: string } | undefined;
+      let pqcCerts: { kem?: string; dsa?: string } | undefined;
       let pqcKeyId: string | undefined;
       try {
         const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');

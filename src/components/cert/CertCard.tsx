@@ -82,11 +82,6 @@ export function CertCard(props: CertCardProps) {
         pem += `# keyUsage: digitalSignature, nonRepudiation\n`;
         pem += c.dsa + '\n\n';
       }
-      if (c.ecc) {
-        pem += `# === secp256k1 Certificate ===\n`;
-        pem += `# keyUsage: digitalSignature\n`;
-        pem += c.ecc + '\n\n';
-      }
       if (cert.pqcKeyId) pem += `# PQC Key ID: ${cert.pqcKeyId}\n`;
     }
 

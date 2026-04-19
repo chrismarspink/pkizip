@@ -53,7 +53,6 @@ export interface StoredCertificate {
   pqcCertificates?: {
     kem?: string;   // ML-KEM-1024 PEM
     dsa?: string;   // ML-DSA-87 PEM
-    ecc?: string;   // secp256k1 PEM
   };
   pqcKeyId?: string;
 }

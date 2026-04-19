@@ -6,7 +6,6 @@
       "defaultMode": "full",
       "defaultValidity": 1095,
       "derivationPaths": {
-        "ecc": "m/44'/60'/0'/0/0",
         "kem": "m/9000'/1024'/0'/0",
         "dsa": "m/9000'/87'/0'/0"
       }
