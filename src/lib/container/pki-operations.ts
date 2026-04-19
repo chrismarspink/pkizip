@@ -153,55 +153,98 @@ export async function seal(options: SealOptions): Promise<SealResult> {
   let pqcKemDone = false;
   let pqcDsaDone = false;
 
-  // 3. 암호화 (ECDH classic + ML-KEM hybrid)
+  // 3. 암호화
+  //    Classic:  ECDH → CEK 래핑 → AES-GCM
+  //    Hybrid:   ECDH → CEK 래핑 + ML-KEM → 동일 CEK 캡슐화
+  //    PQC Only: ML-KEM → CEK 캡슐화 → AES-GCM (ECDH 미사용)
+  const pqcMode = pqc?.mode || 'hybrid';
   let encryptedPkg: EncryptedPackage | null = null;
+
   if (encrypt && encrypt.recipients.length > 0) {
-    encryptedPkg = await encryptForRecipients(payload, encrypt.recipients);
+    if (pqcMode === 'pqc-only' && pqc?.shield) {
+      // === PQC Only: ML-KEM만으로 암호화 ===
+      const cekRaw = crypto.getRandomValues(new Uint8Array(32));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const aesKey = await crypto.subtle.importKey('raw', cekRaw as unknown as BufferSource, { name: 'AES-GCM' }, false, ['encrypt']);
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv as unknown as BufferSource, tagLength: 128 }, aesKey, payload as unknown as BufferSource,
+      );
 
-    // ML-KEM 하이브리드: 동일 CEK를 ML-KEM으로도 캡슐화
-    if (pqc?.shield) {
-      try {
-        if (!encryptedPkg.rawCEK) throw new Error('CEK를 추출할 수 없습니다');
-        const kemResult = await pqc.shield.encapsulateCEK(encryptedPkg.rawCEK);
-        header.pqcKemRecipientInfo = {
-          type: kemResult.type,
-          pqcKeyId: kemResult.rid.pqcKeyId,
-          kemCiphertext: arrayBufferToBase64(kemResult.kemCiphertext),
-          encryptedKey: arrayBufferToBase64(kemResult.encryptedKey),
-          iv: arrayBufferToBase64(kemResult.iv),
-          salt: arrayBufferToBase64(kemResult.salt),
-          kemPublicKey: arrayBufferToBase64(kemResult.kemPublicKey),
-        };
-        pqcKemDone = true;
-        console.log('[PKIZIP] ML-KEM-1024 CEK 캡슐화 완료');
-      } catch (err) {
-        throw new Error(`ML-KEM-1024 암호화 실패: ${err instanceof Error ? err.message : err}`);
+      const kemResult = await pqc.shield.encapsulateCEK(cekRaw);
+      header.pqcKemRecipientInfo = {
+        type: kemResult.type,
+        pqcKeyId: kemResult.rid.pqcKeyId,
+        kemCiphertext: arrayBufferToBase64(kemResult.kemCiphertext),
+        encryptedKey: arrayBufferToBase64(kemResult.encryptedKey),
+        iv: arrayBufferToBase64(kemResult.iv),
+        salt: arrayBufferToBase64(kemResult.salt),
+        kemPublicKey: arrayBufferToBase64(kemResult.kemPublicKey),
+      };
+      pqcKemDone = true;
+
+      payload = new Uint8Array(ciphertext);
+      flags = setFlag(flags, FLAG_ENCRYPTED);
+      // ECDH recipients는 빈 배열 (PQC Only)
+      header.encryption = {
+        algorithm: 'AES-256-GCM',
+        iv: arrayBufferToBase64(iv),
+        recipients: [],
+      };
+      console.log('[PKIZIP] PQC Only: ML-KEM-1024 암호화 완료 (ECDH 미사용)');
+    } else {
+      // === Classic 또는 Hybrid: ECDH로 암호화 ===
+      encryptedPkg = await encryptForRecipients(payload, encrypt.recipients);
+
+      // Hybrid: 동일 CEK를 ML-KEM으로도 캡슐화
+      if (pqc?.shield && pqcMode === 'hybrid') {
+        try {
+          if (!encryptedPkg.rawCEK) throw new Error('CEK를 추출할 수 없습니다');
+          const kemResult = await pqc.shield.encapsulateCEK(encryptedPkg.rawCEK);
+          header.pqcKemRecipientInfo = {
+            type: kemResult.type,
+            pqcKeyId: kemResult.rid.pqcKeyId,
+            kemCiphertext: arrayBufferToBase64(kemResult.kemCiphertext),
+            encryptedKey: arrayBufferToBase64(kemResult.encryptedKey),
+            iv: arrayBufferToBase64(kemResult.iv),
+            salt: arrayBufferToBase64(kemResult.salt),
+            kemPublicKey: arrayBufferToBase64(kemResult.kemPublicKey),
+          };
+          pqcKemDone = true;
+          console.log('[PKIZIP] Hybrid: ECDH + ML-KEM-1024 CEK 래핑 완료');
+        } catch (err) {
+          throw new Error(`ML-KEM-1024 암호화 실패: ${err instanceof Error ? err.message : err}`);
+        }
       }
+
+      payload = new Uint8Array(encryptedPkg.ciphertext);
+      flags = setFlag(flags, FLAG_ENCRYPTED);
+      header.encryption = {
+        algorithm: 'AES-256-GCM',
+        iv: arrayBufferToBase64(encryptedPkg.iv),
+        recipients: serializeRecipients(encryptedPkg.recipients),
+      };
     }
-
-    payload = new Uint8Array(encryptedPkg.ciphertext);
-    flags = setFlag(flags, FLAG_ENCRYPTED);
-
-    header.encryption = {
-      algorithm: 'AES-256-GCM',
-      iv: arrayBufferToBase64(encryptedPkg.iv),
-      recipients: serializeRecipients(encryptedPkg.recipients),
-    };
   }
 
-  // 4. 서명 (ECDSA classic + ML-DSA hybrid)
+  // 4. 서명
+  //    Classic:  ECDSA P-256만
+  //    Hybrid:   ECDSA P-256 + ML-DSA-87 둘 다
+  //    PQC Only: ML-DSA-87만 (ECDSA 미사용)
   const signerInfos: SignerInfo[] = [];
   if (sign) {
-    const signerInfo = await signData(
-      payload, sign.privateKey, sign.publicKey, sign.fingerprint, sign.label
-    );
-    signerInfos.push(signerInfo);
+    if (pqcMode !== 'pqc-only') {
+      // Classic 또는 Hybrid: ECDSA 서명
+      const signerInfo = await signData(
+        payload, sign.privateKey, sign.publicKey, sign.fingerprint, sign.label
+      );
+      signerInfos.push(signerInfo);
+      header.signatures = serializeSignerInfos(signerInfos);
+    }
     flags = setFlag(flags, FLAG_SIGNED);
-    header.signatures = serializeSignerInfos(signerInfos);
     header.creatorFingerprint = sign.fingerprint;
 
-    // ML-DSA 하이브리드: 동일 payload에 ML-DSA-87 서명 추가
-    if (pqc?.signer) {
+    // Hybrid 또는 PQC Only: ML-DSA-87 서명
+    if (pqc?.signer && pqcMode !== 'classic') {
       try {
         const pqcSig = await pqc.signer.sign(payload);
         header.pqcSignerInfo = {
