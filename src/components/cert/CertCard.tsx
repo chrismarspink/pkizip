@@ -21,6 +21,7 @@ export interface CertCardProps {
   identityName: string;
   isActive: boolean;
   pqcEnabled: boolean;
+  hasPqcBundle: boolean;
 
   // 생체/PIN 상태
   biometricSupported: boolean;
@@ -35,6 +36,7 @@ export interface CertCardProps {
   onUnlock: (pw: string) => void;
   onExportCert: () => void;
   onDelete: () => void;
+  onPqcBundleCreated: () => void;
 
   initialFace?: 0 | 1 | 2;
 }
@@ -43,11 +45,11 @@ const FACE_LABELS = ['앞면', '상세 정보', '설정'] as const;
 
 export function CertCard(props: CertCardProps) {
   const {
-    cert, identityId, identityName, isActive, pqcEnabled,
+    cert, identityId, identityName, isActive, pqcEnabled, hasPqcBundle,
     biometricSupported, hasBiometric, hasPin,
     onRegisterBiometric, onRemoveBiometric,
     onRegisterPin, onRemovePin,
-    onUnlock, onExportCert, onDelete,
+    onUnlock, onExportCert, onDelete, onPqcBundleCreated,
     initialFace = 0,
   } = props;
 
@@ -181,6 +183,8 @@ export function CertCard(props: CertCardProps) {
             biometricSupported={biometricSupported}
             hasBiometric={hasBiometric}
             hasPin={hasPin}
+            pqcEnabled={pqcEnabled}
+            hasPqcBundle={hasPqcBundle}
             onRegisterBiometric={onRegisterBiometric}
             onRemoveBiometric={onRemoveBiometric}
             onRegisterPin={onRegisterPin}
@@ -188,6 +192,7 @@ export function CertCard(props: CertCardProps) {
             onUnlock={onUnlock}
             onExportCert={onExportCert}
             onDelete={onDelete}
+            onPqcBundleCreated={onPqcBundleCreated}
           />
         );
     }

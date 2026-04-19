@@ -42,6 +42,7 @@ export function CertsPage() {
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricMap, setBiometricMap] = useState<Record<string, boolean>>({});
   const [pinMap, setPinMap] = useState<Record<string, boolean>>({});
+  const [hasPqcBundle, setHasPqcBundle] = useState(false);
   const [mnemonicDialog, setMnemonicDialog] = useState<'generate' | 'recover' | null>(null);
 
   useEffect(() => {
@@ -82,6 +83,15 @@ export function CertsPage() {
 
     const entries = await getAllKeyRingEntries();
     setContacts(entries.filter(e => e.type === 'imported'));
+
+    // PQC 번들 존재 확인
+    try {
+      const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+      const info = await PQCKeystore.getInfo('default');
+      setHasPqcBundle(!!info?.certificates);
+    } catch {
+      setHasPqcBundle(false);
+    }
   }
 
   // ── 핸들러: 잠금 해제 ──
@@ -159,6 +169,7 @@ export function CertsPage() {
         identityName: m.name,
         isActive,
         pqcEnabled,
+        hasPqcBundle,
         biometricSupported,
         hasBiometric: biometricMap[m.id] ?? false,
         hasPin: pinMap[m.id] ?? false,
@@ -169,6 +180,7 @@ export function CertsPage() {
         onUnlock: (pw: string) => handleUnlock(m.id, pw),
         onExportCert: () => handleExportCert(m.signingFingerprint),
         onDelete: () => handleDelete(m.id),
+        onPqcBundleCreated: () => loadData(),
       } satisfies Omit<CertCardProps, 'initialFace'>;
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
