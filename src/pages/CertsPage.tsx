@@ -85,7 +85,7 @@ export function CertsPage() {
 
   }
 
-  // ── 핸들러: 잠금 해제 ──
+  // ── 핸들러: 잠금 해제 (classic + PQC 함께 초기화) ──
   const handleUnlock = useCallback(async (id: string, pw: string) => {
     try {
       const seed = await loadIdentitySeed(id, pw);
@@ -93,6 +93,23 @@ export function CertsPage() {
       setKeyIdentity(identity);
       await setActiveIdentityId(id);
       storeSetActive(id);
+
+      // PQC 인스턴스도 함께 초기화
+      try {
+        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+        const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
+        const { PQCShield } = await import('@/lib/pqc/pqc-shield.js');
+        const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
+        const bundle = await PQCKeystore.load(pw, 'default', { PQCBundleClass: PQCBundle });
+        const shield = PQCShield.fromBundle(bundle.getKEMKeyPair());
+        const signer = PQCSigner.fromBundle(bundle.getDSAKeyPair());
+        useAppStore.getState().setPqcInstances(shield, signer);
+        console.log('[PKIZIP] PQC 인스턴스 초기화 완료 (shield + signer)');
+      } catch (pqcErr) {
+        console.warn('[PKIZIP] PQC 인스턴스 초기화 실패:', pqcErr);
+        useAppStore.getState().setPqcInstances(null, null);
+      }
+
       toast.success('키 활성화 완료');
     } catch {
       toast.error('비밀번호가 틀렸습니다.');

@@ -44,6 +44,13 @@ interface AppState {
   pqcConfig: { kemEnabled: boolean; kemMode: string; dsaEnabled: boolean; dsaMode: string };
   setPqcConfig: (cfg: { kemEnabled: boolean; kemMode: string; dsaEnabled: boolean; dsaMode: string }) => void;
 
+  // === PQC 런타임 인스턴스 (잠금 해제 시 초기화) ===
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pqcShield: any | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pqcSigner: any | null;
+  setPqcInstances: (shield: any, signer: any) => void;
+
   // === 아카이브 ===
   archiveName: string | null;
   archiveHeader: PkiHeader | null;
@@ -106,6 +113,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ pqcConfig });
     try { localStorage.setItem('pkizip-pqc-ui-config', JSON.stringify({ kem: { enabled: pqcConfig.kemEnabled, mode: pqcConfig.kemMode }, dsa: { enabled: pqcConfig.dsaEnabled, mode: pqcConfig.dsaMode } })); } catch {}
   },
+
+  // PQC 런타임 인스턴스
+  pqcShield: null,
+  pqcSigner: null,
+  setPqcInstances: (pqcShield, pqcSigner) => set({ pqcShield, pqcSigner }),
 
   // 아카이브
   archiveName: null,

@@ -101,6 +101,15 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         // PQC 개인키 저장 (암호화 운용시 필요)
         await PQCKeystore.save(pqcBundle, password, 'default');
         console.log('[PKIZIP] PQC 키 저장 완료. KeyId:', pqcKeyId?.slice(0, 16));
+
+        // PQC 런타임 인스턴스 초기화 (seal/open에서 사용)
+        const { PQCShield } = await import('@/lib/pqc/pqc-shield.js');
+        const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
+        useAppStore.getState().setPqcInstances(
+          PQCShield.fromBundle(pqcBundle.getKEMKeyPair()),
+          PQCSigner.fromBundle(pqcBundle.getDSAKeyPair()),
+        );
+        console.log('[PKIZIP] PQC 인스턴스 초기화 완료');
       } catch (pqcErr) {
         console.error('[PKIZIP] PQC 생성 실패 (classic 인증서는 정상):', pqcErr);
       }

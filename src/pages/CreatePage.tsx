@@ -204,27 +204,19 @@ export function CreatePage() {
     setResultData(null);
   };
 
-  // PQC 모듈 동적 로드 (seal에 전달)
-  const loadPqcForSeal = async () => {
-    try {
-      const cfg = useAppStore.getState().pqcConfig;
-      if (!cfg.kemEnabled && !cfg.dsaEnabled) return undefined;
-
-      const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
-      const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
-      const { PQCShield } = await import('@/lib/pqc/pqc-shield.js');
-      const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
-
-      // 저장된 PQC 번들 로드 (비밀번호 필요 — 현재 활성 키의 비밀번호)
-      const bundle = await PQCKeystore.load(unlockPw || password, 'default', { PQCBundleClass: PQCBundle });
-      const shield = cfg.kemEnabled ? PQCShield.fromBundle(bundle.getKEMKeyPair()) : undefined;
-      const signer = cfg.dsaEnabled ? PQCSigner.fromBundle(bundle.getDSAKeyPair()) : undefined;
-
-      return { shield, signer, mode: cfg.kemMode || 'hybrid' };
-    } catch (err) {
-      console.warn('[PKIZIP] PQC 로드 실패 (classic만 사용):', err);
+  // PQC 인스턴스 (store에서 가져옴 — 잠금 해제 시 초기화됨)
+  const loadPqcForSeal = () => {
+    const { pqcConfig: cfg, pqcShield, pqcSigner } = useAppStore.getState();
+    if (!cfg.kemEnabled && !cfg.dsaEnabled) return undefined;
+    if (!pqcShield && !pqcSigner) {
+      console.warn('[PKIZIP] PQC 인스턴스 없음 — 잠금 해제 시 초기화 필요');
       return undefined;
     }
+    return {
+      shield: cfg.kemEnabled ? pqcShield : undefined,
+      signer: cfg.dsaEnabled ? pqcSigner : undefined,
+      mode: cfg.kemMode || 'hybrid',
+    };
   };
 
   const runProcessing = async () => {
@@ -272,7 +264,7 @@ export function CreatePage() {
           recipientInfos.push({ fingerprint: e.fingerprint, encryptionPublicKey: pubKey, label: e.label });
         }
         if (recipientInfos.length === 0) { toast.error('수신자가 없습니다.'); setStep('details'); return; }
-        const pqcOpts = await loadPqcForSeal();
+        const pqcOpts = loadPqcForSeal();
         const result = await seal({
           files, compress: true,
           encrypt: { recipients: recipientInfos },
@@ -289,7 +281,7 @@ export function CreatePage() {
         // SignedMessage
         const currentKey = useAppStore.getState().keyIdentity;
         if (!currentKey) { toast.error('키가 활성화되지 않았습니다.'); setStep('options'); return; }
-        const pqcOpts = await loadPqcForSeal();
+        const pqcOpts = loadPqcForSeal();
         const result = await seal({
           files, compress: true,
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },

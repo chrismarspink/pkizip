@@ -197,15 +197,18 @@ export function FilesTempPage() {
         // 복호화 실행 함수 (키가 활성화된 후 호출)
         const runDecrypt = async (activeKey: NonNullable<typeof keyIdentity>): Promise<boolean> => {
           try {
-            // PQC 모듈 로드 (ML-DSA 검증용 — 공개키만 필요)
+            // PQC 인스턴스 (store에서 또는 헤더 공개키로 생성)
             let pqcOpts: Parameters<typeof openPki>[3] | undefined;
-            try {
-              if (h.pqcSignerInfo) {
+            const { pqcShield, pqcSigner } = useAppStore.getState();
+            if (pqcShield || pqcSigner) {
+              pqcOpts = { shield: pqcShield ?? undefined, signer: pqcSigner ?? undefined };
+            } else if (h.pqcSignerInfo) {
+              try {
                 const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
                 const dsaPub = new Uint8Array(base64ToArrayBuffer(h.pqcSignerInfo.dsaPublicKey));
                 pqcOpts = { signer: PQCSigner.fromBundle({ publicKey: dsaPub, secretKey: new Uint8Array(0) }) };
-              }
-            } catch { /* PQC 미사용 */ }
+              } catch { /* fallback 실패 */ }
+            }
 
             const result = await openPki(rawData, activeKey.encryptionKey.privateKey, activeKey.encryptionKey.fingerprint, pqcOpts);
             update(encId, { status: 'done' });
@@ -275,6 +278,22 @@ export function FilesTempPage() {
                 const activeKey = await deriveKeyIdentity(seed);
                 useAppStore.getState().setKeyIdentity(activeKey);
                 useAppStore.getState().setActiveIdentityId(myMatch!.id);
+
+                // PQC 인스턴스 초기화 (PIN이 아닌 비밀번호일 때만 PQC 번들 로드 가능)
+                if (!/^\d{4,6}$/.test(value)) {
+                  try {
+                    const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+                    const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
+                    const { PQCShield } = await import('@/lib/pqc/pqc-shield.js');
+                    const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
+                    const bundle = await PQCKeystore.load(value, 'default', { PQCBundleClass: PQCBundle });
+                    useAppStore.getState().setPqcInstances(
+                      PQCShield.fromBundle(bundle.getKEMKeyPair()),
+                      PQCSigner.fromBundle(bundle.getDSAKeyPair())
+                    );
+                  } catch { /* PQC 번들 없음 */ }
+                }
+
                 push({ type: 'text', id: id(), content: '✓ 키 잠금 해제 완료', tone: 'success' });
                 await runDecrypt(activeKey);
                 resolve();
