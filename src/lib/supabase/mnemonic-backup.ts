@@ -2,11 +2,9 @@
  * 니모닉 암호화 백업/복구 — 클라이언트 사이드 암호화만
  *
  * 서버에 평문 니모닉 절대 저장 안 함.
- * PBKDF2-SHA256 (600,000회) + AES-256-GCM
+ * Web Crypto PBKDF2 (600,000회, 비동기) + AES-256-GCM
  */
 import { supabase } from './client';
-import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
-import { sha256 } from '@noble/hashes/sha2.js';
 
 const toB64 = (b: Uint8Array) => {
   const chunks: string[] = [];
@@ -17,6 +15,20 @@ const toB64 = (b: Uint8Array) => {
 };
 const frB64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
+/** Web Crypto PBKDF2 → AES-256-GCM 키 (비동기, UI 블로킹 없음) */
+async function deriveKey(password: string, salt: Uint8Array, usage: KeyUsage[]): Promise<CryptoKey> {
+  const km = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'],
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 600_000, hash: 'SHA-256' },
+    km,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    usage,
+  );
+}
+
 /** 클라이언트 사이드 암호화 → Supabase 저장 */
 export async function backupMnemonic(
   mnemonic: string,
@@ -26,8 +38,7 @@ export async function backupMnemonic(
 ): Promise<void> {
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const rawKey = pbkdf2(sha256, new TextEncoder().encode(backupPassword), salt, { c: 600_000, dkLen: 32 });
-  const key = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt']);
+  const key = await deriveKey(backupPassword, salt, ['encrypt']);
   const ct = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
@@ -65,13 +76,7 @@ export async function restoreMnemonic(
     .single();
   if (error || !data) throw new Error('백업을 찾을 수 없습니다');
 
-  const rawKey = pbkdf2(
-    sha256,
-    new TextEncoder().encode(backupPassword),
-    frB64(data.kdf_salt),
-    { c: data.kdf_iterations, dkLen: 32 },
-  );
-  const key = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  const key = await deriveKey(backupPassword, frB64(data.kdf_salt), ['decrypt']);
 
   try {
     const pt = await crypto.subtle.decrypt(
