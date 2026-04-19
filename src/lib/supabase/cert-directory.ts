@@ -29,8 +29,11 @@ export async function uploadCertBundle(bundle: {
   if (!/^[a-z0-9-]{3,32}$/.test(bundle.username)) {
     throw new Error('username은 소문자·숫자·하이픈 3~32자만 가능합니다');
   }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('로그인 필요');
+
   const { error } = await supabase.from('cert_bundles').upsert(
-    { ...bundle, is_public: true, updated_at: new Date().toISOString() },
+    { ...bundle, user_id: user.id, is_public: true, updated_at: new Date().toISOString() },
     { onConflict: 'user_id' },
   );
   if (error) {

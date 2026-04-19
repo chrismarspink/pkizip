@@ -34,8 +34,12 @@ export async function backupMnemonic(
     new TextEncoder().encode(mnemonic),
   );
 
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('로그인 필요');
+
   const { error } = await supabase.from('mnemonic_backups').upsert(
     {
+      user_id: user.id,
       identity_id: identityId,
       encrypted_blob: toB64(new Uint8Array(ct)),
       kdf_salt: toB64(salt),
