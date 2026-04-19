@@ -2,7 +2,7 @@
  * 니모닉 암호화 백업/복구 — 클라이언트 사이드 암호화만
  *
  * 서버에 평문 니모닉 절대 저장 안 함.
- * Web Crypto PBKDF2 (600,000회, 비동기) + AES-256-GCM
+ * Web Crypto PBKDF2 (100,000회, 비동기) + AES-256-GCM
  */
 import { supabase } from './client';
 
@@ -15,7 +15,6 @@ const toB64 = (b: Uint8Array) => {
 };
 const frB64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
-/** Web Crypto PBKDF2 → AES-256-GCM 키 (비동기, UI 블로킹 없음) */
 async function deriveKey(password: string, salt: Uint8Array, usage: KeyUsage[]): Promise<CryptoKey> {
   const km = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'],
@@ -34,7 +33,8 @@ export async function backupMnemonic(
   mnemonic: string,
   backupPassword: string,
   identityId: string,
-  hint?: string
+  hint?: string,
+  userId?: string,
 ): Promise<void> {
   console.log('[PKIZIP-backup] 시작: deriveKey...');
   const salt = crypto.getRandomValues(new Uint8Array(32));
@@ -46,16 +46,20 @@ export async function backupMnemonic(
     key,
     new TextEncoder().encode(mnemonic),
   );
-  console.log('[PKIZIP-backup] encrypt 완료, getSession...');
+  console.log('[PKIZIP-backup] encrypt 완료, upsert...');
 
-  const { data: { session } } = await supabase.auth.getSession();
-  const user = session?.user;
-  console.log('[PKIZIP-backup] session user:', user?.id ?? 'null');
-  if (!user) throw new Error('로그인 필요');
+  // userId가 전달되지 않으면 세션에서 가져옴
+  let uid = userId;
+  if (!uid) {
+    const { data } = await supabase.auth.getSession();
+    uid = data.session?.user?.id;
+  }
+  if (!uid) throw new Error('로그인 필요');
+  console.log('[PKIZIP-backup] userId:', uid);
 
   const { error } = await supabase.from('mnemonic_backups').upsert(
     {
-      user_id: user.id,
+      user_id: uid,
       identity_id: identityId,
       encrypted_blob: toB64(new Uint8Array(ct)),
       kdf_salt: toB64(salt),
@@ -66,6 +70,7 @@ export async function backupMnemonic(
     },
     { onConflict: 'user_id,identity_id' },
   );
+  console.log('[PKIZIP-backup] upsert 결과:', error ? error.message : 'OK');
   if (error) throw new Error(`백업 저장 실패: ${error.message}`);
 }
 

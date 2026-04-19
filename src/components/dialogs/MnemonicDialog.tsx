@@ -193,7 +193,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         } else {
           try {
             console.log('[PKIZIP] backupMnemonic 호출...');
-            await backupMnemonic(mnemonic, backupPw, id, backupHint || undefined);
+            await backupMnemonic(mnemonic, backupPw, id, backupHint || undefined, authUser.id);
             console.log('[PKIZIP] 백업 완료');
             toast.success('니모닉 암호화 백업 저장 완료');
           } catch (backupErr) {
