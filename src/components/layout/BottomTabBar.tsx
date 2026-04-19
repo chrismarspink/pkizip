@@ -6,7 +6,7 @@ const TABS = [
   { path: '/create', icon: FilePlus, label: '생성' },
   { path: '/files', icon: FileArchive, label: '파일' },
   { path: '/certs', icon: ShieldCheck, label: '인증서' },
-  { path: '/contacts', icon: BookUser, label: 'Contacts' },
+  { path: '/contacts', icon: BookUser, label: '주소록' },
   { path: '/settings', icon: Settings, label: '설정' },
 ];
 

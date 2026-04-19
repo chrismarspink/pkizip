@@ -60,7 +60,7 @@ export function ContactsPage() {
   if (!user) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
-        <h1 className="text-xl font-bold mb-2">Contacts</h1>
+        <h1 className="text-xl font-bold mb-2">주소록</h1>
         <div className="text-center py-20">
           <Lock className="w-16 h-16 mx-auto mb-4 text-zinc-200" />
           <p className="text-zinc-500 mb-4">로그인 후 인증서를 검색하고 키링에 추가할 수 있습니다.</p>
@@ -76,7 +76,7 @@ export function ContactsPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
-      <h1 className="text-xl font-bold mb-2">Contacts</h1>
+      <h1 className="text-xl font-bold mb-2">주소록</h1>
       <p className="text-sm text-zinc-500 mb-4">이름, 이메일, username으로 인증서를 검색하세요.</p>
 
       {/* 검색바 */}
