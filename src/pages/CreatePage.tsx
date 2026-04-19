@@ -59,6 +59,7 @@ export function CreatePage() {
   const [resultData, setResultData] = useState<Uint8Array | null>(null);
   const [resultName, setResultName] = useState('');
   const [resultInfo, setResultInfo] = useState('');
+  const [resultAlgos, setResultAlgos] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const cmsType = options.encrypted ? 'Encrypted' : options.enveloped ? 'Enveloped' : options.sign ? 'Signed' : 'Compressed';
@@ -232,6 +233,7 @@ export function CreatePage() {
       let pkiData: Uint8Array;
       let suffix: string;
       let info: string;
+      const algos: string[] = [];
 
       if (options.encrypted) {
         const compressed = serializeEntries(files);
@@ -243,9 +245,11 @@ export function CreatePage() {
           const sigs = serializeSignerInfos([signerInfo]);
           innerData = packInnerPayload(compressed, sigs ?? undefined);
           info = 'EncryptedMessage (서명 포함)';
+          algos.push('AES-256-GCM (비밀번호)', 'ECDSA P-256 (서명)');
         } else {
           innerData = packInnerPayload(compressed);
           info = 'EncryptedMessage';
+          algos.push('AES-256-GCM (비밀번호)');
         }
 
         const flags = setFlag(setFlag(0, FLAG_COMPRESSED), FLAG_ENCRYPTED);
@@ -277,7 +281,10 @@ export function CreatePage() {
         });
         pkiData = result.pkiData;
         suffix = 'enveloped';
-        info = `EnvelopedMessage (${recipientInfos.length}명 수신자)${result.stats.pqcKem ? ' + ML-KEM' : ''}`;
+        info = `EnvelopedMessage (${recipientInfos.length}명 수신자)`;
+        algos.push('ECDH P-256 (암호화)', 'AES-256-GCM', 'ECDSA P-256 (서명)');
+        if (result.stats.pqcKem) algos.push('ML-KEM-1024 (양자 암호화)');
+        if (result.stats.pqcDsa) algos.push('ML-DSA-87 (양자 서명)');
       } else if (options.sign) {
         // SignedMessage
         const currentKey = useAppStore.getState().keyIdentity;
@@ -290,18 +297,22 @@ export function CreatePage() {
         });
         pkiData = result.pkiData;
         suffix = 'signed';
-        info = `SignedMessage (0x${currentKey.signingKey.fingerprint})${result.stats.pqcDsa ? ' + ML-DSA' : ''}`;
+        info = `SignedMessage (0x${currentKey.signingKey.fingerprint})`;
+        algos.push('ECDSA P-256 (서명)');
+        if (result.stats.pqcDsa) algos.push('ML-DSA-87 (양자 서명)');
       } else {
         const result = await compressOnly(files);
         pkiData = result.pkiData;
         suffix = 'compressed';
         info = 'CompressedMessage';
+        algos.push('ZLIB/ZIP (압축)');
       }
 
       const baseName = files.length === 1 ? files[0].name.replace(/\.[^.]+$/, '') : 'archive';
       setResultData(pkiData);
       setResultName(`${baseName}.${suffix}.pki`);
       setResultInfo(info);
+      setResultAlgos(algos);
       setStep('done');
     } catch (err) {
       toast.error(`실패: ${err instanceof Error ? err.message : '오류'}`);
@@ -552,10 +563,16 @@ export function CreatePage() {
               </div>
               <div className="flex justify-between"><span className="text-zinc-500">크기</span><span>{formatSize(resultData.length)}</span></div>
               <div className="flex justify-between"><span className="text-zinc-500">파일 수</span><span>{files.length}개</span></div>
-              {(options.sign || options.enveloped) && (
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-500">보호</span>
-                  <PqcBadge pqc={pqcConfig.kemEnabled || pqcConfig.dsaEnabled} size="md" />
+              {resultAlgos.length > 0 && (
+                <div className="pt-1.5 border-t border-zinc-100">
+                  <span className="text-zinc-500 text-xs">적용 알고리즘</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {resultAlgos.map((a, i) => (
+                      <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                        a.includes('ML-') ? 'bg-violet-100 text-violet-700' : 'bg-zinc-100 text-zinc-600'
+                      }`}>{a}</span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

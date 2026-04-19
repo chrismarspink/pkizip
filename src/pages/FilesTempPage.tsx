@@ -71,9 +71,19 @@ export function FilesTempPage() {
     await sleep(500);
     push({ type: 'text', id: id(), content: `파일 크기: ${formatSize(rawData.length)}`, tone: 'muted' });
     push({ type: 'text', id: id(), content: `플래그: ${[isComp && '압축', isSig && '서명', isEnc && '암호화'].filter(Boolean).join(', ')}`, tone: 'muted' });
-    if (hasPqc) {
-      push({ type: 'text', id: id(), content: `🔐 양자 암호 보호 (${pqcHeader.algorithms?.kem || 'ML-KEM'} + ${pqcHeader.algorithms?.dsa || 'ML-DSA'})`, tone: 'success' });
+
+    // 감지된 알고리즘 표시
+    const detectedAlgos: string[] = [];
+    if (isComp) detectedAlgos.push(h.compression?.method === 'zip' ? 'ZIP' : 'ZLIB');
+    if (isEnc) detectedAlgos.push(isPw ? 'AES-256-GCM (비밀번호)' : 'ECDH P-256 + AES-256-GCM');
+    if (isSig) detectedAlgos.push('ECDSA P-256');
+    if (h.pqcKemRecipientInfo) detectedAlgos.push('ML-KEM-1024 (양자 암호화)');
+    if (h.pqcSignerInfo) detectedAlgos.push('ML-DSA-87 (양자 서명)');
+    if (hasPqc && !h.pqcKemRecipientInfo && !h.pqcSignerInfo) {
+      detectedAlgos.push(`${pqcHeader.kemAlgorithm || 'ML-KEM'} + ${pqcHeader.dsaAlgorithm || 'ML-DSA'}`);
     }
+    push({ type: 'text', id: id(), content: `알고리즘: ${detectedAlgos.join(', ')}`, tone: 'muted' });
+
     update(analyzeId, { status: 'done' });
 
     await sleep(300);

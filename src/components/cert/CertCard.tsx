@@ -88,13 +88,7 @@ export function CertCard(props: CertCardProps) {
     return pem;
   }, [cert]);
 
-  // PEM 복사
-  const handleCopyPem = useCallback(() => {
-    const pem = buildFullPem();
-    navigator.clipboard.writeText(pem);
-    const count = (pem.match(/-----PKIZIP-CERT-|-----BEGIN CERTIFICATE-----/g) || []).length;
-    toast.success(count > 1 ? `인증서 번들 복사됨 (${count}개)` : 'PEM 인증서 복사됨');
-  }, [buildFullPem]);
+  const pemText = buildFullPem();
 
   // PEM 내보내기
   const handleExport = useCallback(() => {
@@ -124,7 +118,7 @@ export function CertCard(props: CertCardProps) {
           <CardFaceDetail
             cert={cert}
             pqcEnabled={pqcEnabled}
-            onCopyPem={handleCopyPem}
+            pemText={pemText}
             onExport={handleExport}
           />
         );
