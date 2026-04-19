@@ -36,16 +36,20 @@ export async function backupMnemonic(
   identityId: string,
   hint?: string
 ): Promise<void> {
+  console.log('[PKIZIP-backup] 시작: deriveKey...');
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(backupPassword, salt, ['encrypt']);
+  console.log('[PKIZIP-backup] deriveKey 완료, encrypt...');
   const ct = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
     new TextEncoder().encode(mnemonic),
   );
+  console.log('[PKIZIP-backup] encrypt 완료, getUser...');
 
   const { data: { user } } = await supabase.auth.getUser();
+  console.log('[PKIZIP-backup] getUser:', user?.id ?? 'null');
   if (!user) throw new Error('로그인 필요');
 
   const { error } = await supabase.from('mnemonic_backups').upsert(
