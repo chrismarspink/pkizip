@@ -9,6 +9,10 @@ import { generateSelfSignedCertificate, type CertificateInfo } from '@/lib/crypt
 import { useAppStore } from '@/lib/store/app-store';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { backupMnemonic } from '@/lib/supabase/mnemonic-backup';
+import { PQCBundle } from '@/lib/pqc/pqc-bundle.js';
+import { PQCKeystore } from '@/lib/pqc/pqc-keystore.js';
+import { PQCShield } from '@/lib/pqc/pqc-shield.js';
+import { PQCSigner } from '@/lib/pqc/pqc-signer.js';
 import { Identicon } from '@/components/cert/Identicon';
 import { LogoCrop } from '@/components/LogoCrop';
 import { toast } from 'sonner';
@@ -101,8 +105,6 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       let pqcCerts: { kem?: string; dsa?: string } | undefined;
       let pqcKeyId: string | undefined;
       try {
-        const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
-        const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
         const pqcBundle = await PQCBundle.create({
           mnemonic, password,
           subject: { name: commonName.trim(), email: email.trim() },
@@ -117,8 +119,6 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         console.log('[PKIZIP] PQC 키 저장 완료. KeyId:', pqcKeyId?.slice(0, 16));
 
         // PQC 런타임 인스턴스 초기화 (seal/open에서 사용)
-        const { PQCShield } = await import('@/lib/pqc/pqc-shield.js');
-        const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
         useAppStore.getState().setPqcInstances(
           PQCShield.fromBundle(pqcBundle.getKEMKeyPair()),
           PQCSigner.fromBundle(pqcBundle.getDSAKeyPair()),
