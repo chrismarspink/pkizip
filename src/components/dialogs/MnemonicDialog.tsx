@@ -8,6 +8,7 @@ import { saveIdentity, addToKeyRing, saveCertificate, type PublicKeyEntry, type 
 import { generateSelfSignedCertificate, type CertificateInfo } from '@/lib/crypto/certificate';
 import { useAppStore } from '@/lib/store/app-store';
 import { useAuthStore } from '@/lib/supabase/auth-store';
+import { backupMnemonic } from '@/lib/supabase/mnemonic-backup';
 import { Identicon } from '@/components/cert/Identicon';
 import { LogoCrop } from '@/components/LogoCrop';
 import { toast } from 'sonner';
@@ -191,7 +192,6 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
           toast.error('백업 패스워드는 8자 이상이어야 합니다.');
         } else {
           try {
-            const { backupMnemonic } = await import('@/lib/supabase/mnemonic-backup');
             console.log('[PKIZIP] backupMnemonic 호출...');
             await backupMnemonic(mnemonic, backupPw, id, backupHint || undefined);
             console.log('[PKIZIP] 백업 완료');
