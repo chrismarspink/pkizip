@@ -214,7 +214,9 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   const handleClose = () => {
     setStep('profile'); setIdentityName(''); setCommonName(''); setEmail('');
     setMnemonic(''); setMnemonicInput(''); setPassword(''); setPasswordConfirm('');
-    setError(''); setShowMnemonic(false); setCertInfo(null);
+    setError(''); setShowMnemonic(false); setCertInfo(null); setLoadingMsg('');
+    setBackupEnabled(false); setBackupPw(''); setBackupPwConfirm(''); setBackupHint('');
+    setLogotype(null); setCardColor('navy');
     onOpenChange(false);
   };
 
