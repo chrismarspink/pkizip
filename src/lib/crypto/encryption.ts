@@ -29,6 +29,8 @@ export interface EncryptedPackage {
   tag: Uint8Array;
   recipients: WrappedRecipient[];
   algorithm: 'AES-256-GCM';
+  /** raw CEK bytes — PQC hybrid 캡슐화에 전달용 (메모리에서만 사용, 직렬화 안 됨) */
+  rawCEK?: Uint8Array;
 }
 
 export interface DecryptionResult {
@@ -71,6 +73,7 @@ export async function encryptForRecipients(
     tag: new Uint8Array(0),
     recipients: wrappedRecipients,
     algorithm: 'AES-256-GCM',
+    rawCEK: new Uint8Array(rawCEK),
   };
 }
 

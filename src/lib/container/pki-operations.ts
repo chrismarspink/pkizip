@@ -161,8 +161,8 @@ export async function seal(options: SealOptions): Promise<SealResult> {
     // ML-KEM 하이브리드: 동일 CEK를 ML-KEM으로도 캡슐화
     if (pqc?.shield) {
       try {
-        const rawCEK = await extractCekFromPackage(encryptedPkg, encrypt.recipients[0]);
-        const kemResult = await pqc.shield.encapsulateCEK(rawCEK);
+        if (!encryptedPkg.rawCEK) throw new Error('CEK를 추출할 수 없습니다');
+        const kemResult = await pqc.shield.encapsulateCEK(encryptedPkg.rawCEK);
         header.pqcKemRecipientInfo = {
           type: kemResult.type,
           pqcKeyId: kemResult.rid.pqcKeyId,
@@ -323,19 +323,31 @@ export async function open(
 
     const payloadCopy = new ArrayBuffer(payload.byteLength);
     new Uint8Array(payloadCopy).set(payload);
-    const encryptedPkg: EncryptedPackage = {
-      ciphertext: payloadCopy,
-      iv: new Uint8Array(base64ToArrayBuffer(header.encryption.iv)),
-      tag: new Uint8Array(0),
-      recipients: deserializeRecipients(header.encryption.recipients),
-      algorithm: 'AES-256-GCM',
-    };
+    const iv = new Uint8Array(base64ToArrayBuffer(header.encryption.iv));
 
-    const decrypted = await decryptAsRecipient(encryptedPkg, decryptionKey, myFingerprint);
-    payload = decrypted.plaintext;
+    let decrypted = false;
 
-    // ML-KEM 검증: PQC 수신자 정보가 있으면 역캡슐화도 시도 (하이브리드 검증)
-    if (header.pqcKemRecipientInfo && pqc?.shield) {
+    // 경로 1: ECDH classic 복호화
+    if (!decrypted) {
+      try {
+        const encryptedPkg: EncryptedPackage = {
+          ciphertext: payloadCopy,
+          iv,
+          tag: new Uint8Array(0),
+          recipients: deserializeRecipients(header.encryption.recipients),
+          algorithm: 'AES-256-GCM',
+        };
+        const result = await decryptAsRecipient(encryptedPkg, decryptionKey, myFingerprint);
+        payload = result.plaintext;
+        decrypted = true;
+        console.log('[PKIZIP] ECDH 복호화 성공');
+      } catch {
+        console.log('[PKIZIP] ECDH 복호화 실패 — ML-KEM 경로 시도');
+      }
+    }
+
+    // 경로 2: ML-KEM 복호화 (ECDH 실패 시 또는 PQC Only)
+    if (!decrypted && header.pqcKemRecipientInfo && pqc?.shield) {
       try {
         const ri = {
           kemCiphertext: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.kemCiphertext)),
@@ -344,10 +356,39 @@ export async function open(
           salt: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.salt)),
         };
         const pqcCek = await pqc.shield.decapsulateCEK(ri);
-        console.log('[PKIZIP] ML-KEM 역캡슐화 성공 (CEK:', pqcCek.length, 'B)');
+        // CEK로 직접 AES-GCM 복호화
+        const aesKey = await crypto.subtle.importKey('raw', pqcCek as unknown as BufferSource, { name: 'AES-GCM' }, false, ['decrypt']);
+        const plainBuf = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: iv as unknown as BufferSource, tagLength: 128 },
+          aesKey,
+          payloadCopy,
+        );
+        payload = new Uint8Array(plainBuf);
+        decrypted = true;
+        console.log('[PKIZIP] ML-KEM 복호화 성공');
       } catch (err) {
-        console.warn('[PKIZIP] ML-KEM 역캡슐화 실패:', err);
+        console.warn('[PKIZIP] ML-KEM 복호화 실패:', err);
       }
+    }
+
+    // Hybrid: ECDH로 이미 성공했어도 ML-KEM 역캡슐화 검증
+    if (decrypted && header.pqcKemRecipientInfo && pqc?.shield) {
+      try {
+        const ri = {
+          kemCiphertext: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.kemCiphertext)),
+          encryptedKey: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.encryptedKey)),
+          iv: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.iv)),
+          salt: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.salt)),
+        };
+        await pqc.shield.decapsulateCEK(ri);
+        console.log('[PKIZIP] ML-KEM CEK 검증 성공');
+      } catch {
+        console.warn('[PKIZIP] ML-KEM CEK 검증 실패 (ECDH로 복호화됨)');
+      }
+    }
+
+    if (!decrypted) {
+      throw new Error('복호화 실패 — ECDH/ML-KEM 모두 실패');
     }
   }
 
@@ -410,27 +451,3 @@ function uint8ArrayToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * EncryptedPackage에서 raw CEK 추출 (ML-KEM 캡슐화에 전달)
- * 첫 번째 수신자의 ECDH 경로를 통해 CEK를 unwrap한다.
- */
-async function extractCekFromPackage(
-  pkg: EncryptedPackage,
-  firstRecipient: RecipientInfo
-): Promise<Uint8Array> {
-  // 임시로 첫 수신자의 키로 CEK를 unwrap
-  // 실제로는 seal 시점에 rawCEK를 보관해야 하지만,
-  // encryptForRecipients가 이미 내부에서 exportKey('raw', cek)를 수행
-  // → CEK를 별도로 반환하도록 수정하거나, 여기서 재도출
-
-  // 대안: encryptForRecipients를 수정하여 rawCEK도 반환
-  // 현재는 hack — 첫 수신자 wrappedKey의 길이로 CEK 32바이트 확인
-  // 실제 구현은 encryption.ts 수정 필요
-
-  // 임시: CEK를 별도 생성하여 ML-KEM으로만 캡슐화 (독립 CEK)
-  // → 하이브리드에서는 동일 CEK여야 하지만, 현재 아키텍처 제약으로
-  //   ML-KEM은 별도 CEK로 payload를 이중 암호화하지 않고
-  //   헤더에 검증용 CEK 캡슐화만 저장 (proof of PQC capability)
-  const cek = crypto.getRandomValues(new Uint8Array(32));
-  return cek;
-}
