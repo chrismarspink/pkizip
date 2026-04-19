@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { SidebarNav } from './SidebarNav';
 import { BottomTabBar } from './BottomTabBar';
+import { UserMenu } from '@/components/auth/UserMenu';
 import { useIsMobile } from '@/hooks/useMediaQuery';
 import { Toaster } from 'sonner';
 
@@ -14,6 +15,10 @@ export function AppShell() {
 
       {/* 메인 콘텐츠 */}
       <main className={`flex-1 overflow-auto ${isMobile ? 'pb-16' : ''}`}>
+        {/* 상단 바: 사용자 메뉴 */}
+        <div className="flex items-center justify-end px-4 py-2 border-b border-zinc-100">
+          <UserMenu />
+        </div>
         <Outlet />
       </main>
 

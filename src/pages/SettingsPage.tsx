@@ -3,10 +3,14 @@
  *
  * 아이덴티티 관리는 CertsPage(인증서 카드 면 2)로 이동됨.
  */
-import { useState, useEffect } from 'react';
-import { Shield, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Shield, ChevronDown, Share2, Copy, Trash2, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
+import { useAuthStore } from '@/lib/supabase/auth-store';
+import { uploadCertBundle, getMyCertBundle, deleteCertBundle, type CertBundle } from '@/lib/supabase/cert-directory';
+import { getAllCertificates } from '@/lib/crypto/key-manager';
+import { AuthDialog } from '@/components/auth/AuthDialog';
 
 export function SettingsPage() {
   return (
@@ -19,6 +23,14 @@ export function SettingsPage() {
           <Shield className="w-4 h-4" /> 양자 암호 (Post-Quantum)
         </h2>
         <PQCSettings />
+      </div>
+
+      {/* 인증서 공유 섹션 */}
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Share2 className="w-4 h-4" /> 인증서 공유
+        </h2>
+        <CertSharingSection />
       </div>
     </div>
   );
@@ -151,6 +163,134 @@ function PQCSettings() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ══ 인증서 공유 섹션 ══
+
+function CertSharingSection() {
+  const user = useAuthStore(s => s.user);
+  const [showAuth, setShowAuth] = useState(false);
+  const [username, setUsername] = useState('');
+  const [myBundle, setMyBundle] = useState<CertBundle | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  // 로그인 시 기존 번들 로드
+  useEffect(() => {
+    if (user && !loaded) {
+      getMyCertBundle().then(b => { setMyBundle(b); if (b) setUsername(b.username); setLoaded(true); }).catch(() => setLoaded(true));
+    }
+  }, [user, loaded]);
+
+  const handleUpload = useCallback(async () => {
+    if (!/^[a-z0-9-]{3,32}$/.test(username)) {
+      toast.error('username: 소문자·숫자·하이픈 3~32자');
+      return;
+    }
+    setUploading(true);
+    try {
+      const certs = await getAllCertificates();
+      const cert = certs[0]; // 첫 번째 인증서
+      if (!cert) { toast.error('인증서가 없습니다. 먼저 키를 생성하세요.'); return; }
+
+      await uploadCertBundle({
+        username,
+        display_name: cert.commonName,
+        email: cert.email,
+        cert_classic: cert.pemCertificate,
+        cert_kem: cert.pqcCertificates?.kem,
+        cert_dsa: cert.pqcCertificates?.dsa,
+        fingerprint: cert.fingerprint,
+      });
+      const b = await getMyCertBundle();
+      setMyBundle(b);
+      toast.success('인증서 공유 완료');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '업로드 실패');
+    } finally {
+      setUploading(false);
+    }
+  }, [username]);
+
+  const handleDelete = useCallback(async () => {
+    try {
+      await deleteCertBundle();
+      setMyBundle(null);
+      setDeleteConfirm(false);
+      toast.success('인증서 공유 삭제 완료');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '삭제 실패');
+    }
+  }, []);
+
+  // 비로그인
+  if (!user) {
+    return (
+      <div className="rounded-xl border border-zinc-200 p-4 text-center">
+        <Lock className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
+        <p className="text-xs text-zinc-500 mb-3">로그인하면 인증서를 공유하고 검색할 수 있습니다.</p>
+        <button onClick={() => setShowAuth(true)} className="text-xs bg-[#175DDC] text-white px-4 py-2 rounded-lg">로그인</button>
+        <AuthDialog open={showAuth} onOpenChange={setShowAuth} />
+      </div>
+    );
+  }
+
+  // 업로드 완료 상태
+  if (myBundle) {
+    return (
+      <div className="rounded-xl border-2 border-[#175DDC] bg-[#175DDC]/5 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">내 인증서 주소</span>
+          <button onClick={() => { navigator.clipboard.writeText(`pkizip.app/k/${myBundle.username}`); toast.success('복사됨'); }}
+            className="flex items-center gap-1 text-xs text-[#175DDC] hover:underline">
+            <Copy className="w-3 h-3" /> 복사
+          </button>
+        </div>
+        <div className="font-mono text-sm bg-white rounded-lg px-3 py-2 border border-zinc-200">
+          pkizip.app/k/{myBundle.username}
+        </div>
+        <div className="flex gap-1.5 text-[9px]">
+          {myBundle.cert_classic && <span className="bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded font-bold">ECDSA</span>}
+          {myBundle.cert_kem && <span className="bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-bold">ML-KEM</span>}
+          {myBundle.cert_dsa && <span className="bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-bold">ML-DSA</span>}
+        </div>
+        <div className="text-[10px] text-zinc-400">
+          업데이트: {new Date(myBundle.updated_at).toLocaleDateString('ko-KR')}
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => { setMyBundle(null); setLoaded(false); }} className="text-xs text-zinc-500 hover:text-[#175DDC]">재업로드</button>
+          {deleteConfirm ? (
+            <div className="flex items-center gap-2">
+              <button onClick={handleDelete} className="text-[11px] text-white bg-red-500 rounded-md px-3 py-1">삭제</button>
+              <button onClick={() => setDeleteConfirm(false)} className="text-[11px] text-zinc-500">취소</button>
+            </div>
+          ) : (
+            <button onClick={() => setDeleteConfirm(true)} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-red-500">
+              <Trash2 className="w-3 h-3" /> 삭제
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 업로드 전
+  return (
+    <div className="rounded-xl border border-zinc-200 p-4 space-y-3">
+      <p className="text-xs text-zinc-500">인증서를 공유하면 다른 사용자가 검색하여 키링에 추가할 수 있습니다.</p>
+      <div className="space-y-1">
+        <label className="text-[10px] text-zinc-500">username (공유 주소에 사용)</label>
+        <input type="text" value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+          placeholder="my-username" maxLength={32}
+          className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
+      </div>
+      <button onClick={handleUpload} disabled={uploading}
+        className="w-full bg-[#175DDC] text-white py-2.5 rounded-xl text-sm font-medium hover:bg-[#0C3276] transition-colors disabled:opacity-50">
+        {uploading ? '업로드 중...' : '인증서 공유'}
+      </button>
     </div>
   );
 }

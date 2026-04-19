@@ -7,6 +7,7 @@ import { deriveKeyIdentity, exportPublicKeyJWK } from '@/lib/crypto/hd-key';
 import { saveIdentity, addToKeyRing, saveCertificate, type PublicKeyEntry, type StoredCertificate } from '@/lib/crypto/key-manager';
 import { generateSelfSignedCertificate, type CertificateInfo } from '@/lib/crypto/certificate';
 import { useAppStore } from '@/lib/store/app-store';
+import { useAuthStore } from '@/lib/supabase/auth-store';
 import { Identicon } from '@/components/cert/Identicon';
 import { LogoCrop } from '@/components/LogoCrop';
 import { toast } from 'sonner';
@@ -36,6 +37,13 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   const [loading, setLoading] = useState(false);
   const [certInfo, setCertInfo] = useState<CertificateInfo | null>(null);
   const [fingerprint, setFingerprint] = useState('');
+
+  // 서버 백업 옵션
+  const authUser = useAuthStore(s => s.user);
+  const [backupEnabled, setBackupEnabled] = useState(false);
+  const [backupPw, setBackupPw] = useState('');
+  const [backupPwConfirm, setBackupPwConfirm] = useState('');
+  const [backupHint, setBackupHint] = useState('');
 
   const { setKeyIdentity, setCertificate, setIdentities, setActiveIdentityId } = useAppStore();
 
@@ -154,6 +162,23 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         signingFingerprint: m.signingFingerprint, encryptionFingerprint: m.encryptionFingerprint,
         createdAt: m.createdAt,
       })));
+
+      // 서버 백업 (opt-in, 로그인 시만)
+      if (backupEnabled && authUser && backupPw) {
+        if (backupPw !== backupPwConfirm) {
+          toast.error('백업 패스워드가 일치하지 않습니다.');
+        } else if (backupPw.length < 8) {
+          toast.error('백업 패스워드는 8자 이상이어야 합니다.');
+        } else {
+          try {
+            const { backupMnemonic } = await import('@/lib/supabase/mnemonic-backup');
+            await backupMnemonic(mnemonic, backupPw, id, backupHint || undefined);
+            toast.success('니모닉 암호화 백업 저장 완료');
+          } catch (backupErr) {
+            toast.error(`백업 실패: ${backupErr instanceof Error ? backupErr.message : '오류'}`);
+          }
+        }
+      }
 
       setStep('done');
     } catch (err) {
@@ -282,7 +307,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
               </motion.div>
             )}
 
-            {/* Password */}
+            {/* Password + Backup Option */}
             {step === 'password' && (
               <motion.div key="pw" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
                 <p className="text-sm text-zinc-500">키를 안전하게 저장할 비밀번호를 설정하세요.</p>
@@ -291,6 +316,31 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
                 <input type="password" value={passwordConfirm} onChange={e => { setPasswordConfirm(e.target.value); setError(''); }} placeholder="비밀번호 확인"
                   className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                   onKeyDown={e => e.key === 'Enter' && handleSaveKey()} />
+
+                {/* 서버 백업 옵션 */}
+                <div className="border-t border-zinc-100 pt-3 mt-2">
+                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input type="checkbox" checked={backupEnabled} onChange={e => setBackupEnabled(e.target.value !== '' && e.target.checked)}
+                      disabled={!authUser} className="rounded border-zinc-300 accent-[#175DDC]" />
+                    <span className={authUser ? 'text-zinc-700' : 'text-zinc-400'}>서버에 암호화 백업 저장</span>
+                  </label>
+                  {!authUser && <p className="text-[10px] text-zinc-400 mt-1 ml-5">로그인 후 사용 가능합니다</p>}
+
+                  {backupEnabled && authUser && (
+                    <div className="mt-2 space-y-2 pl-5">
+                      <input type="password" value={backupPw} onChange={e => setBackupPw(e.target.value)} placeholder="백업 패스워드 (키 패스워드와 다른 것 권장)"
+                        className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
+                      <input type="password" value={backupPwConfirm} onChange={e => setBackupPwConfirm(e.target.value)} placeholder="백업 패스워드 확인"
+                        className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
+                      <input type="text" value={backupHint} onChange={e => setBackupHint(e.target.value)} placeholder="힌트 (선택, 패스워드 자체 입력 금지)"
+                        className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[10px] text-amber-700">
+                        백업 패스워드를 잊으면 복구 불가. 서버에는 암호화된 데이터만 저장됩니다.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-end pt-2">
                   <Btn onClick={handleSaveKey} disabled={loading}>{loading ? '생성 중...' : '키 저장 및 인증서 발급'}</Btn>

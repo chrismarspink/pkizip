@@ -4,6 +4,7 @@ import { HomePage } from '@/pages/HomePage';
 import { CreatePage } from '@/pages/CreatePage';
 import { FilesTempPage } from '@/pages/FilesTempPage';
 import { CertsPage } from '@/pages/CertsPage';
+import { ContactsPage } from '@/pages/ContactsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
 export function App() {
@@ -18,6 +19,7 @@ export function App() {
           <Route path="/create" element={<CreatePage />} />
           <Route path="/files" element={<FilesTempPage />} />
           <Route path="/certs" element={<CertsPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>

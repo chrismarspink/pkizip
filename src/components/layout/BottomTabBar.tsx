@@ -1,11 +1,12 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Home, FilePlus, FileArchive, ShieldCheck, Settings } from 'lucide-react';
+import { Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings } from 'lucide-react';
 
 const TABS = [
   { path: '/', icon: Home, label: '홈' },
   { path: '/create', icon: FilePlus, label: '생성' },
   { path: '/files', icon: FileArchive, label: '파일' },
   { path: '/certs', icon: ShieldCheck, label: '인증서' },
+  { path: '/contacts', icon: BookUser, label: 'Contacts' },
   { path: '/settings', icon: Settings, label: '설정' },
 ];
 

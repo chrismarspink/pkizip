@@ -23,6 +23,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@scure/bip32": "^2.0.1",
     "@scure/bip39": "^2.0.1",
+    "@supabase/supabase-js": "^2.103.3",
     "@tanstack/react-virtual": "^3.13.23",
     "asn1js": "^3.0.7",
     "fflate": "^0.8.2",
