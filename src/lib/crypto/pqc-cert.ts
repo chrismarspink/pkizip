@@ -75,7 +75,7 @@ export async function buildMlKemCertificate(p: {
 
   // TBSCertificate DER → ML-DSA-87 서명 (cert.sign() 사용 불가)
   const tbsDer = copyUint8(new Uint8Array(cert.encodeTBS().toBER()));
-  const sig = ml_dsa87.sign(p.dsaSecretKey, tbsDer);
+  const sig = ml_dsa87.sign(tbsDer, p.dsaSecretKey);
 
   cert.signatureValue = makeBitString(sig);
 
@@ -127,7 +127,7 @@ export async function buildMlDsaCertificate(p: {
   });
 
   const tbsDer = copyUint8(new Uint8Array(cert.encodeTBS().toBER()));
-  const sig = ml_dsa87.sign(p.dsaSecretKey, tbsDer);
+  const sig = ml_dsa87.sign(tbsDer, p.dsaSecretKey);
 
   cert.signatureValue = makeBitString(sig);
 
