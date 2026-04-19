@@ -36,19 +36,32 @@ export class PQCBundle {
     const keys = await PQCDerive.deriveAll(mnemonic, password);
 
     // 표준 X.509 인증서 생성 (RFC 9935 / RFC 9881)
-    const kemCert = await buildMlKemCertificate({
-      kemPublicKey: keys.kem.publicKey,
-      dsaSecretKey: keys.dsa.secretKey,  // ML-KEM은 서명 불가 → ML-DSA로 서명
-      subject: { commonName: subject.name, email: subject.email },
-      validityDays: validity,
-    });
+    let kemCert, dsaCert;
+    try {
+      console.log('[PQC-bundle] ML-KEM 인증서 생성 시작 (pubKey:', keys.kem.publicKey.length, 'B, dsaSec:', keys.dsa.secretKey.length, 'B)');
+      kemCert = await buildMlKemCertificate({
+        kemPublicKey: keys.kem.publicKey,
+        dsaSecretKey: keys.dsa.secretKey,
+        subject: { commonName: subject.name, email: subject.email },
+        validityDays: validity,
+      });
+      console.log('[PQC-bundle] ML-KEM 인증서 생성 완료:', kemCert?.length, 'chars');
+    } catch (kemErr) {
+      console.error('[PQC-bundle] ML-KEM 인증서 생성 실패:', kemErr);
+    }
 
-    const dsaCert = await buildMlDsaCertificate({
-      dsaPublicKey: keys.dsa.publicKey,
-      dsaSecretKey: keys.dsa.secretKey,  // 자가 서명
-      subject: { commonName: subject.name, email: subject.email },
-      validityDays: validity,
-    });
+    try {
+      console.log('[PQC-bundle] ML-DSA 인증서 생성 시작 (pubKey:', keys.dsa.publicKey.length, 'B, dsaSec:', keys.dsa.secretKey.length, 'B)');
+      dsaCert = await buildMlDsaCertificate({
+        dsaPublicKey: keys.dsa.publicKey,
+        dsaSecretKey: keys.dsa.secretKey,
+        subject: { commonName: subject.name, email: subject.email },
+        validityDays: validity,
+      });
+      console.log('[PQC-bundle] ML-DSA 인증서 생성 완료:', dsaCert?.length, 'chars');
+    } catch (dsaErr) {
+      console.error('[PQC-bundle] ML-DSA 인증서 생성 실패:', dsaErr);
+    }
 
     const certs = { kem: kemCert, dsa: dsaCert };
 
