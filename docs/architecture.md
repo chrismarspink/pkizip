@@ -220,10 +220,16 @@ PQC 인증서 특이사항:
 - `cert.sign()` 사용 불가 (Web Crypto 미지원) → `ml_dsa87.sign(tbsDer)` 직접 호출
 - `StoredCertificate.pqcCertificates`에 `-----BEGIN CERTIFICATE-----` PEM 저장
 
-PQC 3가지 모드 (운용 시 적용, 인증서 생성과 무관):
-- **hybrid**: 기존 RSA/ECDSA + PQC 동시 포함 (기본값)
-- **pqc-only**: PQC 전용
-- **classical**: 기존 알고리즘만
+PQC 3가지 모드 (메시지 생성 시 선택, 인증서 생성과 무관):
+
+| 모드 | 암호화 | 서명 | 복호화 | 목적 |
+|------|--------|------|--------|------|
+| **Classic** | ECDH → CEK | ECDSA | ECDH | 기존 호환 |
+| **Hybrid** | ECDH + ML-KEM → 동일 CEK | ECDSA + ML-DSA | ECDH 또는 ML-KEM | 호환성 우선 과도기 |
+| **PQC Only** | ML-KEM → CEK (ECDH 없음) | ML-DSA (ECDSA 없음) | ML-KEM | 양자 내성 최대 |
+
+Hybrid는 OR 구조 — Classic 시스템도 PQC 시스템도 열 수 있는 **호환 모드**.
+보안 강도는 약한 쪽 수준이지만, PQC 미지원 환경에서도 열기 가능.
 
 ---
 
