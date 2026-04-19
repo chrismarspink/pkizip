@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FilePlus, X, ChevronRight, Check, Loader2, Download, Shield, PenTool, Lock, Package } from 'lucide-react';
-import { PqcBadge } from '@/components/PqcBadge';
+// PqcBadge removed — crypto mode shown inline
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
 import { serializeEntries } from '@/lib/compression/compressor';
@@ -30,7 +30,7 @@ const STEPS = [
 ] as const;
 
 export function CreatePage() {
-  const { keyIdentity, isKeyLoaded, identities, activeIdentityId, setIdentities, setActiveIdentityId, pqcConfig } = useAppStore();
+  const { keyIdentity, isKeyLoaded, identities, activeIdentityId, setIdentities, setActiveIdentityId } = useAppStore();
   // IndexedDB에서 아이덴티티 로드
   useEffect(() => {
     (async () => {
@@ -51,6 +51,7 @@ export function CreatePage() {
   const [step, setStep] = useState<Step>('files');
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [options, setOptions] = useState<CmsOptions>({ compress: true, sign: false, enveloped: false, encrypted: false });
+  const [cryptoMode, setCryptoMode] = useState<'hybrid' | 'pqc-only' | 'classic'>('hybrid');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [recipients, setRecipients] = useState<Set<string>>(new Set());
@@ -206,16 +207,12 @@ export function CreatePage() {
 
   // PQC 인스턴스 (store에서 가져옴 — 잠금 해제 시 초기화됨)
   const loadPqcForSeal = (): { shield?: any; signer?: any; mode: string } | undefined => {
-    const { pqcConfig: cfg, pqcShield, pqcSigner } = useAppStore.getState();
-    if (!cfg.kemEnabled && !cfg.dsaEnabled) return undefined;
+    if (cryptoMode === 'classic') return undefined;
+    const { pqcShield, pqcSigner } = useAppStore.getState();
     if (!pqcShield && !pqcSigner) {
-      throw new Error('PQC가 활성화되어 있지만 키가 로드되지 않았습니다.\n키를 잠금 해제한 후 다시 시도하세요.');
+      throw new Error('PQC 키가 로드되지 않았습니다.\n키를 잠금 해제한 후 다시 시도하세요.');
     }
-    return {
-      shield: cfg.kemEnabled ? pqcShield : undefined,
-      signer: cfg.dsaEnabled ? pqcSigner : undefined,
-      mode: cfg.kemMode || 'hybrid',
-    };
+    return { shield: pqcShield ?? undefined, signer: pqcSigner ?? undefined, mode: cryptoMode };
   };
 
   const runProcessing = async () => {
@@ -273,7 +270,7 @@ export function CreatePage() {
         pkiData = result.pkiData;
         suffix = 'enveloped';
         info = `EnvelopedMessage (${recipientInfos.length}명 수신자)`;
-        algos.push('ECDH P-256 (암호화)', 'AES-256-GCM', 'ECDSA P-256 (서명)');
+        if (cryptoMode !== 'pqc-only') algos.push('ECDH P-256 (암호화)', 'AES-256-GCM', 'ECDSA P-256 (서명)');
         if (result.stats.pqcKem) algos.push('ML-KEM-1024 (양자 암호화)');
         if (result.stats.pqcDsa) algos.push('ML-DSA-87 (양자 서명)');
       } else if (options.sign) {
@@ -289,7 +286,7 @@ export function CreatePage() {
         pkiData = result.pkiData;
         suffix = 'signed';
         info = `SignedMessage (0x${currentKey.signingKey.fingerprint})`;
-        algos.push('ECDSA P-256 (서명)');
+        if (cryptoMode !== 'pqc-only') algos.push('ECDSA P-256 (서명)');
         if (result.stats.pqcDsa) algos.push('ML-DSA-87 (양자 서명)');
       } else {
         const result = await compressOnly(files);
@@ -398,11 +395,43 @@ export function CreatePage() {
             <p className="text-sm text-zinc-500 mb-4">파일 보호 옵션을 선택하세요.</p>
 
             <div className="space-y-3">
-              <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title="압축" desc="tar.gz 압축" />
-              <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title="서명 (Signed)" desc="ECDSA P-256 전자서명" disabled={!hasAnyIdentity} />
+              <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title="압축" desc="ZLIB/ZIP 압축" />
+              <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title="서명 (Signed)" desc="전자서명" disabled={!hasAnyIdentity} />
               <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#1DC078]" />} title="공개키 암호화 (Enveloped)" desc="수신자 공개키 + 서명" disabled={!hasAnyIdentity} />
               <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title="비밀번호 암호화 (Encrypted)" desc="AES-256-GCM 비밀번호" />
             </div>
+
+            {/* 암호 모드 선택 (서명 또는 공개키 암호화 시) */}
+            {(options.sign || options.enveloped) && (
+              <div className="bg-white border border-zinc-200 rounded-xl p-4 mt-3 space-y-2">
+                <label className="text-xs font-medium text-zinc-700">암호 알고리즘</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: 'classic', label: 'Classic', desc: 'ECDSA / ECDH (P-256)', color: 'zinc' },
+                    { value: 'hybrid', label: 'Hybrid', desc: 'Classic + PQC 병행', color: 'green' },
+                    { value: 'pqc-only', label: 'PQC Only', desc: 'ML-KEM / ML-DSA', color: 'violet' },
+                  ] as const).map(m => {
+                    const selected = cryptoMode === m.value;
+                    return (
+                      <button key={m.value} onClick={() => setCryptoMode(m.value)}
+                        className={`text-left rounded-lg px-3 py-2.5 border-2 transition-all ${
+                          selected
+                            ? m.color === 'violet' ? 'border-violet-500 bg-violet-50'
+                            : m.color === 'green' ? 'border-[#1DC078] bg-[#1DC078]/5'
+                            : 'border-zinc-800 bg-zinc-50'
+                            : 'border-zinc-100 hover:border-zinc-300'
+                        }`}>
+                        <div className={`text-xs font-bold ${selected
+                          ? m.color === 'violet' ? 'text-violet-700' : m.color === 'green' ? 'text-[#1DC078]' : 'text-zinc-800'
+                          : 'text-zinc-500'
+                        }`}>{m.label}</div>
+                        <div className="text-[10px] text-zinc-400 mt-0.5">{m.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* 서명 인증서 선택 */}
             {(options.sign || options.enveloped) && identities.length > 0 && (
@@ -432,9 +461,16 @@ export function CreatePage() {
               </div>
             )}
 
-            <div className="bg-white border border-zinc-200 rounded-xl p-3 mt-3 text-xs text-zinc-600">
+            <div className="bg-white border border-zinc-200 rounded-xl p-3 mt-3 text-xs text-zinc-600 flex items-center gap-2 flex-wrap">
               생성 타입: <span className="font-bold text-zinc-800">{cmsType}Message</span>
-              {(options.sign || options.enveloped) && <PqcBadge pqc={pqcConfig.kemEnabled || pqcConfig.dsaEnabled} size="sm" />}
+              {(options.sign || options.enveloped) && cryptoMode !== 'classic' && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-violet-600 text-white">Q</span>
+              )}
+              {(options.sign || options.enveloped) && (
+                <span className="text-[10px] text-zinc-400">
+                  ({cryptoMode === 'hybrid' ? 'Classic + PQC' : cryptoMode === 'pqc-only' ? 'PQC Only' : 'Classic'})
+                </span>
+              )}
             </div>
 
             {/* 키 잠금 해제 인라인 */}
