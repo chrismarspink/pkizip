@@ -15,8 +15,29 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Download, Image as ImageIcon, RotateCcw } from 'lucide-react';
 
+/** 카드 색상 프리셋 */
+const CARD_COLORS = [
+  { id: 'navy',    label: 'Navy',    bg: 'linear-gradient(135deg, #175DDC, #0C3276)' },
+  { id: 'violet',  label: 'Violet',  bg: 'linear-gradient(135deg, #7C3AED, #4C1D95)' },
+  { id: 'teal',    label: 'Teal',    bg: 'linear-gradient(135deg, #0D9488, #134E4A)' },
+  { id: 'slate',   label: 'Slate',   bg: 'linear-gradient(135deg, #475569, #1E293B)' },
+  { id: 'rose',    label: 'Rose',    bg: 'linear-gradient(135deg, #E11D48, #881337)' },
+  { id: 'amber',   label: 'Amber',   bg: 'linear-gradient(135deg, #F59E0B, #92400E)' },
+  { id: 'emerald', label: 'Emerald', bg: 'linear-gradient(135deg, #10B981, #065F46)' },
+  { id: 'sky',     label: 'Sky',     bg: 'linear-gradient(135deg, #0EA5E9, #0C4A6E)' },
+] as const;
+
+export type CardColorId = typeof CARD_COLORS[number]['id'];
+export const DEFAULT_CARD_COLOR: CardColorId = 'navy';
+export function getCardBackground(colorId?: string): string {
+  const found = CARD_COLORS.find(c => c.id === colorId);
+  return found?.bg ?? CARD_COLORS[0].bg;
+}
+
 interface LogoCropProps {
   onCropComplete: (dataUrl: string) => void;
+  cardColor?: CardColorId;
+  onCardColorChange?: (color: CardColorId) => void;
 }
 
 interface CropBox { x: number; y: number; w: number; h: number; }
@@ -27,7 +48,7 @@ const CANVAS_H = 320;
 const HANDLE = 10;
 const MIN_SIZE = 20;
 
-export function LogoCrop({ onCropComplete }: LogoCropProps) {
+export function LogoCrop({ onCropComplete, cardColor = DEFAULT_CARD_COLOR, onCardColorChange }: LogoCropProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -390,9 +411,9 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
           </div>
 
-          {/* 인증서 카드 미리보기 */}
+          {/* 인증서 카드 미리보기 + 컬러 선택 */}
           {previewUrl && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-zinc-500 font-medium">인증서 카드 미리보기</p>
                 <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
@@ -404,7 +425,24 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
                   {previewSize < 64 * 1024 ? ' ✓ 64KB 이하' : ' ⚠ 64KB 초과'}
                 </span>
               </div>
-              <PreviewCard logoUrl={previewUrl} />
+              <PreviewCard logoUrl={previewUrl} background={getCardBackground(cardColor)} />
+              {/* 컬러 피커 */}
+              <div>
+                <p className="text-[10px] text-zinc-400 mb-1.5">카드 컬러</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {CARD_COLORS.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => onCardColorChange?.(c.id)}
+                      title={c.label}
+                      className={`w-7 h-7 rounded-lg border-2 transition-all ${
+                        cardColor === c.id ? 'border-zinc-800 scale-110' : 'border-transparent hover:border-zinc-300'
+                      }`}
+                      style={{ background: c.bg }}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -417,13 +455,13 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
 }
 
 // === 인증서 카드 미리보기 ===
-function PreviewCard({ logoUrl }: { logoUrl: string }) {
+function PreviewCard({ logoUrl, background }: { logoUrl: string; background?: string }) {
   return (
     <div
       className="relative overflow-hidden"
       style={{
         width: 320, height: 202, borderRadius: 14,
-        background: 'linear-gradient(135deg, #175DDC, #0C3276)',
+        background: background || 'linear-gradient(135deg, #175DDC, #0C3276)',
         color: 'white',
       }}
     >

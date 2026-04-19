@@ -5,6 +5,7 @@
 import { ShieldCheck } from 'lucide-react';
 import { Identicon } from './Identicon';
 import { PqcBadge } from '@/components/PqcBadge';
+import { getCardBackground } from '@/components/LogoCrop';
 import type { StoredCertificate } from '@/lib/crypto/key-manager';
 
 interface CardFaceFrontProps {
@@ -22,11 +23,12 @@ export function CardFaceFront({ cert, identityName, isActive, pqcEnabled }: Card
 
   return (
     <div
-      className={`p-5 text-white relative h-full ${
-        isActive
-          ? 'bg-gradient-to-br from-[#175DDC] to-[#0C3276]'
-          : 'bg-gradient-to-br from-zinc-600 to-zinc-700'
-      }`}
+      className="p-5 text-white relative h-full"
+      style={{
+        background: isActive
+          ? getCardBackground(cert.cardColor)
+          : 'linear-gradient(135deg, #52525b, #3f3f46)',
+      }}
     >
       {/* 헤더 라인 */}
       <div className="flex items-start justify-between mb-3">

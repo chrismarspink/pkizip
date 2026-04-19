@@ -25,6 +25,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   const [commonName, setCommonName] = useState('');
   const [email, setEmail] = useState('');
   const [logotype, setLogotype] = useState<string | null>(null);
+  const [cardColor, setCardColor] = useState<string>('navy');
   const [showLogoCrop, setShowLogoCrop] = useState(false);
   const [mnemonic, setMnemonic] = useState('');
   const [mnemonicInput, setMnemonicInput] = useState('');
@@ -123,6 +124,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         notBefore: cert.notBefore.getTime(), notAfter: cert.notAfter.getTime(),
         pemCertificate: cert.pemCertificate, createdAt: Date.now(),
         logotype: logotype ?? undefined,
+        cardColor,
         pqcCertificates: pqcCerts,
         pqcKeyId,
       };
@@ -334,7 +336,11 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
             <Dialog.Description className="text-sm text-zinc-500 mb-4">
               인증서에 사용할 이미지를 업로드하고 영역을 선택하세요.
             </Dialog.Description>
-            <LogoCrop onCropComplete={(dataUrl) => setLogotype(dataUrl)} />
+            <LogoCrop
+              onCropComplete={(dataUrl) => setLogotype(dataUrl)}
+              cardColor={cardColor as any}
+              onCardColorChange={setCardColor}
+            />
             <div className="flex justify-end mt-4 pt-4 border-t border-zinc-100">
               <Btn onClick={() => setShowLogoCrop(false)}>완료</Btn>
             </div>
