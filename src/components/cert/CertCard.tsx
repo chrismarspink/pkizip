@@ -186,7 +186,7 @@ export function CertCard(props: CertCardProps) {
             tabIndex={0}
             className={`h-1.5 rounded-full transition-all duration-200 ${
               face === i
-                ? 'bg-[#1DC078] w-4'
+                ? 'bg-[#175DDC] w-4'
                 : 'bg-zinc-300 w-1.5 hover:bg-zinc-400'
             }`}
           />

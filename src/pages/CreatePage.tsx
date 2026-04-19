@@ -366,15 +366,15 @@ export function CreatePage() {
             <div key={s.key} className="flex items-center flex-1 min-w-0">
               <div className="flex flex-col items-center gap-0.5 shrink-0">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                  done ? 'bg-[#1DC078] border-[#1DC078] text-white' : active ? 'border-zinc-800 text-zinc-800' : 'border-zinc-300 text-zinc-400'
+                  done ? 'bg-[#175DDC] border-[#175DDC] text-white' : active ? 'border-zinc-800 text-zinc-800' : 'border-zinc-300 text-zinc-400'
                 }`}>
                   {done ? <Check className="w-4 h-4" /> : i + 1}
                 </div>
                 <span className={`text-[10px] font-medium leading-tight ${
-                  done ? 'text-[#1DC078]' : active ? 'text-zinc-800' : 'text-zinc-400'
+                  done ? 'text-[#175DDC]' : active ? 'text-zinc-800' : 'text-zinc-400'
                 }`}>{s.label}</span>
               </div>
-              {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-1.5 mt-[-12px] rounded ${done ? 'bg-[#1DC078]' : 'bg-zinc-200'}`} />}
+              {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-1.5 mt-[-12px] rounded ${done ? 'bg-[#175DDC]' : 'bg-zinc-200'}`} />}
             </div>
           );
         })}
@@ -399,7 +399,7 @@ export function CreatePage() {
 
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-8 text-center text-zinc-400 hover:border-[#1DC078] hover:text-[#1DC078] transition-colors mt-2"
+              className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-8 text-center text-zinc-400 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors mt-2"
             >
               <FilePlus className="w-8 h-8 mx-auto mb-2" />
               <span className="text-sm">파일 선택 또는 드래그</span>
@@ -435,12 +435,12 @@ export function CreatePage() {
                       className={`text-left rounded-lg px-3 py-2.5 border-2 transition-all ${
                         selected
                           ? m.color === 'violet' ? 'border-violet-500 bg-violet-50'
-                          : m.color === 'green' ? 'border-[#1DC078] bg-[#1DC078]/5'
+                          : m.color === 'green' ? 'border-[#175DDC] bg-[#175DDC]/5'
                           : 'border-zinc-800 bg-zinc-50'
                           : 'border-zinc-100 hover:border-zinc-300'
                       }`}>
                       <div className={`text-xs font-bold ${selected
-                        ? m.color === 'violet' ? 'text-violet-700' : m.color === 'green' ? 'text-[#1DC078]' : 'text-zinc-800'
+                        ? m.color === 'violet' ? 'text-violet-700' : m.color === 'green' ? 'text-[#175DDC]' : 'text-zinc-800'
                         : 'text-zinc-500'
                       }`}>{m.label}</div>
                       <div className="text-[10px] text-zinc-400 mt-0.5">{m.desc}</div>
@@ -453,7 +453,7 @@ export function CreatePage() {
             <div className="space-y-3">
               <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title="압축" desc="ZLIB/ZIP 압축" />
               <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title="서명 (Signed)" desc={cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명' : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명' : 'ECDSA P-256 전자서명'} disabled={!hasAnyIdentity} />
-              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#1DC078]" />} title="공개키 암호화 (Enveloped)" desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
+              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#175DDC]" />} title="공개키 암호화 (Enveloped)" desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
               <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title="비밀번호 암호화 (Encrypted)" desc="AES-256-GCM 비밀번호" />
             </div>
 
@@ -467,10 +467,10 @@ export function CreatePage() {
                     return (
                       <button key={id.id} onClick={() => setSelectedIdentityId(id.id)}
                         className={`w-full text-left rounded-lg px-3 py-2.5 border-2 transition-all flex items-center gap-3 ${
-                          isSelected ? 'border-[#1DC078] bg-[#1DC078]/5' : 'border-zinc-100 hover:border-zinc-300'
+                          isSelected ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-100 hover:border-zinc-300'
                         }`}>
                         <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                          isSelected ? 'border-[#1DC078] bg-[#1DC078]' : 'border-zinc-300'
+                          isSelected ? 'border-[#175DDC] bg-[#175DDC]' : 'border-zinc-300'
                         }`}>
                           {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
                         </div>
@@ -506,7 +506,7 @@ export function CreatePage() {
                 <div className="flex gap-2">
                   <input type="password" value={unlockPw} onChange={e => setUnlockPw(e.target.value)}
                     placeholder={hasPinRegistered ? 'PIN 또는 비밀번호' : '키 비밀번호'}
-                    className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]"
+                    className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                     autoFocus onKeyDown={e => e.key === 'Enter' && goNext()} />
                   <button onClick={goNext} className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm">확인</button>
                 </div>
@@ -531,9 +531,9 @@ export function CreatePage() {
                 <p className="text-sm text-zinc-500 mb-4">수신자에게 비밀번호를 별도 전달하세요.</p>
                 <div className="space-y-3 max-w-sm">
                   <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="비밀번호 (4자 이상)"
-                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]" autoFocus />
+                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" autoFocus />
                   <input type="password" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} placeholder="비밀번호 확인"
-                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]"
+                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                     onKeyDown={e => e.key === 'Enter' && goNext()} />
                 </div>
               </>
@@ -558,11 +558,11 @@ export function CreatePage() {
                             return next;
                           })}
                           className={`w-full text-left rounded-xl p-4 border-2 transition-all flex items-center gap-3 ${
-                            selected ? 'bg-[#1DC078]/5 border-[#1DC078]' : 'border-zinc-200 bg-white hover:border-zinc-400'
+                            selected ? 'bg-[#175DDC]/5 border-[#175DDC]' : 'border-zinc-200 bg-white hover:border-zinc-400'
                           }`}
                         >
                           <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
-                            selected ? 'bg-[#1DC078] border-[#1DC078]' : 'border-zinc-300'
+                            selected ? 'bg-[#175DDC] border-[#175DDC]' : 'border-zinc-300'
                           }`}>
                             {selected && <Check className="w-3 h-3 text-white" />}
                           </div>
@@ -571,7 +571,7 @@ export function CreatePage() {
                             <div className="text-[10px] font-mono text-zinc-400 truncate">0x{entry.fingerprint}</div>
                           </div>
                           {entry.type === 'local' && (
-                            <span className="text-[9px] bg-[#1DC078]/10 text-[#1DC078] px-2 py-0.5 rounded-full font-medium shrink-0">나</span>
+                            <span className="text-[9px] bg-[#175DDC]/10 text-[#175DDC] px-2 py-0.5 rounded-full font-medium shrink-0">나</span>
                           )}
                         </button>
                       );
@@ -593,7 +593,7 @@ export function CreatePage() {
         {/* Processing */}
         {step === 'processing' && (
           <motion.div key="proc" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center py-20">
-            <Loader2 className="w-10 h-10 animate-spin text-[#1DC078] mb-4" />
+            <Loader2 className="w-10 h-10 animate-spin text-[#175DDC] mb-4" />
             <p className="text-sm text-zinc-500">{cmsType}Message 생성 중...</p>
           </motion.div>
         )}
@@ -601,8 +601,8 @@ export function CreatePage() {
         {/* Done */}
         {step === 'done' && resultData && (
           <motion.div key="done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-10">
-            <div className="w-16 h-16 rounded-full bg-[#1DC078]/10 flex items-center justify-center mx-auto mb-4">
-              <Check className="w-8 h-8 text-[#1DC078]" />
+            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <Check className="w-8 h-8 text-green-600" />
             </div>
             <h2 className="text-lg font-bold mb-1">생성 완료</h2>
             <p className="text-sm text-zinc-500 mb-6">{resultInfo}</p>
@@ -629,7 +629,7 @@ export function CreatePage() {
             </div>
 
             <div className="flex gap-3 justify-center">
-              <button onClick={handleDownload} className="flex items-center gap-2 bg-[#1DC078] text-white px-6 py-2.5 rounded-xl text-sm font-medium">
+              <button onClick={handleDownload} className="flex items-center gap-2 bg-[#175DDC] text-white px-6 py-2.5 rounded-xl text-sm font-medium">
                 <Download className="w-4 h-4" /> 다운로드
               </button>
               <button onClick={resetAll} className="text-sm text-zinc-500 hover:text-zinc-800 px-4 py-2.5">새로 만들기</button>
@@ -649,12 +649,12 @@ function OptionCard({ checked, onChange, icon, title, desc, disabled }: {
       onClick={disabled ? undefined : onChange}
       disabled={disabled}
       className={`w-full text-left rounded-xl p-4 border-2 transition-all ${
-        checked ? 'bg-[#1DC078]/5 border-[#1DC078]' : disabled ? 'opacity-40 border-zinc-200 bg-zinc-50' : 'border-zinc-200 bg-white hover:border-zinc-400'
+        checked ? 'bg-[#175DDC]/5 border-[#175DDC]' : disabled ? 'opacity-40 border-zinc-200 bg-zinc-50' : 'border-zinc-200 bg-white hover:border-zinc-400'
       }`}
       whileTap={disabled ? undefined : { scale: 0.98 }}
     >
       <div className="flex items-center gap-3">
-        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${checked ? 'bg-[#1DC078] border-[#1DC078]' : 'border-zinc-300'}`}>
+        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${checked ? 'bg-[#175DDC] border-[#175DDC]' : 'border-zinc-300'}`}>
           {checked && <Check className="w-3 h-3 text-white" />}
         </div>
         {icon}

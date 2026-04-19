@@ -17,7 +17,7 @@ export function SidebarNav() {
     <nav className="flex flex-col items-center py-4 gap-1 bg-white border-r border-zinc-200 w-[60px] shrink-0">
       {/* PKIZIP 로고 (호버 시 버전 표시) */}
       <Link to="/" className="mb-4 group relative" title={`PKIZIP v${APP_VERSION}`}>
-        <div className="w-9 h-9 rounded-xl bg-[#1DC078] flex items-center justify-center">
+        <div className="w-9 h-9 rounded-xl bg-[#175DDC] flex items-center justify-center">
           <Shield className="w-5 h-5 text-white" />
         </div>
         {/* 커스텀 버전 툴팁 */}
@@ -37,7 +37,7 @@ export function SidebarNav() {
             className={`
               flex flex-col items-center justify-center w-12 h-12 rounded-xl transition-colors
               ${active
-                ? 'bg-[#1DC078]/10 text-[#1DC078]'
+                ? 'bg-[#175DDC]/10 text-[#175DDC]'
                 : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100'
               }
             `}

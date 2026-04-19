@@ -79,7 +79,7 @@ export function CardFaceDetail({ cert, pqcEnabled, pemText, onExport }: CardFace
           </pre>
           <button
             onClick={handleCopy}
-            className="mt-2 flex items-center justify-center gap-1.5 text-xs bg-[#1DC078] text-white rounded-xl py-2 font-medium"
+            className="mt-2 flex items-center justify-center gap-1.5 text-xs bg-[#175DDC] text-white rounded-xl py-2 font-medium"
           >
             <Copy className="w-3 h-3" /> PEM 복사
           </button>

@@ -370,8 +370,8 @@ export const TASK_STREAM_STYLES = `
   border: 2px solid var(--line-color);
 }
 .ts-dot-done {
-  background: #1DC078;
-  border-color: #1DC078;
+  background: #175DDC;
+  border-color: #175DDC;
 }
 .ts-dot-active {
   background: #facc15;
@@ -513,7 +513,7 @@ export const TASK_STREAM_STYLES = `
   transition: border-color 0.15s;
 }
 .ts-input-field:focus {
-  border-color: #1DC078;
+  border-color: #175DDC;
   box-shadow: 0 0 0 3px rgba(29, 192, 120, 0.15);
 }
 .ts-input-btn {

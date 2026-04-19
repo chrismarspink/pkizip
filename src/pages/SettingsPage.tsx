@@ -60,15 +60,15 @@ function PQCSettings() {
     <div className="space-y-3">
       {/* 요약 카드 */}
       <div className={`rounded-xl border-2 p-4 shadow-sm ${
-        config.kem.enabled || config.dsa.enabled ? 'border-[#1DC078] bg-[#1DC078]/5' : 'border-zinc-300 bg-white'
+        config.kem.enabled || config.dsa.enabled ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-300 bg-white'
       }`}>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-[#1DC078]" />
+            <Shield className="w-5 h-5 text-[#175DDC]" />
             <span className="font-medium text-sm">양자 암호 보호</span>
           </div>
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-            config.kem.enabled || config.dsa.enabled ? 'bg-[#1DC078] text-white' : 'bg-zinc-200 text-zinc-500'
+            config.kem.enabled || config.dsa.enabled ? 'bg-[#175DDC] text-white' : 'bg-zinc-200 text-zinc-500'
           }`}>
             {config.kem.enabled || config.dsa.enabled ? '활성' : '비활성'}
           </span>
@@ -102,7 +102,7 @@ function PQCSettings() {
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-zinc-700">암호화 — ML-KEM-1024 (FIPS 203)</label>
               <button onClick={() => saveConfig({ ...config, kem: { ...config.kem, enabled: !config.kem.enabled } })}
-                className={`w-10 h-5 rounded-full transition-colors relative ${config.kem.enabled ? 'bg-[#1DC078]' : 'bg-zinc-300'}`}>
+                className={`w-10 h-5 rounded-full transition-colors relative ${config.kem.enabled ? 'bg-[#175DDC]' : 'bg-zinc-300'}`}>
                 <div className={`w-4 h-4 rounded-full bg-white shadow absolute top-0.5 transition-transform ${config.kem.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </button>
             </div>
@@ -111,7 +111,7 @@ function PQCSettings() {
                 {MODES.map(m => (
                   <button key={m.value} onClick={() => saveConfig({ ...config, kem: { ...config.kem, mode: m.value } })}
                     className={`flex-1 text-left rounded-lg px-2.5 py-2 border text-[10px] transition-colors ${
-                      config.kem.mode === m.value ? 'border-[#1DC078] bg-[#1DC078]/5 text-zinc-800' : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
+                      config.kem.mode === m.value ? 'border-[#175DDC] bg-[#175DDC]/5 text-zinc-800' : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
                     }`}>
                     <div className="font-medium">{m.label}</div>
                     <div className="text-zinc-400 mt-0.5">{m.desc}</div>
@@ -126,7 +126,7 @@ function PQCSettings() {
             <div className="flex items-center justify-between">
               <label className="text-xs font-medium text-zinc-700">전자서명 — ML-DSA-87 (FIPS 204)</label>
               <button onClick={() => saveConfig({ ...config, dsa: { ...config.dsa, enabled: !config.dsa.enabled } })}
-                className={`w-10 h-5 rounded-full transition-colors relative ${config.dsa.enabled ? 'bg-[#1DC078]' : 'bg-zinc-300'}`}>
+                className={`w-10 h-5 rounded-full transition-colors relative ${config.dsa.enabled ? 'bg-[#175DDC]' : 'bg-zinc-300'}`}>
                 <div className={`w-4 h-4 rounded-full bg-white shadow absolute top-0.5 transition-transform ${config.dsa.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </button>
             </div>
@@ -135,7 +135,7 @@ function PQCSettings() {
                 {MODES.map(m => (
                   <button key={m.value} onClick={() => saveConfig({ ...config, dsa: { ...config.dsa, mode: m.value } })}
                     className={`flex-1 text-left rounded-lg px-2.5 py-2 border text-[10px] transition-colors ${
-                      config.dsa.mode === m.value ? 'border-[#1DC078] bg-[#1DC078]/5 text-zinc-800' : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
+                      config.dsa.mode === m.value ? 'border-[#175DDC] bg-[#175DDC]/5 text-zinc-800' : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
                     }`}>
                     <div className="font-medium">{m.label}</div>
                     <div className="text-zinc-400 mt-0.5">{m.desc}</div>

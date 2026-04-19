@@ -238,13 +238,13 @@ export function CertsPage() {
       <div className="grid grid-cols-2 gap-3 mt-6">
         <button
           onClick={() => setMnemonicDialog('generate')}
-          className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#1DC078] hover:text-[#1DC078] transition-colors"
+          className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
           <Plus className="w-4 h-4" /> 새 니모닉 생성
         </button>
         <button
           onClick={() => setMnemonicDialog('recover')}
-          className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#1DC078] hover:text-[#1DC078] transition-colors"
+          className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
           <Import className="w-4 h-4" /> 기존 니모닉 복구
         </button>

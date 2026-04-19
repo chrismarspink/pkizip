@@ -426,7 +426,7 @@ export function FilesTempPage() {
       {items.length === 0 ? (
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-12 text-center text-zinc-400 hover:border-[#1DC078] hover:text-[#1DC078] transition-colors"
+          className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-12 text-center text-zinc-400 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
           <FolderOpen className="w-10 h-10 mx-auto mb-2 opacity-50" />
           <p className="text-sm font-medium">.pki 파일을 선택하거나 드래그하세요</p>

@@ -24,7 +24,7 @@ export function CardFaceFront({ cert, identityName, isActive, pqcEnabled }: Card
     <div
       className={`p-5 text-white relative h-full ${
         isActive
-          ? 'bg-gradient-to-br from-[#1DC078] to-[#0f9d58]'
+          ? 'bg-gradient-to-br from-[#175DDC] to-[#0C3276]'
           : 'bg-gradient-to-br from-zinc-600 to-zinc-700'
       }`}
     >

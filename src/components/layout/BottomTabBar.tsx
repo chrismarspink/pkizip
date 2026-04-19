@@ -22,7 +22,7 @@ export function BottomTabBar() {
               key={tab.path}
               to={tab.path}
               className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${
-                active ? 'text-[#1DC078]' : 'text-zinc-400'
+                active ? 'text-[#175DDC]' : 'text-zinc-400'
               }`}
             >
               <tab.icon className="w-5 h-5" />

@@ -81,14 +81,14 @@ export function CardFaceSettings({
           {showUnlock ? (
             <div className="flex gap-2 items-center">
               <input type="password" value={unlockPw} onChange={e => setUnlockPw(e.target.value)} placeholder="비밀번호"
-                className="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]"
+                className="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                 autoFocus onKeyDown={e => { if (e.key === 'Enter') { onUnlock(unlockPw); setUnlockPw(''); setShowUnlock(false); } }} />
               <button onClick={() => { onUnlock(unlockPw); setUnlockPw(''); setShowUnlock(false); }} className="bg-zinc-900 text-white text-xs px-3 py-2 rounded-lg">확인</button>
               <button onClick={() => { setShowUnlock(false); setUnlockPw(''); }} className="text-xs text-zinc-400">취소</button>
             </div>
           ) : (
             <button onClick={() => setShowUnlock(true)}
-              className="w-full flex items-center justify-center gap-1.5 text-xs text-zinc-600 hover:text-[#1DC078] border border-zinc-200 rounded-lg px-3 py-2 transition-colors">
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-zinc-600 hover:text-[#175DDC] border border-zinc-200 rounded-lg px-3 py-2 transition-colors">
               <Key className="w-3.5 h-3.5" /> 잠금 해제
             </button>
           )}
@@ -106,7 +106,7 @@ export function CardFaceSettings({
             <p className="text-[10px] text-zinc-600">키 비밀번호를 입력하면 생체 인증을 등록합니다.</p>
             <div className="flex gap-2 items-center">
               <input type="password" value={bioRegPw} onChange={e => setBioRegPw(e.target.value)} placeholder="키 비밀번호"
-                className="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]"
+                className="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                 autoFocus onKeyDown={e => e.key === 'Enter' && handleBioSubmit()} />
               <button onClick={handleBioSubmit} disabled={bioRegistering} className="bg-zinc-900 text-white text-xs px-3 py-2 rounded-lg disabled:opacity-50">
                 {bioRegistering ? '...' : '등록'}
@@ -116,11 +116,11 @@ export function CardFaceSettings({
           </div>
         ) : hasBiometric ? (
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-xs text-[#1DC078] font-medium"><Fingerprint className="w-3.5 h-3.5" /> 생체 인증 활성</span>
+            <span className="flex items-center gap-1.5 text-xs text-[#175DDC] font-medium"><Fingerprint className="w-3.5 h-3.5" /> 생체 인증 활성</span>
             <button onClick={onRemoveBiometric} className="text-[10px] text-zinc-400 hover:text-red-500">해제</button>
           </div>
         ) : (
-          <button onClick={() => setShowBioReg(true)} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-[#1DC078] transition-colors">
+          <button onClick={() => setShowBioReg(true)} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-[#175DDC] transition-colors">
             <Fingerprint className="w-3.5 h-3.5" /> 생체 인증 등록 (Touch ID, 지문, Face ID 등)
           </button>
         )}
@@ -133,11 +133,11 @@ export function CardFaceSettings({
             <p className="text-[10px] text-zinc-600">키 비밀번호 + 새 PIN(4~6자리)을 입력하세요.</p>
             <div className="flex flex-col gap-2">
               <input type="password" value={pinRegPw} onChange={e => setPinRegPw(e.target.value)} placeholder="키 비밀번호"
-                className="border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]" autoFocus />
+                className="border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" autoFocus />
               <div className="flex gap-2">
                 <input type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={pinValue}
                   onChange={e => setPinValue(e.target.value.replace(/\D/g, ''))} placeholder="PIN (4~6자리)"
-                  className="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-[#1DC078]"
+                  className="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                   onKeyDown={e => e.key === 'Enter' && handlePinSubmit()} />
                 <button onClick={handlePinSubmit} disabled={pinRegistering} className="bg-zinc-900 text-white text-xs px-3 py-2 rounded-lg disabled:opacity-50">
                   {pinRegistering ? '...' : '등록'}
@@ -148,11 +148,11 @@ export function CardFaceSettings({
           </div>
         ) : hasPin ? (
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-xs text-[#1DC078] font-medium"><Key className="w-3.5 h-3.5" /> PIN 활성</span>
+            <span className="flex items-center gap-1.5 text-xs text-[#175DDC] font-medium"><Key className="w-3.5 h-3.5" /> PIN 활성</span>
             <button onClick={onRemovePin} className="text-[10px] text-zinc-400 hover:text-red-500">해제</button>
           </div>
         ) : (
-          <button onClick={() => setShowPinReg(true)} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-[#1DC078] transition-colors">
+          <button onClick={() => setShowPinReg(true)} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-[#175DDC] transition-colors">
             <Key className="w-3.5 h-3.5" /> PIN 등록 (4~6자리 빠른 잠금 해제)
           </button>
         )}

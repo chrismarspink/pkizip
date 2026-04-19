@@ -178,7 +178,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
           </Dialog.Close>
 
           <div className="flex items-center gap-2 mb-1">
-            <KeyRound className="w-5 h-5 text-[#1DC078]" />
+            <KeyRound className="w-5 h-5 text-[#175DDC]" />
             <Dialog.Title className="text-lg font-bold">
               {mode === 'generate' ? '새 키 및 인증서 생성' : '기존 니모닉으로 복구'}
             </Dialog.Title>
@@ -234,7 +234,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
               <motion.div key="mninput" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
                 <label className="text-xs font-medium text-zinc-700">기존 니모닉 12단어</label>
                 <textarea value={mnemonicInput} onChange={e => { setMnemonicInput(e.target.value); setError(''); }} rows={3} placeholder="word1 word2 ... word12"
-                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1DC078] resize-none" autoFocus />
+                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#175DDC] resize-none" autoFocus />
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-between pt-2">
                   <BtnGhost onClick={() => setStep('profile')}>이전</BtnGhost>
@@ -285,9 +285,9 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
               <motion.div key="pw" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
                 <p className="text-sm text-zinc-500">키를 안전하게 저장할 비밀번호를 설정하세요.</p>
                 <input type="password" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} placeholder="비밀번호 (8자 이상)"
-                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]" autoFocus />
+                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" autoFocus />
                 <input type="password" value={passwordConfirm} onChange={e => { setPasswordConfirm(e.target.value); setError(''); }} placeholder="비밀번호 확인"
-                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]"
+                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                   onKeyDown={e => e.key === 'Enter' && handleSaveKey()} />
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-end pt-2">
@@ -299,8 +299,8 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
             {/* Done */}
             {step === 'done' && certInfo && (
               <motion.div key="done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center space-y-4">
-                <div className="w-16 h-16 rounded-full bg-[#1DC078]/10 flex items-center justify-center mx-auto">
-                  <ShieldCheck className="w-8 h-8 text-[#1DC078]" />
+                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+                  <ShieldCheck className="w-8 h-8 text-green-600" />
                 </div>
                 <h3 className="text-lg font-bold">키 및 인증서 생성 완료</h3>
 
@@ -354,7 +354,7 @@ function Field({ icon, label, value, onChange, placeholder, type, autoFocus }: {
     <div className="space-y-1">
       <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">{icon} {label}</label>
       <input type={type || 'text'} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} autoFocus={autoFocus}
-        className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1DC078]" />
+        className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
     </div>
   );
 }

@@ -118,7 +118,7 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
     ctx.fillRect(0, crop.y + crop.h, CANVAS_W, CANVAS_H - crop.y - crop.h);
 
     // 크롭 박스 테두리
-    ctx.strokeStyle = '#1DC078';
+    ctx.strokeStyle = '#175DDC';
     ctx.lineWidth = 2;
     ctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
 
@@ -142,7 +142,7 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
       { x: crop.x + crop.w, y: crop.y + crop.h },
     ];
     ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#1DC078';
+    ctx.strokeStyle = '#175DDC';
     ctx.lineWidth = 2;
     for (const c of corners) {
       ctx.fillRect(c.x - HANDLE / 2, c.y - HANDLE / 2, HANDLE, HANDLE);
@@ -336,7 +336,7 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
           className={`
             w-full border-2 border-dashed rounded-2xl cursor-pointer transition-colors
             flex flex-col items-center justify-center py-12 text-center
-            ${isDragOver ? 'border-[#1DC078] bg-[#1DC078]/5' : 'border-zinc-300 hover:border-zinc-400'}
+            ${isDragOver ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-300 hover:border-zinc-400'}
           `}
         >
           <Upload className="w-10 h-10 text-zinc-400 mb-2" />
@@ -427,7 +427,7 @@ function PreviewCard({ variant, logoUrl }: { variant: 'green' | 'yellow'; logoUr
       className="relative overflow-hidden"
       style={{
         width: 320, height: 202, borderRadius: 14,
-        background: isGreen ? '#1DC078' : '#FFE500',
+        background: isGreen ? '#175DDC' : '#FFE500',
         color: isGreen ? 'white' : '#1a1a1a',
       }}
     >
