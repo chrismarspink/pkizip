@@ -265,8 +265,26 @@ export async function open(
   }
 
   // 3. 압축 해제 + 파일 복원 (포맷 자동 감지: ZIP/ZLIB/레거시)
-  const decompressed = decompress(payload);
-  const files = toFileEntries(decompressed.files);
+  const fallbackName = header.files[0]?.name ?? 'file';
+  const decompressed = decompress(payload, fallbackName);
+  let files = toFileEntries(decompressed.files);
+
+  // ZLIB 단일 파일: 헤더에서 원본 메타 복원
+  if (decompressed.method === 'zlib' && files.length === 1 && header.files.length >= 1) {
+    const meta = header.files[0];
+    files[0].name = meta.name;
+    files[0].type = meta.type || files[0].type;
+    files[0].lastModified = meta.lastModified || files[0].lastModified;
+  }
+  // 다중 파일: 헤더 파일명으로 보정
+  if (files.length > 1 && header.files.length === files.length) {
+    files = files.map((f, i) => ({
+      ...f,
+      name: header.files[i]?.name ?? f.name,
+      type: header.files[i]?.type ?? f.type,
+      lastModified: header.files[i]?.lastModified ?? f.lastModified,
+    }));
+  }
 
   return {
     files,

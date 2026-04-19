@@ -108,16 +108,17 @@ export function FilesTempPage() {
                   if (inner.signatures?.length) {
                     push({ type: 'text', id: id(), content: `내부에 ${inner.signatures.length}개의 서명이 포함되어 있습니다`, tone: 'warning' });
                     await verifyInnerSignatures(inner.signatures, inner.data, push, update);
-                    // 파일 추출
-                    const files = deserializeEntries(inner.data);
+                    let files = deserializeEntries(inner.data);
+                    files = restoreFileNames(files, h);
                     showFiles(files, push, update);
                   } else {
-                    const files = deserializeEntries(inner.data);
+                    let files = deserializeEntries(inner.data);
+                    files = restoreFileNames(files, h);
                     showFiles(files, push, update);
                   }
                 } catch {
-                  // 구 포맷
-                  const files = deserializeEntries(decrypted);
+                  let files = deserializeEntries(decrypted);
+                  files = restoreFileNames(files, h);
                   showFiles(files, push, update);
                 }
                 resolve();
@@ -282,11 +283,13 @@ export function FilesTempPage() {
         update(sigId, { status: results.every(r => r.valid) ? 'done' : 'error' });
         await showVerificationResults(results, push);
       }
-      const files = deserializeEntries(container.payload);
+      let files = deserializeEntries(container.payload);
+      files = restoreFileNames(files, h);
       showFiles(files, push, update);
     } else {
       // 압축만
-      const files = deserializeEntries(container.payload);
+      let files = deserializeEntries(container.payload);
+      files = restoreFileNames(files, h);
       showFiles(files, push, update);
     }
 
@@ -479,6 +482,26 @@ async function runDemo(push: (item: StreamItem) => void, update: (id: string, pa
       });
     },
   });
+}
+
+// === 헤더에서 파일명/타입 복원 (ZLIB 단일 파일 등) ===
+function restoreFileNames(
+  files: { name: string; data: Uint8Array; size: number; type: string; lastModified: number }[],
+  header: import('@/lib/container/pki-format').PkiHeader
+) {
+  if (files.length === 1 && header.files.length >= 1) {
+    const meta = header.files[0];
+    files[0].name = meta.name || files[0].name;
+    files[0].type = meta.type || files[0].type;
+  }
+  if (files.length > 1 && header.files.length === files.length) {
+    return files.map((f, i) => ({
+      ...f,
+      name: header.files[i]?.name ?? f.name,
+      type: header.files[i]?.type ?? f.type,
+    }));
+  }
+  return files;
 }
 
 function formatSize(b: number) {
