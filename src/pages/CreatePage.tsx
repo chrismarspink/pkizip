@@ -127,9 +127,8 @@ export function CreatePage() {
         await applyIdentity(seed);
         return true;
       }
-    } catch (err) {
-      console.warn('Biometric unlock failed:', err);
-      // 생체 인증 취소/실패 → PIN 또는 비밀번호로 fallback
+    } catch {
+      toast('생체 인증 취소 — 비밀번호로 진행합니다', { icon: '🔐' });
     }
 
     // PIN 등록 여부 확인

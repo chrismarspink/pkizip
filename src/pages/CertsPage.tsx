@@ -122,50 +122,74 @@ export function CertsPage() {
 
   // ── 핸들러: 삭제 ──
   const handleDelete = useCallback(async (id: string) => {
-    await deleteIdentity(id);
-    if (activeIdentityId === id) { setKeyIdentity(null); storeSetActive(null); }
-    await loadData();
-    toast.success('삭제 완료');
+    try {
+      await deleteIdentity(id);
+      if (activeIdentityId === id) { setKeyIdentity(null); storeSetActive(null); useAppStore.getState().setPqcInstances(null, null); }
+      await loadData();
+      toast.success('삭제 완료');
+    } catch (err) {
+      toast.error(`삭제 실패: ${err instanceof Error ? err.message : '오류'}`);
+    }
   }, [activeIdentityId, setKeyIdentity, storeSetActive]);
 
   // ── 핸들러: 인증서 내보내기 ──
   const handleExportCert = useCallback(async (fp: string) => {
-    const cert = await getCertificate(fp);
-    if (!cert) return;
-    const blob = new Blob([cert.pemCertificate], { type: 'application/x-pem-file' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${cert.commonName}_cert.pem`;
-    a.click();
+    try {
+      const cert = await getCertificate(fp);
+      if (!cert) { toast.error('인증서를 찾을 수 없습니다.'); return; }
+      const blob = new Blob([cert.pemCertificate], { type: 'application/x-pem-file' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${cert.commonName}_cert.pem`;
+      a.click();
+    } catch (err) {
+      toast.error(`인증서 내보내기 실패: ${err instanceof Error ? err.message : '오류'}`);
+    }
   }, []);
 
   // ── 핸들러: 생체 인증 등록 ──
   const handleRegisterBio = useCallback(async (id: string, name: string, pw: string) => {
-    const seed = await loadIdentitySeed(id, pw);
-    const mode = await registerBiometric(id, name, seed);
-    setBiometricMap(prev => ({ ...prev, [id]: true }));
-    toast.success(mode === 'prf' ? '생체 인증 등록 완료 (PRF)' : '생체 인증 등록 완료 (지문/얼굴)');
+    try {
+      const seed = await loadIdentitySeed(id, pw);
+      const mode = await registerBiometric(id, name, seed);
+      setBiometricMap(prev => ({ ...prev, [id]: true }));
+      toast.success(mode === 'prf' ? '생체 인증 등록 완료 (PRF)' : '생체 인증 등록 완료 (지문/얼굴)');
+    } catch (err) {
+      toast.error(`생체 인증 등록 실패: ${err instanceof Error ? err.message : '비밀번호가 틀렸거나 인증이 취소되었습니다.'}`);
+    }
   }, []);
 
   const handleRemoveBio = useCallback(async (id: string) => {
-    await removeBiometric(id);
-    setBiometricMap(prev => ({ ...prev, [id]: false }));
-    toast.success('생체 인증이 해제되었습니다.');
+    try {
+      await removeBiometric(id);
+      setBiometricMap(prev => ({ ...prev, [id]: false }));
+      toast.success('생체 인증이 해제되었습니다.');
+    } catch (err) {
+      toast.error(`생체 인증 해제 실패: ${err instanceof Error ? err.message : '오류'}`);
+    }
   }, []);
 
   // ── 핸들러: PIN ──
   const handleRegisterPin = useCallback(async (id: string, pw: string, pin: string) => {
     if (!/^\d{4,6}$/.test(pin)) { toast.error('PIN은 4~6자리 숫자'); return; }
-    const seed = await loadIdentitySeed(id, pw);
-    await registerPin(id, seed, pin);
-    setPinMap(prev => ({ ...prev, [id]: true }));
-    toast.success('PIN 등록 완료');
+    try {
+      const seed = await loadIdentitySeed(id, pw);
+      await registerPin(id, seed, pin);
+      setPinMap(prev => ({ ...prev, [id]: true }));
+      toast.success('PIN 등록 완료');
+    } catch (err) {
+      toast.error(`PIN 등록 실패: ${err instanceof Error ? err.message : '비밀번호가 틀렸습니다.'}`);
+    }
   }, []);
 
   const handleRemovePin = useCallback(async (id: string) => {
-    await removePin(id);
-    setPinMap(prev => ({ ...prev, [id]: false }));
-    toast.success('PIN 해제 완료');
+    try {
+      await removePin(id);
+      setPinMap(prev => ({ ...prev, [id]: false }));
+      toast.success('PIN 해제 완료');
+    } catch (err) {
+      toast.error(`PIN 해제 실패: ${err instanceof Error ? err.message : '오류'}`);
+    }
   }, []);
 
   // ── CertCardProps 목록 조립 ──

@@ -207,7 +207,9 @@ export function FilesTempPage() {
                 const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
                 const dsaPub = new Uint8Array(base64ToArrayBuffer(h.pqcSignerInfo.dsaPublicKey));
                 pqcOpts = { signer: PQCSigner.fromBundle({ publicKey: dsaPub, secretKey: new Uint8Array(0) }) };
-              } catch { /* fallback 실패 */ }
+              } catch {
+                push({ type: 'text', id: id(), content: 'PQC 서명 검증 모듈 로드 실패 — 양자 서명은 검증되지 않습니다', tone: 'warning' });
+              }
             }
 
             const result = await openPki(rawData, activeKey.encryptionKey.privateKey, activeKey.encryptionKey.fingerprint, pqcOpts);
@@ -217,6 +219,11 @@ export function FilesTempPage() {
               push({ type: 'text', id: id(), content: result.pqcVerification.valid
                 ? `✓ ML-DSA-87 양자 서명 유효`
                 : `✗ ML-DSA-87 양자 서명 무효`, tone: result.pqcVerification.valid ? 'success' : 'error' });
+            } else if (h.pqcSignerInfo) {
+              push({ type: 'text', id: id(), content: 'ML-DSA 서명이 포함되어 있지만 PQC 키가 없어 검증하지 못했습니다', tone: 'warning' });
+            }
+            if (h.pqcKemRecipientInfo && !pqcOpts?.shield) {
+              push({ type: 'text', id: id(), content: 'ML-KEM 암호화가 포함되어 있지만 PQC 키가 없어 검증하지 못했습니다', tone: 'warning' });
             }
             if (result.verification.length > 0) {
               await showVerificationResults(result.verification, push);

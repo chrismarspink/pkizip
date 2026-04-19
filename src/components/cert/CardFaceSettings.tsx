@@ -51,14 +51,22 @@ export function CardFaceSettings({
 
   const handleBioSubmit = async () => {
     setBioRegistering(true);
-    try { await onRegisterBiometric(bioRegPw); setShowBioReg(false); setBioRegPw(''); }
-    finally { setBioRegistering(false); }
+    try {
+      await onRegisterBiometric(bioRegPw);
+      setShowBioReg(false); setBioRegPw('');
+    } catch {
+      // 에러는 상위 핸들러(CertsPage)에서 toast 처리됨
+    } finally { setBioRegistering(false); }
   };
 
   const handlePinSubmit = async () => {
     setPinRegistering(true);
-    try { await onRegisterPin(pinRegPw, pinValue); setShowPinReg(false); setPinRegPw(''); setPinValue(''); }
-    finally { setPinRegistering(false); }
+    try {
+      await onRegisterPin(pinRegPw, pinValue);
+      setShowPinReg(false); setPinRegPw(''); setPinValue('');
+    } catch {
+      // 에러는 상위 핸들러(CertsPage)에서 toast 처리됨
+    } finally { setPinRegistering(false); }
   };
 
   return (
