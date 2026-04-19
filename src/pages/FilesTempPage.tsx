@@ -187,9 +187,24 @@ export function FilesTempPage() {
         // 복호화 실행 함수 (키가 활성화된 후 호출)
         const runDecrypt = async (activeKey: NonNullable<typeof keyIdentity>): Promise<boolean> => {
           try {
-            const result = await openPki(rawData, activeKey.encryptionKey.privateKey, activeKey.encryptionKey.fingerprint);
+            // PQC 모듈 로드 (ML-DSA 검증용 — 공개키만 필요)
+            let pqcOpts: Parameters<typeof openPki>[3] | undefined;
+            try {
+              if (h.pqcSignerInfo) {
+                const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
+                const dsaPub = new Uint8Array(base64ToArrayBuffer(h.pqcSignerInfo.dsaPublicKey));
+                pqcOpts = { signer: PQCSigner.fromBundle({ publicKey: dsaPub, secretKey: new Uint8Array(0) }) };
+              }
+            } catch { /* PQC 미사용 */ }
+
+            const result = await openPki(rawData, activeKey.encryptionKey.privateKey, activeKey.encryptionKey.fingerprint, pqcOpts);
             update(encId, { status: 'done' });
             push({ type: 'text', id: id(), content: `✓ "${myMatch!.name}" 개인키로 복호화 성공`, tone: 'success' });
+            if (result.pqcVerification) {
+              push({ type: 'text', id: id(), content: result.pqcVerification.valid
+                ? `✓ ML-DSA-87 양자 서명 유효`
+                : `✗ ML-DSA-87 양자 서명 무효`, tone: result.pqcVerification.valid ? 'success' : 'error' });
+            }
             if (result.verification.length > 0) {
               await showVerificationResults(result.verification, push);
             }

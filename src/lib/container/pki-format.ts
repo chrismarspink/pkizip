@@ -64,6 +64,31 @@ export interface PkiHeader {
     timestamp: number;
     label?: string;
   }>;
+  /** ML-KEM-1024 하이브리드 수신자 (RFC 9936) */
+  pqcKemRecipientInfo?: {
+    type: string;                 // 'ML-KEM-1024'
+    pqcKeyId: string;             // SHA-256(kemPublicKey) hex
+    kemCiphertext: string;        // Base64
+    encryptedKey: string;         // Base64 — AES-GCM wrapped CEK
+    iv: string;                   // Base64
+    salt: string;                 // Base64
+    kemPublicKey: string;         // Base64
+  };
+  /** ML-DSA-87 하이브리드 서명 (RFC 9882) */
+  pqcSignerInfo?: {
+    algorithm: string;            // 'ML-DSA-87'
+    signature: string;            // Base64
+    dsaPublicKey: string;         // Base64
+    signedAt: string;             // ISO timestamp
+  };
+  /** PQC 모드 메타 */
+  pqcHeader?: {
+    pqcProtected: boolean;
+    mode: string;                 // 'hybrid' | 'pqc-only'
+    kemAlgorithm?: string;
+    dsaAlgorithm?: string;
+    kemKeyId?: string;
+  };
   merkleProof?: {
     merkleRoot: string;
     proofPath: string[];

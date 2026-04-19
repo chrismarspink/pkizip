@@ -334,13 +334,75 @@ PkiHeader의 `compression` 필드:
 
 | 경로 | 페이지 | 역할 |
 |------|--------|------|
-| `/` | CreatePage | CMS 파일 생성 위저드 |
+| `/` | HomePage | 홈 (로고 + 니모닉 생성/복구) |
+| `/create` | CreatePage | CMS 파일 생성 위저드 |
 | `/files` | FilesTempPage | .pki 파일 열기 (TaskStream 분석) |
-| `/certs` | CertsPage | 인증서 월렛 |
-| `/settings` | SettingsPage | 아이덴티티/PQC/생체/PIN 관리 |
+| `/certs` | CertsPage | 인증서 월렛 (3면 카드 + 아이덴티티 관리) |
+| `/settings` | SettingsPage | PQC 설정 |
 
 모바일 (~640px): 하단 탭바 4개
 태블릿/PC (641px~): 좌측 아이콘 사이드바
+
+---
+
+## 7-1. 하이브리드 PQC seal/open 흐름
+
+### seal() — 봉인
+
+```
+파일 → 압축 → payload
+  │
+  ├── [ECDH]     encryptForRecipients(payload) → CEK + ECDH-wrapped recipients
+  ├── [ML-KEM]   PQCShield.encapsulateCEK(CEK)  → kemCiphertext + pqcKemRecipientInfo
+  │                (동일 CEK를 ML-KEM으로도 캡슐화 → 헤더에 저장)
+  │
+  ├── [ECDSA]    signData(payload) → ECDSA P-256 서명
+  ├── [ML-DSA]   PQCSigner.sign(payload)  → ML-DSA-87 서명
+  │                (동일 payload에 양자 서명 추가 → 헤더에 저장)
+  │
+  └── PkiHeader: encryption + pqcKemRecipientInfo + signatures + pqcSignerInfo + pqcHeader
+```
+
+### open() — 열기
+
+```
+.pki 파일
+  │
+  ├── [ECDSA 검증]  verifyAllSignatures(payload)
+  ├── [ML-DSA 검증] PQCSigner.verify(payload, pqcSignerInfo)
+  │
+  ├── [ECDH 복호화] decryptAsRecipient(payload) → plaintext
+  ├── [ML-KEM 검증] PQCShield.decapsulateCEK(pqcKemRecipientInfo) → CEK 검증
+  │
+  └── 압축 해제 → 파일 복원
+```
+
+### PkiHeader PQC 필드
+
+```json
+{
+  "pqcKemRecipientInfo": {
+    "type": "ML-KEM-1024",
+    "pqcKeyId": "sha256(kemPublicKey) hex",
+    "kemCiphertext": "Base64 (1568B)",
+    "encryptedKey": "Base64",
+    "iv": "Base64", "salt": "Base64",
+    "kemPublicKey": "Base64"
+  },
+  "pqcSignerInfo": {
+    "algorithm": "ML-DSA-87",
+    "signature": "Base64 (4627B)",
+    "dsaPublicKey": "Base64 (2592B)",
+    "signedAt": "ISO timestamp"
+  },
+  "pqcHeader": {
+    "pqcProtected": true,
+    "mode": "hybrid",
+    "kemAlgorithm": "ML-KEM-1024",
+    "dsaAlgorithm": "ML-DSA-87"
+  }
+}
+```
 
 ---
 

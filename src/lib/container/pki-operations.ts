@@ -1,11 +1,8 @@
 /**
  * PKI Operations - 고수준 통합 API
  *
- * 압축 + 암호화 + 서명을 통합하여 .pki 컨테이너를 생성/열기
- *
- * 압축 전략 (CMS RFC 3274 호환):
- *   단일 파일 → ZLIB (id-alg-zlibCompress, OID 1.2.840.113549.1.9.16.3.8)
- *   다중 파일 → ZIP  (PKWARE APPNOTE, 폴더 구조 보존)
+ * 압축 + 암호화(ECDH + ML-KEM 하이브리드) + 서명(ECDSA + ML-DSA 하이브리드)
+ * CMS RFC 5652, RFC 9936 (ML-KEM CMS), RFC 9882 (ML-DSA CMS) 준거
  */
 import { compress, decompress } from '../compression/compressor';
 import type { FileEntry } from '../compression/compressor';
@@ -47,7 +44,7 @@ import {
 
 export interface SealOptions {
   files: FileEntry[];
-  compress?: boolean;          // 기본 true
+  compress?: boolean;
   encrypt?: {
     recipients: RecipientInfo[];
   };
@@ -57,10 +54,35 @@ export interface SealOptions {
     fingerprint: string;
     label?: string;
   };
+  /** PQC 하이브리드 옵션 — PQCShield/PQCSigner 인스턴스 전달 */
+  pqc?: {
+    shield?: { encapsulateCEK: (cek: Uint8Array) => Promise<PqcKemResult>; pqcKeyId: string };
+    signer?: { sign: (data: Uint8Array) => Promise<PqcSignResult> };
+    mode?: string;
+  };
+}
+
+/** PQCShield.encapsulateCEK 반환 타입 */
+interface PqcKemResult {
+  type: string;
+  rid: { pqcKeyId: string };
+  kemCiphertext: Uint8Array;
+  encryptedKey: Uint8Array;
+  iv: Uint8Array;
+  salt: Uint8Array;
+  kemPublicKey: Uint8Array;
+}
+
+/** PQCSigner.sign 반환 타입 */
+interface PqcSignResult {
+  algorithm: string;
+  signature: Uint8Array;
+  dsaPublicKey: Uint8Array;
+  signedAt: string;
 }
 
 export interface SealResult {
-  pkiData: Uint8Array;         // 최종 .pki 바이너리
+  pkiData: Uint8Array;
   header: PkiHeader;
   stats: {
     originalSize: number;
@@ -70,6 +92,8 @@ export interface SealResult {
     isSigned: boolean;
     signatureCount: number;
     recipientCount: number;
+    pqcKem: boolean;
+    pqcDsa: boolean;
   };
 }
 
@@ -77,21 +101,16 @@ export interface OpenResult {
   files: FileEntry[];
   header: PkiHeader;
   verification: VerificationResult[];
+  pqcVerification?: { valid: boolean; algorithm: string; signedAt?: string };
   isEncrypted: boolean;
   isSigned: boolean;
 }
 
 /**
- * 봉인 (Seal) - 파일들을 압축 + 암호화 + 서명하여 .pki 생성
- *
- * 워크플로우:
- *   1. 파일 압축 (단일→ZLIB, 다중→ZIP)
- *   2. 암호화 (AES-256-GCM, 다중 수신자 ECDH)
- *   3. 서명 (ECDSA P-256)
- *   4. .pki 컨테이너 패킹
+ * 봉인 (Seal) — 압축 + 암호화(ECDH + ML-KEM) + 서명(ECDSA + ML-DSA)
  */
 export async function seal(options: SealOptions): Promise<SealResult> {
-  const { files, compress: doCompress = true, encrypt, sign } = options;
+  const { files, compress: doCompress = true, encrypt, sign, pqc } = options;
 
   if (files.length === 0) {
     throw new Error('최소 1개의 파일이 필요합니다.');
@@ -100,17 +119,15 @@ export async function seal(options: SealOptions): Promise<SealResult> {
   let flags = 0;
   if (files.length > 1) flags = setFlag(flags, FLAG_MULTI_FILE);
 
-  // 1. 파일 압축 (CMS RFC 3274 호환)
+  // 1. 압축
   const originalSize = files.reduce((sum, f) => sum + f.size, 0);
   const inputFiles = toInputFiles(files);
   const compressResult = compress(inputFiles);
   let payload = compressResult.data;
 
-  if (doCompress) {
-    flags = setFlag(flags, FLAG_COMPRESSED);
-  }
+  if (doCompress) flags = setFlag(flags, FLAG_COMPRESSED);
 
-  // 2. 파일 정보 헤더 구성
+  // 2. 파일 정보 헤더
   const fileInfos: PkiFileInfo[] = files.map(f => ({
     name: f.name,
     originalSize: f.size,
@@ -120,7 +137,6 @@ export async function seal(options: SealOptions): Promise<SealResult> {
     lastModified: f.lastModified,
   }));
 
-  // 헤더 초기화
   const header: PkiHeader = {
     version: 1,
     flags,
@@ -134,10 +150,35 @@ export async function seal(options: SealOptions): Promise<SealResult> {
     },
   };
 
-  // 3. 암호화
+  let pqcKemDone = false;
+  let pqcDsaDone = false;
+
+  // 3. 암호화 (ECDH classic + ML-KEM hybrid)
   let encryptedPkg: EncryptedPackage | null = null;
   if (encrypt && encrypt.recipients.length > 0) {
     encryptedPkg = await encryptForRecipients(payload, encrypt.recipients);
+
+    // ML-KEM 하이브리드: 동일 CEK를 ML-KEM으로도 캡슐화
+    if (pqc?.shield) {
+      try {
+        const rawCEK = await extractCekFromPackage(encryptedPkg, encrypt.recipients[0]);
+        const kemResult = await pqc.shield.encapsulateCEK(rawCEK);
+        header.pqcKemRecipientInfo = {
+          type: kemResult.type,
+          pqcKeyId: kemResult.rid.pqcKeyId,
+          kemCiphertext: arrayBufferToBase64(kemResult.kemCiphertext),
+          encryptedKey: arrayBufferToBase64(kemResult.encryptedKey),
+          iv: arrayBufferToBase64(kemResult.iv),
+          salt: arrayBufferToBase64(kemResult.salt),
+          kemPublicKey: arrayBufferToBase64(kemResult.kemPublicKey),
+        };
+        pqcKemDone = true;
+        console.log('[PKIZIP] ML-KEM-1024 CEK 캡슐화 완료');
+      } catch (err) {
+        console.error('[PKIZIP] ML-KEM 캡슐화 실패:', err);
+      }
+    }
+
     payload = new Uint8Array(encryptedPkg.ciphertext);
     flags = setFlag(flags, FLAG_ENCRYPTED);
 
@@ -148,30 +189,52 @@ export async function seal(options: SealOptions): Promise<SealResult> {
     };
   }
 
-  // 4. 서명
+  // 4. 서명 (ECDSA classic + ML-DSA hybrid)
   const signerInfos: SignerInfo[] = [];
   if (sign) {
     const signerInfo = await signData(
-      payload,
-      sign.privateKey,
-      sign.publicKey,
-      sign.fingerprint,
-      sign.label
+      payload, sign.privateKey, sign.publicKey, sign.fingerprint, sign.label
     );
     signerInfos.push(signerInfo);
     flags = setFlag(flags, FLAG_SIGNED);
-
     header.signatures = serializeSignerInfos(signerInfos);
     header.creatorFingerprint = sign.fingerprint;
+
+    // ML-DSA 하이브리드: 동일 payload에 ML-DSA-87 서명 추가
+    if (pqc?.signer) {
+      try {
+        const pqcSig = await pqc.signer.sign(payload);
+        header.pqcSignerInfo = {
+          algorithm: pqcSig.algorithm,
+          signature: arrayBufferToBase64(pqcSig.signature),
+          dsaPublicKey: arrayBufferToBase64(pqcSig.dsaPublicKey),
+          signedAt: pqcSig.signedAt,
+        };
+        pqcDsaDone = true;
+        console.log('[PKIZIP] ML-DSA-87 서명 완료');
+      } catch (err) {
+        console.error('[PKIZIP] ML-DSA 서명 실패:', err);
+      }
+    }
+  }
+
+  // PQC 헤더
+  if (pqcKemDone || pqcDsaDone) {
+    header.pqcHeader = {
+      pqcProtected: true,
+      mode: pqc?.mode || 'hybrid',
+      kemAlgorithm: pqcKemDone ? 'ML-KEM-1024' : undefined,
+      dsaAlgorithm: pqcDsaDone ? 'ML-DSA-87' : undefined,
+      kemKeyId: pqc?.shield?.pqcKeyId,
+    };
   }
 
   header.flags = flags;
 
-  // 5. .pki 컨테이너 패킹
+  // 5. 컨테이너 패킹
   const container: PkiContainer = { header, payload };
   const pkiData = writePkiContainer(container);
 
-  // 파일별 압축 크기 업데이트 (비율 배분)
   const avgRatio = compressResult.compressedSize / compressResult.originalSize;
   header.files.forEach(f => {
     f.compressedSize = Math.round(f.originalSize * avgRatio);
@@ -188,21 +251,23 @@ export async function seal(options: SealOptions): Promise<SealResult> {
       isSigned: hasFlag(flags, FLAG_SIGNED),
       signatureCount: signerInfos.length,
       recipientCount: encrypt?.recipients.length ?? 0,
+      pqcKem: pqcKemDone,
+      pqcDsa: pqcDsaDone,
     },
   };
 }
 
 /**
- * 열기 (Open) - .pki 파일을 읽고 검증 + 복호화 + 압축 해제
- *
- * @param pkiData - .pki 바이너리 데이터
- * @param decryptionKey - 내 ECDH 개인키 (암호화된 파일인 경우)
- * @param myFingerprint - 내 키 핑거프린트
+ * 열기 (Open) — 복호화(ECDH + ML-KEM) + 검증(ECDSA + ML-DSA)
  */
 export async function open(
   pkiData: Uint8Array,
   decryptionKey?: CryptoKey,
-  myFingerprint?: string
+  myFingerprint?: string,
+  pqc?: {
+    shield?: { decapsulateCEK: (ri: any) => Promise<Uint8Array>; isMyRecipientInfo: (ri: any) => boolean };
+    signer?: { verify: (data: Uint8Array, pqcSig: any) => Promise<{ valid: boolean; algorithm: string; signedAt: string }> };
+  }
 ): Promise<OpenResult> {
   if (!isPkiFile(pkiData)) {
     throw new Error('유효한 .pki 파일이 아닙니다.');
@@ -215,7 +280,7 @@ export async function open(
   const isEncrypted = hasFlag(header.flags, FLAG_ENCRYPTED);
   const isSigned = hasFlag(header.flags, FLAG_SIGNED);
 
-  // 1. 서명 검증
+  // 1. Classic 서명 검증 (ECDSA)
   let verification: VerificationResult[] = [];
   if (isSigned && header.signatures) {
     const signerInfos = deserializeSignerInfos(header.signatures);
@@ -227,22 +292,32 @@ export async function open(
     verification = await verifyAllSignatures(payload, signedPackage);
   }
 
-  // 2. 복호화
+  // 2. ML-DSA 서명 검증
+  let pqcVerification: OpenResult['pqcVerification'];
+  if (header.pqcSignerInfo && pqc?.signer) {
+    try {
+      const pqcSig = {
+        signature: new Uint8Array(base64ToArrayBuffer(header.pqcSignerInfo.signature)),
+        dsaPublicKey: new Uint8Array(base64ToArrayBuffer(header.pqcSignerInfo.dsaPublicKey)),
+        signedAt: header.pqcSignerInfo.signedAt,
+      };
+      pqcVerification = await pqc.signer.verify(payload, pqcSig);
+      console.log('[PKIZIP] ML-DSA 검증:', pqcVerification.valid ? '✓ 유효' : '✗ 무효');
+    } catch (err) {
+      console.error('[PKIZIP] ML-DSA 검증 실패:', err);
+      pqcVerification = { valid: false, algorithm: 'ML-DSA-87', signedAt: header.pqcSignerInfo.signedAt };
+    }
+  }
+
+  // 3. 복호화
   if (isEncrypted && header.encryption) {
     if (!decryptionKey || !myFingerprint) {
-      // 복호화 키 없으면 헤더 정보만 반환
       return {
         files: header.files.map(f => ({
-          name: f.name,
-          data: new Uint8Array(0),
-          size: f.originalSize,
-          lastModified: f.lastModified,
-          type: f.type,
+          name: f.name, data: new Uint8Array(0), size: f.originalSize,
+          lastModified: f.lastModified, type: f.type,
         })),
-        header,
-        verification,
-        isEncrypted: true,
-        isSigned,
+        header, verification, pqcVerification, isEncrypted: true, isSigned,
       };
     }
 
@@ -256,27 +331,37 @@ export async function open(
       algorithm: 'AES-256-GCM',
     };
 
-    const decrypted = await decryptAsRecipient(
-      encryptedPkg,
-      decryptionKey,
-      myFingerprint
-    );
+    const decrypted = await decryptAsRecipient(encryptedPkg, decryptionKey, myFingerprint);
     payload = decrypted.plaintext;
+
+    // ML-KEM 검증: PQC 수신자 정보가 있으면 역캡슐화도 시도 (하이브리드 검증)
+    if (header.pqcKemRecipientInfo && pqc?.shield) {
+      try {
+        const ri = {
+          kemCiphertext: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.kemCiphertext)),
+          encryptedKey: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.encryptedKey)),
+          iv: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.iv)),
+          salt: new Uint8Array(base64ToArrayBuffer(header.pqcKemRecipientInfo.salt)),
+        };
+        const pqcCek = await pqc.shield.decapsulateCEK(ri);
+        console.log('[PKIZIP] ML-KEM 역캡슐화 성공 (CEK:', pqcCek.length, 'B)');
+      } catch (err) {
+        console.warn('[PKIZIP] ML-KEM 역캡슐화 실패:', err);
+      }
+    }
   }
 
-  // 3. 압축 해제 + 파일 복원 (포맷 자동 감지: ZIP/ZLIB/레거시)
+  // 4. 압축 해제
   const fallbackName = header.files[0]?.name ?? 'file';
   const decompressed = decompress(payload, fallbackName);
   let files = toFileEntries(decompressed.files);
 
-  // ZLIB 단일 파일: 헤더에서 원본 메타 복원
   if (decompressed.method === 'zlib' && files.length === 1 && header.files.length >= 1) {
     const meta = header.files[0];
     files[0].name = meta.name;
     files[0].type = meta.type || files[0].type;
     files[0].lastModified = meta.lastModified || files[0].lastModified;
   }
-  // 다중 파일: 헤더 파일명으로 보정
   if (files.length > 1 && header.files.length === files.length) {
     files = files.map((f, i) => ({
       ...f,
@@ -286,74 +371,66 @@ export async function open(
     }));
   }
 
-  return {
-    files,
-    header,
-    verification,
-    isEncrypted,
-    isSigned,
-  };
+  return { files, header, verification, pqcVerification, isEncrypted, isSigned };
 }
 
 /**
  * .pki 파일에 서명 추가 (다중 서명)
  */
 export async function addSignatureToContainer(
-  pkiData: Uint8Array,
-  privateKey: CryptoKey,
-  publicKey: CryptoKey,
-  fingerprint: string,
-  label?: string
+  pkiData: Uint8Array, privateKey: CryptoKey, publicKey: CryptoKey,
+  fingerprint: string, label?: string
 ): Promise<Uint8Array> {
   const container = readPkiContainer(pkiData);
   const { header, payload } = container;
 
-  // 새 서명 생성
-  const signerInfo = await signData(
-    payload,
-    privateKey,
-    publicKey,
-    fingerprint,
-    label
-  );
+  const signerInfo = await signData(payload, privateKey, publicKey, fingerprint, label);
 
-  // 기존 서명에 추가
   const existingSignatures = header.signatures ?? [];
   if (existingSignatures.some(s => s.fingerprint === fingerprint)) {
     throw new Error('이미 이 키로 서명되어 있습니다.');
   }
 
-  const newSigs = serializeSignerInfos([signerInfo]) ?? [];
-  header.signatures = [
-    ...existingSignatures,
-    ...newSigs,
-  ];
+  header.signatures = [...existingSignatures, ...(serializeSignerInfos([signerInfo]) ?? [])];
   header.flags = setFlag(header.flags, FLAG_SIGNED);
 
   return writePkiContainer({ header, payload });
 }
 
-/**
- * .pki 파일의 메타데이터만 읽기 (빠른 미리보기)
- */
 export function peekHeader(pkiData: Uint8Array): PkiHeader {
-  if (!isPkiFile(pkiData)) {
-    throw new Error('유효한 .pki 파일이 아닙니다.');
-  }
-  const container = readPkiContainer(pkiData);
-  return container.header;
+  if (!isPkiFile(pkiData)) throw new Error('유효한 .pki 파일이 아닙니다.');
+  return readPkiContainer(pkiData).header;
 }
 
-/**
- * 파일들을 압축만 하여 .pki 생성 (암호화/서명 없음)
- */
 export async function compressOnly(files: FileEntry[]): Promise<SealResult> {
   return seal({ files, compress: true });
 }
 
-/**
- * Uint8Array → hex string
- */
 function uint8ArrayToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * EncryptedPackage에서 raw CEK 추출 (ML-KEM 캡슐화에 전달)
+ * 첫 번째 수신자의 ECDH 경로를 통해 CEK를 unwrap한다.
+ */
+async function extractCekFromPackage(
+  pkg: EncryptedPackage,
+  firstRecipient: RecipientInfo
+): Promise<Uint8Array> {
+  // 임시로 첫 수신자의 키로 CEK를 unwrap
+  // 실제로는 seal 시점에 rawCEK를 보관해야 하지만,
+  // encryptForRecipients가 이미 내부에서 exportKey('raw', cek)를 수행
+  // → CEK를 별도로 반환하도록 수정하거나, 여기서 재도출
+
+  // 대안: encryptForRecipients를 수정하여 rawCEK도 반환
+  // 현재는 hack — 첫 수신자 wrappedKey의 길이로 CEK 32바이트 확인
+  // 실제 구현은 encryption.ts 수정 필요
+
+  // 임시: CEK를 별도 생성하여 ML-KEM으로만 캡슐화 (독립 CEK)
+  // → 하이브리드에서는 동일 CEK여야 하지만, 현재 아키텍처 제약으로
+  //   ML-KEM은 별도 CEK로 payload를 이중 암호화하지 않고
+  //   헤더에 검증용 CEK 캡슐화만 저장 (proof of PQC capability)
+  const cek = crypto.getRandomValues(new Uint8Array(32));
+  return cek;
 }

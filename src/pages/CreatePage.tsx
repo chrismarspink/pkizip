@@ -203,6 +203,29 @@ export function CreatePage() {
     setResultData(null);
   };
 
+  // PQC 모듈 동적 로드 (seal에 전달)
+  const loadPqcForSeal = async () => {
+    try {
+      const cfg = useAppStore.getState().pqcConfig;
+      if (!cfg.kemEnabled && !cfg.dsaEnabled) return undefined;
+
+      const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
+      const { PQCBundle } = await import('@/lib/pqc/pqc-bundle.js');
+      const { PQCShield } = await import('@/lib/pqc/pqc-shield.js');
+      const { PQCSigner } = await import('@/lib/pqc/pqc-signer.js');
+
+      // 저장된 PQC 번들 로드 (비밀번호 필요 — 현재 활성 키의 비밀번호)
+      const bundle = await PQCKeystore.load(unlockPw || password, 'default', { PQCBundleClass: PQCBundle });
+      const shield = cfg.kemEnabled ? PQCShield.fromBundle(bundle.getKEMKeyPair()) : undefined;
+      const signer = cfg.dsaEnabled ? PQCSigner.fromBundle(bundle.getDSAKeyPair()) : undefined;
+
+      return { shield, signer, mode: cfg.kemMode || 'hybrid' };
+    } catch (err) {
+      console.warn('[PKIZIP] PQC 로드 실패 (classic만 사용):', err);
+      return undefined;
+    }
+  };
+
   const runProcessing = async () => {
     setStep('processing');
     try {
@@ -245,22 +268,29 @@ export function CreatePage() {
           recipientInfos.push({ fingerprint: e.fingerprint, encryptionPublicKey: pubKey, label: e.label });
         }
         if (recipientInfos.length === 0) { toast.error('수신자가 없습니다.'); setStep('details'); return; }
+        const pqcOpts = await loadPqcForSeal();
         const result = await seal({
           files, compress: true,
           encrypt: { recipients: recipientInfos },
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
+          pqc: pqcOpts,
         });
         pkiData = result.pkiData;
         suffix = 'enveloped';
-        info = `EnvelopedMessage (${recipientInfos.length}명 수신자)`;
+        info = `EnvelopedMessage (${recipientInfos.length}명 수신자)${result.stats.pqcKem ? ' + ML-KEM' : ''}`;
       } else if (options.sign) {
         // SignedMessage
         const currentKey = useAppStore.getState().keyIdentity;
         if (!currentKey) { toast.error('키가 활성화되지 않았습니다.'); setStep('options'); return; }
-        const result = await seal({ files, compress: true, sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint } });
+        const pqcOpts = await loadPqcForSeal();
+        const result = await seal({
+          files, compress: true,
+          sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
+          pqc: pqcOpts,
+        });
         pkiData = result.pkiData;
         suffix = 'signed';
-        info = `SignedMessage (0x${currentKey.signingKey.fingerprint})`;
+        info = `SignedMessage (0x${currentKey.signingKey.fingerprint})${result.stats.pqcDsa ? ' + ML-DSA' : ''}`;
       } else {
         const result = await compressOnly(files);
         pkiData = result.pkiData;
