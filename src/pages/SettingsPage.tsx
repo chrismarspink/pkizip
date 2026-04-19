@@ -280,7 +280,7 @@ function CertSharingSection() {
   // 업로드 전
   return (
     <div className="rounded-xl border border-zinc-200 p-4 space-y-3">
-      <p className="text-xs text-zinc-500">인증서를 공유하면 다른 사용자가 검색하여 키링에 추가할 수 있습니다.</p>
+      <p className="text-xs text-zinc-500">인증서를 공유하면 다른 사용자가 검색하여 주소록에 추가할 수 있습니다.</p>
       <div className="space-y-1">
         <label className="text-[10px] text-zinc-500">username (공유 주소에 사용)</label>
         <input type="text" value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}

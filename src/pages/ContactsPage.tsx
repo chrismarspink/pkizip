@@ -1,5 +1,5 @@
 /**
- * ContactsPage — 인증서 디렉토리 검색 + 키링 추가
+ * ContactsPage — 인증서 디렉토리 검색 + 주소록 추가
  * 로그인 필수
  */
 import { useState, useCallback, useRef } from 'react';
@@ -39,7 +39,7 @@ export function ContactsPage() {
     try {
       const existing = await getAllKeyRingEntries();
       if (existing.some(e => e.fingerprint === bundle.fingerprint)) {
-        toast('이미 키링에 있습니다', { icon: '📋' });
+        toast('이미 주소록에 있습니다', { icon: '📋' });
         return;
       }
       await addToKeyRing({
@@ -50,9 +50,9 @@ export function ContactsPage() {
         createdAt: Date.now(),
         type: 'imported',
       });
-      toast.success(`${bundle.display_name}을(를) 키링에 추가했습니다`);
+      toast.success(`${bundle.display_name}을(를) 주소록에 추가했습니다`);
     } catch (err) {
-      toast.error(`키링 추가 실패: ${err instanceof Error ? err.message : '오류'}`);
+      toast.error(`주소록 추가 실패: ${err instanceof Error ? err.message : '오류'}`);
     }
   }, []);
 
@@ -63,7 +63,7 @@ export function ContactsPage() {
         <h1 className="text-xl font-bold mb-2">주소록</h1>
         <div className="text-center py-20">
           <Lock className="w-16 h-16 mx-auto mb-4 text-zinc-200" />
-          <p className="text-zinc-500 mb-4">로그인 후 인증서를 검색하고 키링에 추가할 수 있습니다.</p>
+          <p className="text-zinc-500 mb-4">로그인 후 인증서를 검색하고 주소록에 추가할 수 있습니다.</p>
           <button onClick={() => setShowAuth(true)}
             className="bg-[#175DDC] text-white px-5 py-2.5 rounded-xl text-sm font-medium">
             로그인
@@ -122,7 +122,7 @@ export function ContactsPage() {
               </div>
               <button onClick={() => handleAddToKeyring(b)}
                 className="flex items-center gap-1 text-xs text-[#175DDC] hover:bg-[#175DDC]/5 border border-[#175DDC]/30 rounded-lg px-3 py-1.5 transition-colors shrink-0">
-                <UserPlus className="w-3 h-3" /> 키링 추가
+                <UserPlus className="w-3 h-3" /> 주소록 추가
               </button>
             </div>
           </div>
