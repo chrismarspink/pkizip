@@ -181,8 +181,10 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       console.log('[PKIZIP] 아이덴티티 갱신 완료');
 
       // 서버 백업 (opt-in, 로그인 시만)
+      console.log('[PKIZIP] 백업 조건:', { backupEnabled, hasAuth: !!authUser, hasPw: !!backupPw });
       if (backupEnabled && authUser && backupPw) {
         setLoadingMsg('서버 백업 암호화 중...');
+        console.log('[PKIZIP] 백업 시작...');
         if (backupPw !== backupPwConfirm) {
           toast.error('백업 패스워드가 일치하지 않습니다.');
         } else if (backupPw.length < 8) {
@@ -190,9 +192,12 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         } else {
           try {
             const { backupMnemonic } = await import('@/lib/supabase/mnemonic-backup');
+            console.log('[PKIZIP] backupMnemonic 호출...');
             await backupMnemonic(mnemonic, backupPw, id, backupHint || undefined);
+            console.log('[PKIZIP] 백업 완료');
             toast.success('니모닉 암호화 백업 저장 완료');
           } catch (backupErr) {
+            console.error('[PKIZIP] 백업 에러:', backupErr);
             toast.error(`백업 실패: ${backupErr instanceof Error ? backupErr.message : '오류'}`);
           }
         }
