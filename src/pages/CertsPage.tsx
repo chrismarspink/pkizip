@@ -108,6 +108,10 @@ export function CertsPage() {
       } catch (pqcErr) {
         console.warn('[PKIZIP] PQC 인스턴스 초기화 실패:', pqcErr);
         useAppStore.getState().setPqcInstances(null, null);
+        const { pqcConfig: cfg } = useAppStore.getState();
+        if (cfg.kemEnabled || cfg.dsaEnabled) {
+          toast.error('PQC 키 로드 실패 — 니모닉을 재생성하면 PQC 번들이 생성됩니다.');
+        }
       }
 
       toast.success('키 활성화 완료');

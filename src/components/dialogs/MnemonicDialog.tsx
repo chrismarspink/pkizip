@@ -111,7 +111,8 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         );
         console.log('[PKIZIP] PQC 인스턴스 초기화 완료');
       } catch (pqcErr) {
-        console.error('[PKIZIP] PQC 생성 실패 (classic 인증서는 정상):', pqcErr);
+        console.error('[PKIZIP] PQC 생성 실패:', pqcErr);
+        toast.error('PQC 인증서/키 생성 실패 — classic 인증서만 생성되었습니다.');
       }
 
       // 인증서 저장 (classic + PQC 인증서 한 번에)

@@ -205,12 +205,11 @@ export function CreatePage() {
   };
 
   // PQC 인스턴스 (store에서 가져옴 — 잠금 해제 시 초기화됨)
-  const loadPqcForSeal = () => {
+  const loadPqcForSeal = (): { shield?: any; signer?: any; mode: string } | undefined => {
     const { pqcConfig: cfg, pqcShield, pqcSigner } = useAppStore.getState();
     if (!cfg.kemEnabled && !cfg.dsaEnabled) return undefined;
     if (!pqcShield && !pqcSigner) {
-      console.warn('[PKIZIP] PQC 인스턴스 없음 — 잠금 해제 시 초기화 필요');
-      return undefined;
+      throw new Error('PQC가 활성화되어 있지만 키가 로드되지 않았습니다.\n키를 잠금 해제한 후 다시 시도하세요.');
     }
     return {
       shield: cfg.kemEnabled ? pqcShield : undefined,

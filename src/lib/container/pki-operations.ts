@@ -175,7 +175,7 @@ export async function seal(options: SealOptions): Promise<SealResult> {
         pqcKemDone = true;
         console.log('[PKIZIP] ML-KEM-1024 CEK 캡슐화 완료');
       } catch (err) {
-        console.error('[PKIZIP] ML-KEM 캡슐화 실패:', err);
+        throw new Error(`ML-KEM-1024 암호화 실패: ${err instanceof Error ? err.message : err}`);
       }
     }
 
@@ -213,7 +213,7 @@ export async function seal(options: SealOptions): Promise<SealResult> {
         pqcDsaDone = true;
         console.log('[PKIZIP] ML-DSA-87 서명 완료');
       } catch (err) {
-        console.error('[PKIZIP] ML-DSA 서명 실패:', err);
+        throw new Error(`ML-DSA-87 서명 실패: ${err instanceof Error ? err.message : err}`);
       }
     }
   }
