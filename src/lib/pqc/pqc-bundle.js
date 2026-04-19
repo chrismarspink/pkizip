@@ -1,10 +1,14 @@
 /**
- * pqc-bundle.js — 2벌 PQC 키+인증서 번들 관리 (.pkizip)
+ * pqc-bundle.js — 2벌 PQC 키+인증서 번들 관리
+ *
+ * 인증서: 표준 X.509 DER/PEM (RFC 9935 ML-KEM, RFC 9881 ML-DSA)
+ * 개인키: seed 형식 PKCS#8 (RFC 9935 §6, RFC 9881 §6)
  */
 
 import { PQCDerive, PQC_PATHS } from './pqc-derive.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { printBundleCreateBanner } from './pqc-banner.js';
+import { buildMlKemCertificate, buildMlDsaCertificate } from '../crypto/pqc-cert';
 
 const toHex = u8 => Array.from(u8).map(b => b.toString(16).padStart(2, '0')).join('');
 const fromHex = h => { const u = new Uint8Array(h.length / 2); for (let i = 0; i < u.length; i++) u[i] = parseInt(h.slice(i*2, i*2+2), 16); return u; };
@@ -24,25 +28,31 @@ async function decryptKey(cipher, password, salt, iv) {
   return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, aes, cipher));
 }
 
-// 간이 자체서명 인증서 (PEM mock — 실제 X.509는 pkijs로 대체 가능)
-function buildCertPEM(alg, oid, publicKey, keyUsage, subject) {
-  return `-----PKIZIP-CERT-${alg}-----\nAlgorithm: ${alg}\nOID: ${oid}\nSubject: ${subject.name} <${subject.email}>\nKeyUsage: ${keyUsage.join(', ')}\nPublicKey: ${toHex(publicKey).slice(0, 64)}...(${publicKey.length}B)\n-----END PKIZIP-CERT-----`;
-}
-
 export class PQCBundle {
   constructor(data) { this._data = data; }
 
   static async create(opts) {
-    const { mnemonic, password, subject, mode = 'full', validity = 1095 } = opts;
+    const { mnemonic, password, subject, mode = 'full', validity = 3650 } = opts;
     const keys = await PQCDerive.deriveAll(mnemonic, password);
 
-    // 인증서 생성
-    const certs = {
-      kem: buildCertPEM('ML-KEM-1024', '2.16.840.1.101.3.4.4.3', keys.kem.publicKey, ['keyEncipherment'], subject),
-      dsa: buildCertPEM('ML-DSA-87', '2.16.840.1.101.3.4.3.19', keys.dsa.publicKey, ['digitalSignature', 'nonRepudiation'], subject),
-    };
+    // 표준 X.509 인증서 생성 (RFC 9935 / RFC 9881)
+    const kemCert = await buildMlKemCertificate({
+      kemPublicKey: keys.kem.publicKey,
+      dsaSecretKey: keys.dsa.secretKey,  // ML-KEM은 서명 불가 → ML-DSA로 서명
+      subject: { commonName: subject.name, email: subject.email },
+      validityDays: validity,
+    });
 
-    // 각 개인키 독립 암호화
+    const dsaCert = await buildMlDsaCertificate({
+      dsaPublicKey: keys.dsa.publicKey,
+      dsaSecretKey: keys.dsa.secretKey,  // 자가 서명
+      subject: { commonName: subject.name, email: subject.email },
+      validityDays: validity,
+    });
+
+    const certs = { kem: kemCert, dsa: dsaCert };
+
+    // 각 개인키 독립 암호화 (PBKDF2 + AES-256-GCM)
     const rnd = n => crypto.getRandomValues(new Uint8Array(n));
     const s_kem = rnd(32), s_dsa = rnd(32);
     const i_kem = rnd(12), i_dsa = rnd(12);
@@ -72,7 +82,7 @@ export class PQCBundle {
     printBundleCreateBanner({ mode, paths: PQC_PATHS });
 
     const bundle = new PQCBundle(data);
-    bundle._keys = keys; // 메모리에 보관 (serialize 시 제외)
+    bundle._keys = keys;
     return bundle;
   }
 

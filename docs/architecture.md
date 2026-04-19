@@ -126,7 +126,10 @@ pkizip/
         │   ├── mnemonic.ts         BIP39 니모닉 생성/검증/복구
         │   ├── hd-key.ts           BIP32 → P-256 키 파생
         │   ├── key-manager.ts      다중 아이덴티티 IndexedDB CRUD
-        │   ├── certificate.ts      X.509 자체서명 인증서 (pkijs)
+        │   ├── certificate.ts      X.509 자체서명 인증서 — P-256 (pkijs)
+        │   ├── pqc-oids.ts        PQC OID 상수 (ML-KEM, ML-DSA, CMS)
+        │   ├── pqc-keys.ts        PQC PKCS#8 PEM 인코딩/디코딩 (seed 형식)
+        │   ├── pqc-cert.ts        PQC X.509 인증서 — ML-KEM/ML-DSA (pkijs + ml_dsa87)
         │   ├── encryption.ts       AES-256-GCM + ECDH 다중 수신자
         │   ├── signing.ts          ECDSA P-256 서명/검증
         │   ├── biometric.ts        WebAuthn 생체 인증 (PRF + fallback)
@@ -200,16 +203,24 @@ pkizip/
 
 ### 4-4. 양자 내성 암호 (PQC)
 
-인증서 3개: ECDSA P-256 (classic, pkijs 생성), ML-KEM-1024, ML-DSA-87.
-PQC 번들은 ML-KEM-1024 + ML-DSA-87 2벌만 포함 (secp256k1 제거).
+인증서 3개 — 니모닉 생성 시 항상 함께 생성 (설정 무관):
 
-| 알고리즘 | NIST 표준 | 용도 |
-|---------|----------|------|
-| ML-KEM-1024 | FIPS 203 | CEK 캡슐화 (EnvelopedData 수신자 보호) |
-| ML-DSA-87 | FIPS 204 | 전자서명 (SignedData) |
-| HKDF-SHA3-512 | — | sharedSecret → AES 키 파생 |
+| # | 알고리즘 | 표준 | 인증서 형식 | 용도 |
+|---|---------|------|-----------|------|
+| 1 | ECDSA P-256 | NIST SP 800-186 | 표준 X.509 (pkijs) | Classic 서명/암호화 |
+| 2 | ML-KEM-1024 | FIPS 203, RFC 9935 | 표준 X.509 (pkijs + ml_dsa87 서명) | 양자 CEK 캡슐화 |
+| 3 | ML-DSA-87 | FIPS 204, RFC 9881 | 표준 X.509 (자가서명) | 양자 전자서명 |
 
-PQC 3가지 모드:
+PQC 인증서 특이사항:
+- ML-KEM 인증서는 서명 불가 → **ML-DSA-87 키로 서명**
+- ML-DSA 인증서는 **자가 서명** (자신의 DSA 키로 서명)
+- 모든 인증서: `parameters: ABSENT` (RFC 9935 §4, RFC 9881 §4)
+- keyUsage: ML-KEM = `keyEncipherment` (critical), ML-DSA = `digitalSignature + nonRepudiation` (critical)
+- 개인키: seed 형식 PKCS#8 PEM (ML-KEM 64B, ML-DSA 32B) — RFC 9935 §6, RFC 9881 §6
+- `cert.sign()` 사용 불가 (Web Crypto 미지원) → `ml_dsa87.sign(tbsDer)` 직접 호출
+- `StoredCertificate.pqcCertificates`에 `-----BEGIN CERTIFICATE-----` PEM 저장
+
+PQC 3가지 모드 (운용 시 적용, 인증서 생성과 무관):
 - **hybrid**: 기존 RSA/ECDSA + PQC 동시 포함 (기본값)
 - **pqc-only**: PQC 전용
 - **classical**: 기존 알고리즘만
@@ -359,8 +370,8 @@ PkiHeader의 `compression` 필드:
     }
   },
   "certificates": {
-    "kem": "<PEM ML-KEM-1024, RFC 9935>",
-    "dsa": "<PEM ML-DSA-87, RFC 9881>"
+    "kem": "-----BEGIN CERTIFICATE-----\n...(RFC 9935 X.509)\n-----END CERTIFICATE-----",
+    "dsa": "-----BEGIN CERTIFICATE-----\n...(RFC 9881 X.509)\n-----END CERTIFICATE-----"
   },
   "encryptedKeys": {
     "algorithm": "AES-256-GCM",
