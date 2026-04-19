@@ -25,11 +25,26 @@ const CARD_COLORS = [
   { id: 'amber',   label: 'Amber',   bg: 'linear-gradient(135deg, #F59E0B, #92400E)' },
   { id: 'emerald', label: 'Emerald', bg: 'linear-gradient(135deg, #10B981, #065F46)' },
   { id: 'sky',     label: 'Sky',     bg: 'linear-gradient(135deg, #0EA5E9, #0C4A6E)' },
-] as const;
+];
 
-export type CardColorId = typeof CARD_COLORS[number]['id'];
-export const DEFAULT_CARD_COLOR: CardColorId = 'navy';
+export type CardColorId = string;
+export const DEFAULT_CARD_COLOR = 'navy';
+
+/**
+ * colorId → CSS background 문자열
+ * 프리셋: 'navy', 'violet' 등
+ * 커스텀: 'custom::#FF0000::#0000FF' → linear-gradient(135deg, #FF0000, #0000FF)
+ * 단색:   'solid::#FF0000' → #FF0000
+ */
 export function getCardBackground(colorId?: string): string {
+  if (!colorId) return CARD_COLORS[0].bg;
+  if (colorId.startsWith('custom::')) {
+    const [, c1, c2] = colorId.split('::');
+    return `linear-gradient(135deg, ${c1}, ${c2})`;
+  }
+  if (colorId.startsWith('solid::')) {
+    return colorId.replace('solid::', '');
+  }
   const found = CARD_COLORS.find(c => c.id === colorId);
   return found?.bg ?? CARD_COLORS[0].bg;
 }
@@ -427,22 +442,7 @@ export function LogoCrop({ onCropComplete, cardColor = DEFAULT_CARD_COLOR, onCar
               </div>
               <PreviewCard logoUrl={previewUrl} background={getCardBackground(cardColor)} />
               {/* 컬러 피커 */}
-              <div>
-                <p className="text-[10px] text-zinc-400 mb-1.5">카드 컬러</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {CARD_COLORS.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => onCardColorChange?.(c.id)}
-                      title={c.label}
-                      className={`w-7 h-7 rounded-lg border-2 transition-all ${
-                        cardColor === c.id ? 'border-zinc-800 scale-110' : 'border-transparent hover:border-zinc-300'
-                      }`}
-                      style={{ background: c.bg }}
-                    />
-                  ))}
-                </div>
-              </div>
+              <CardColorPicker cardColor={cardColor} onChange={onCardColorChange} />
             </div>
           )}
         </>
@@ -450,6 +450,71 @@ export function LogoCrop({ onCropComplete, cardColor = DEFAULT_CARD_COLOR, onCar
 
       {/* 크롭 결과 추출용 hidden canvas */}
       <canvas ref={hiddenCanvasRef} className="hidden" />
+    </div>
+  );
+}
+
+// === 카드 컬러 피커 ===
+function CardColorPicker({ cardColor, onChange }: { cardColor: string; onChange?: (c: string) => void }) {
+  const [showCustom, setShowCustom] = useState(false);
+  const [customC1, setCustomC1] = useState('#175DDC');
+  const [customC2, setCustomC2] = useState('#0C3276');
+  const isCustom = cardColor.startsWith('custom::') || cardColor.startsWith('solid::');
+
+  const applyCustom = () => {
+    onChange?.(`custom::${customC1}::${customC2}`);
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] text-zinc-400">카드 컬러</p>
+      {/* 프리셋 */}
+      <div className="flex gap-1.5 flex-wrap">
+        {CARD_COLORS.map(c => (
+          <button
+            key={c.id}
+            onClick={() => { onChange?.(c.id); setShowCustom(false); }}
+            title={c.label}
+            className={`w-7 h-7 rounded-lg border-2 transition-all ${
+              cardColor === c.id ? 'border-zinc-800 scale-110' : 'border-transparent hover:border-zinc-300'
+            }`}
+            style={{ background: c.bg }}
+          />
+        ))}
+        {/* 커스텀 토글 */}
+        <button
+          onClick={() => setShowCustom(!showCustom)}
+          title="커스텀 그라디언트"
+          className={`w-7 h-7 rounded-lg border-2 text-[10px] font-bold transition-all ${
+            isCustom || showCustom ? 'border-zinc-800 scale-110 bg-zinc-100' : 'border-zinc-200 hover:border-zinc-400 bg-white'
+          }`}
+        >
+          +
+        </button>
+      </div>
+      {/* 커스텀 그라디언트 입력 */}
+      {showCustom && (
+        <div className="bg-zinc-50 rounded-lg p-3 space-y-2">
+          <p className="text-[10px] text-zinc-500">커스텀 그라디언트</p>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+              시작
+              <input type="color" value={customC1} onChange={e => { setCustomC1(e.target.value); }}
+                className="w-7 h-7 rounded border border-zinc-200 cursor-pointer p-0" />
+            </label>
+            <div className="flex-1 h-6 rounded" style={{ background: `linear-gradient(90deg, ${customC1}, ${customC2})` }} />
+            <label className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+              끝
+              <input type="color" value={customC2} onChange={e => { setCustomC2(e.target.value); }}
+                className="w-7 h-7 rounded border border-zinc-200 cursor-pointer p-0" />
+            </label>
+          </div>
+          <button onClick={applyCustom}
+            className="w-full text-[11px] bg-zinc-800 text-white rounded-lg py-1.5 hover:bg-zinc-700 transition-colors">
+            적용
+          </button>
+        </div>
+      )}
     </div>
   );
 }
