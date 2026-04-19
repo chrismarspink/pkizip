@@ -354,7 +354,11 @@ export async function open(
 
   // 3. 복호화
   if (isEncrypted && header.encryption) {
-    if (!decryptionKey || !myFingerprint) {
+    const hasEcdhKey = !!decryptionKey && !!myFingerprint;
+    const hasPqcShield = !!pqc?.shield && !!header.pqcKemRecipientInfo;
+
+    // ECDH 키도 PQC shield도 없으면 복호화 불가
+    if (!hasEcdhKey && !hasPqcShield) {
       return {
         files: header.files.map(f => ({
           name: f.name, data: new Uint8Array(0), size: f.originalSize,
@@ -370,8 +374,8 @@ export async function open(
 
     let decrypted = false;
 
-    // 경로 1: ECDH classic 복호화
-    if (!decrypted) {
+    // 경로 1: ECDH classic 복호화 (키가 있고 수신자가 있을 때만)
+    if (!decrypted && hasEcdhKey && header.encryption.recipients.length > 0) {
       try {
         const encryptedPkg: EncryptedPackage = {
           ciphertext: payloadCopy,
@@ -380,7 +384,7 @@ export async function open(
           recipients: deserializeRecipients(header.encryption.recipients),
           algorithm: 'AES-256-GCM',
         };
-        const result = await decryptAsRecipient(encryptedPkg, decryptionKey, myFingerprint);
+        const result = await decryptAsRecipient(encryptedPkg, decryptionKey!, myFingerprint!);
         payload = result.plaintext;
         decrypted = true;
         console.log('[PKIZIP] ECDH 복호화 성공');

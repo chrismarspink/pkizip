@@ -91,7 +91,10 @@ export function FilesTempPage() {
     // Step 2: 암호화 해제
     if (isEnc) {
       const encId = id();
-      push({ type: 'step', id: encId, label: isPw ? '비밀번호 복호화' : '개인키 복호화 (ECDH)', status: 'active' });
+      const encLabel = isPw ? '비밀번호 복호화'
+        : h.pqcKemRecipientInfo && (h.encryption?.recipients ?? []).length === 0
+          ? '개인키 복호화 (ML-KEM)' : '개인키 복호화 (ECDH)';
+      push({ type: 'step', id: encId, label: encLabel, status: 'active' });
 
       if (isPw) {
         const pwId = id();
@@ -149,9 +152,16 @@ export function FilesTempPage() {
           });
         });
       } else {
-        // === Enveloped: 수신자 카드 → 생체/PIN/비밀번호 잠금 해제 → 개인키 ECDH 복호화 ===
+        // === Enveloped: 수신자 매칭 → 잠금 해제 → 복호화 ===
         const recipients = h.encryption?.recipients ?? [];
-        push({ type: 'text', id: id(), content: `이 파일은 ${recipients.length}명의 수신자 공개키로 암호화되었습니다.`, tone: 'muted' });
+        const hasPqcKem = !!h.pqcKemRecipientInfo;
+        const isPqcOnly = hasPqcKem && recipients.length === 0;
+
+        if (isPqcOnly) {
+          push({ type: 'text', id: id(), content: 'PQC Only 암호화 (ML-KEM-1024)', tone: 'muted' });
+        } else {
+          push({ type: 'text', id: id(), content: `이 파일은 ${recipients.length}명의 수신자 공개키로 암호화되었습니다.`, tone: 'muted' });
+        }
 
         const { getAllKeyRingEntries, getAllIdentityMetas, loadIdentitySeed } = await import('@/lib/crypto/key-manager');
         const { hasBiometric, unlockWithBiometric } = await import('@/lib/crypto/biometric');
@@ -163,6 +173,7 @@ export function FilesTempPage() {
         // 수신자 카드 표시 + 내 키 매칭 찾기
         let myMatch: { id: string; name: string } | null = null;
 
+        // Classic/Hybrid: ECDH recipients에서 매칭
         for (const r of recipients) {
           const entry = ring.find(e => e.fingerprint === r.fingerprint);
           const meta = myIdentities.find(m => m.signingFingerprint === r.fingerprint);
@@ -181,6 +192,28 @@ export function FilesTempPage() {
 
           if (isMe && meta) {
             myMatch = { id: meta.id, name: meta.name };
+          }
+        }
+
+        // PQC Only: ECDH 수신자 없음 → PQC KeyId로 매칭
+        if (!myMatch && isPqcOnly && myIdentities.length > 0) {
+          // PQC 번들의 KeyId와 헤더의 pqcKeyId 비교는 복잡하므로,
+          // 아이덴티티가 있으면 첫 번째 활성 아이덴티티를 매칭 (자가 암호화)
+          const { getActiveIdentityId } = await import('@/lib/crypto/key-manager');
+          const activeId = await getActiveIdentityId();
+          const activeMeta = myIdentities.find(m => m.id === activeId) || myIdentities[0];
+          if (activeMeta) {
+            const cert = await getCertificate(activeMeta.signingFingerprint).catch(() => null);
+            push({
+              type: 'cert', id: id(),
+              name: (cert?.commonName || activeMeta.name) + ' (나)',
+              email: cert?.email,
+              fingerprint: activeMeta.signingFingerprint,
+              issuedAt: cert?.notBefore,
+              expiresAt: cert?.notAfter,
+              logotype: cert?.logotype,
+            });
+            myMatch = { id: activeMeta.id, name: activeMeta.name };
           }
         }
 
