@@ -74,50 +74,70 @@ export function CertCard(props: CertCardProps) {
       try {
         const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
         const info = await PQCKeystore.getInfo('default');
+        console.log('[PKIZIP] PEM복사 - PQC getInfo 결과:', info ? { certificates: !!info.certificates, kemKeyId: info.kemKeyId?.slice(0, 16), keys: info.certificates ? Object.keys(info.certificates) : 'none' } : 'null');
+
         if (info?.certificates) {
-          if (info.certificates.kem) {
+          const c = info.certificates;
+          if (c.kem) {
             pem += `# === ML-KEM-1024 Certificate (FIPS 203, RFC 9935) ===\n`;
-            pem += info.certificates.kem + '\n\n';
+            pem += `# keyUsage: keyEncipherment\n`;
+            pem += c.kem + '\n\n';
           }
-          if (info.certificates.dsa) {
+          if (c.dsa) {
             pem += `# === ML-DSA-87 Certificate (FIPS 204, RFC 9881) ===\n`;
-            pem += info.certificates.dsa + '\n\n';
+            pem += `# keyUsage: digitalSignature, nonRepudiation\n`;
+            pem += c.dsa + '\n\n';
           }
-          if (info.certificates.ecc) {
+          if (c.ecc) {
             pem += `# === secp256k1 Certificate ===\n`;
-            pem += info.certificates.ecc + '\n\n';
+            pem += `# keyUsage: digitalSignature\n`;
+            pem += c.ecc + '\n\n';
           }
           pem += `# PQC Key ID: ${info.kemKeyId || 'N/A'}\n`;
+          pem += `# Mode: ${info.mode || 'full'}\n`;
+        } else {
+          console.warn('[PKIZIP] PEM복사 - PQC 번들에 인증서 없음. 니모닉 재생성 필요.');
+          pem += `# PQC 번들에 인증서가 없습니다. PQC 활성 상태에서 니모닉을 재생성하세요.\n`;
         }
-      } catch {
+      } catch (err) {
+        console.warn('[PKIZIP] PEM복사 - PQC 로드 실패:', err);
         pem += `# PQC 인증서 로드 실패\n`;
       }
     }
 
     navigator.clipboard.writeText(pem);
-    toast.success(pqcEnabled ? '인증서 번들 복사됨 (Classic + PQC)' : 'PEM 인증서 복사됨');
+    const certCount = (pem.match(/-----PKIZIP-CERT-/g) || []).length + (pem.match(/-----BEGIN CERTIFICATE-----/g) || []).length;
+    toast.success(certCount > 1 ? `인증서 번들 복사됨 (${certCount}개)` : 'PEM 인증서 복사됨');
   }, [cert, pqcEnabled]);
 
   // PEM 내보내기
   const handleExport = useCallback(async () => {
-    let pem = cert.pemCertificate;
+    let pem = `# PKIZIP Certificate Bundle\n# Subject: ${cert.commonName} <${cert.email}>\n# Date: ${new Date().toISOString()}\n\n`;
+    pem += `# === Classic Certificate (ECDSA P-256) ===\n`;
+    pem += cert.pemCertificate + '\n\n';
+
     if (pqcEnabled) {
       try {
         const { PQCKeystore } = await import('@/lib/pqc/pqc-keystore.js');
         const info = await PQCKeystore.getInfo('default');
         if (info?.certificates) {
-          if (info.certificates.kem) pem += '\n' + info.certificates.kem;
-          if (info.certificates.dsa) pem += '\n' + info.certificates.dsa;
-          if (info.certificates.ecc) pem += '\n' + info.certificates.ecc;
+          const c = info.certificates;
+          if (c.kem) pem += `# === ML-KEM-1024 Certificate ===\n` + c.kem + '\n\n';
+          if (c.dsa) pem += `# === ML-DSA-87 Certificate ===\n` + c.dsa + '\n\n';
+          if (c.ecc) pem += `# === secp256k1 Certificate ===\n` + c.ecc + '\n\n';
+          pem += `# PQC Key ID: ${info.kemKeyId || 'N/A'}\n`;
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.warn('[PKIZIP] 내보내기 PQC 로드 실패:', err);
+      }
     }
+
     const blob = new Blob([pem], { type: 'application/x-pem-file' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${cert.commonName.replace(/\s/g, '_')}_certs.pem`;
     a.click();
-    toast.success(pqcEnabled ? '인증서 번들 내보내기 완료' : '인증서 내보내기 완료');
+    toast.success('인증서 내보내기 완료');
   }, [cert, pqcEnabled]);
 
   // 현재 면 렌더
