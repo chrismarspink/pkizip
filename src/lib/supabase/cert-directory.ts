@@ -62,12 +62,13 @@ export async function deleteCertBundle(): Promise<void> {
 export async function searchCertBundles(query: string): Promise<CertBundle[]> {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('cert_bundles')
     .select('id,username,display_name,email,fingerprint,cert_kem,cert_dsa,cert_classic,uploaded_at,updated_at')
     .eq('is_public', true)
-    .or(`username.ilike.%${q}%,display_name.ilike.%${q}%,email.ilike.%${q}%`)
+    .or(`username.ilike.*${q}*,display_name.ilike.*${q}*,email.ilike.*${q}*`)
     .limit(20);
+  if (error) console.error('[PKIZIP] cert search error:', error);
   return data ?? [];
 }
 
