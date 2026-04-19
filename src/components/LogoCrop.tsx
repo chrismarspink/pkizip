@@ -390,7 +390,7 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
           </div>
 
-          {/* 인증서 카드 미리보기 (그린/노랑) */}
+          {/* 인증서 카드 미리보기 */}
           {previewUrl && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -404,10 +404,7 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
                   {previewSize < 64 * 1024 ? ' ✓ 64KB 이하' : ' ⚠ 64KB 초과'}
                 </span>
               </div>
-              <div className="flex gap-3 flex-wrap">
-                <PreviewCard variant="green" logoUrl={previewUrl} />
-                <PreviewCard variant="yellow" logoUrl={previewUrl} />
-              </div>
+              <PreviewCard logoUrl={previewUrl} />
             </div>
           )}
         </>
@@ -420,15 +417,14 @@ export function LogoCrop({ onCropComplete }: LogoCropProps) {
 }
 
 // === 인증서 카드 미리보기 ===
-function PreviewCard({ variant, logoUrl }: { variant: 'green' | 'yellow'; logoUrl: string }) {
-  const isGreen = variant === 'green';
+function PreviewCard({ logoUrl }: { logoUrl: string }) {
   return (
     <div
       className="relative overflow-hidden"
       style={{
         width: 320, height: 202, borderRadius: 14,
-        background: isGreen ? '#175DDC' : '#FFE500',
-        color: isGreen ? 'white' : '#1a1a1a',
+        background: 'linear-gradient(135deg, #175DDC, #0C3276)',
+        color: 'white',
       }}
     >
       {/* 로고 영역: 좌상단 */}
@@ -441,7 +437,7 @@ function PreviewCard({ variant, logoUrl }: { variant: 'green' | 'yellow'; logoUr
           alt=""
           style={{
             maxHeight: 22, maxWidth: 80, objectFit: 'contain',
-            filter: isGreen ? 'brightness(0) invert(1)' : 'none',
+            filter: 'brightness(0) invert(1)',
           }}
         />
       </div>
