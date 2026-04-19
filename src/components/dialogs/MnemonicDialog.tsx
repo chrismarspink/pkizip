@@ -35,6 +35,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('');
   const [certInfo, setCertInfo] = useState<CertificateInfo | null>(null);
   const [fingerprint, setFingerprint] = useState('');
 
@@ -71,12 +72,14 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   const handleSaveKey = async () => {
     if (password.length < 8) { setError('비밀번호는 8자 이상'); return; }
     if (password !== passwordConfirm) { setError('비밀번호 불일치'); return; }
+    setLoadingMsg('키 파생 중...');
     setLoading(true); setError('');
 
     try {
       const { seed } = recoverFromMnemonic(mnemonic);
       const identity = await deriveKeyIdentity(seed);
 
+      setLoadingMsg('인증서 생성 중...');
       const cert = await generateSelfSignedCertificate({
         commonName: commonName.trim(), email: email.trim(),
         signingPrivateKey: identity.signingKey.privateKey,
@@ -92,7 +95,8 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         encryption: identity.encryptionKey.fingerprint,
       }, { commonName: commonName.trim(), email: email.trim() });
 
-      // PQC 번들 항상 생성 (설정 무관 — 인증서 3개 한 번에 생성)
+      // PQC 번들 항상 생성
+      setLoadingMsg('PQC 키 생성 중...');
       let pqcCerts: { kem?: string; dsa?: string } | undefined;
       let pqcKeyId: string | undefined;
       try {
@@ -119,12 +123,20 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
           PQCSigner.fromBundle(pqcBundle.getDSAKeyPair()),
         );
         console.log('[PKIZIP] PQC 인스턴스 초기화 완료');
+        console.log('[PKIZIP] PQC certs preview:', {
+          kemLen: pqcCerts?.kem?.length ?? 0,
+          dsaLen: pqcCerts?.dsa?.length ?? 0,
+          kemStart: pqcCerts?.kem?.slice(0, 50),
+          dsaStart: pqcCerts?.dsa?.slice(0, 50),
+        });
       } catch (pqcErr) {
         console.error('[PKIZIP] PQC 생성 실패:', pqcErr);
         toast.error('PQC 인증서/키 생성 실패 — classic 인증서만 생성되었습니다.');
       }
 
-      // 인증서 저장 (classic + PQC 인증서 한 번에)
+      // 인증서 저장
+      setLoadingMsg('인증서 저장 중...');
+      console.log('[PKIZIP] 인증서 저장 시작');
       const storedCert: StoredCertificate = {
         fingerprint: identity.signingKey.fingerprint,
         commonName: commonName.trim(), email: email.trim(),
@@ -137,7 +149,9 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         pqcKeyId,
       };
       await saveCertificate(storedCert);
+      console.log('[PKIZIP] 인증서 저장 완료');
 
+      setLoadingMsg('키링 등록 중...');
       const signingJWK = await exportPublicKeyJWK(identity.signingKey.publicKey);
       const encryptionJWK = await exportPublicKeyJWK(identity.encryptionKey.publicKey);
       await addToKeyRing({
@@ -146,6 +160,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         signingKeyJWK: signingJWK, encryptionKeyJWK: encryptionJWK,
         createdAt: Date.now(), type: 'local',
       });
+      console.log('[PKIZIP] 키링 등록 완료');
 
       setKeyIdentity(identity);
       setCertificate(cert);
@@ -153,6 +168,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       setCertInfo(cert);
 
       // 아이덴티티 목록 갱신
+      setLoadingMsg('아이덴티티 갱신 중...');
       const { getAllIdentityMetas, getActiveIdentityId, setActiveIdentityId: sai } = await import('@/lib/crypto/key-manager');
       await sai(id);
       setActiveIdentityId(id);
@@ -162,9 +178,11 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         signingFingerprint: m.signingFingerprint, encryptionFingerprint: m.encryptionFingerprint,
         createdAt: m.createdAt,
       })));
+      console.log('[PKIZIP] 아이덴티티 갱신 완료');
 
       // 서버 백업 (opt-in, 로그인 시만)
       if (backupEnabled && authUser && backupPw) {
+        setLoadingMsg('서버 백업 암호화 중...');
         if (backupPw !== backupPwConfirm) {
           toast.error('백업 패스워드가 일치하지 않습니다.');
         } else if (backupPw.length < 8) {
@@ -343,7 +361,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
 
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-end pt-2">
-                  <Btn onClick={handleSaveKey} disabled={loading}>{loading ? '생성 중...' : '키 저장 및 인증서 발급'}</Btn>
+                  <Btn onClick={handleSaveKey} disabled={loading}>{loading ? (loadingMsg || '생성 중...') : '키 저장 및 인증서 발급'}</Btn>
                 </div>
               </motion.div>
             )}
