@@ -51,7 +51,14 @@ export function CreatePage() {
   const [step, setStep] = useState<Step>('files');
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [options, setOptions] = useState<CmsOptions>({ compress: true, sign: false, enveloped: false, encrypted: false });
-  const [cryptoMode, setCryptoMode] = useState<'hybrid' | 'pqc-only' | 'classic'>('hybrid');
+  const [cryptoMode, setCryptoMode] = useState<'hybrid' | 'pqc-only' | 'classic'>(() => {
+    const { pqcConfig: cfg } = useAppStore.getState();
+    if (!cfg.kemEnabled && !cfg.dsaEnabled) return 'classic';
+    const mode = cfg.kemMode || cfg.dsaMode || 'hybrid';
+    if (mode === 'pqc-only') return 'pqc-only';
+    if (mode === 'classical') return 'classic';
+    return 'hybrid';
+  });
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [recipients, setRecipients] = useState<Set<string>>(new Set());
