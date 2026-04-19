@@ -3,7 +3,7 @@
  */
 
 const DB_NAME = 'pkizip-pqc-v3';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'bundles';
 
 const toHex = u8 => Array.from(u8).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -12,7 +12,12 @@ const fromHex = h => { const u = new Uint8Array(h.length / 2); for (let i = 0; i
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        db.createObjectStore(STORE, { keyPath: 'id' });
+      }
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
