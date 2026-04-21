@@ -174,22 +174,17 @@ import type { StoredCertificate } from '@/lib/crypto/key-manager';
 function CertSharingSection() {
   const user = useAuthStore(s => s.user);
   const [showAuth, setShowAuth] = useState(false);
-  const [username, setUsername] = useState('');
   const [myBundle, setMyBundle] = useState<CertBundle | null>(null);
   const [localCerts, setLocalCerts] = useState<StoredCertificate[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingFp, setUploadingFp] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
-  // 로컬 인증서 + 서버 번들 로드
   useEffect(() => {
     if (!loaded) {
       getAllCertificates().then(setLocalCerts).catch(() => {});
       if (user) {
-        getMyCertBundle(user.id).then(b => {
-          setMyBundle(b);
-          if (b) setUsername(b.username);
-        }).catch(() => {});
+        getMyCertBundle(user.id).then(setMyBundle).catch(() => {});
       }
       setLoaded(true);
     }
@@ -197,15 +192,9 @@ function CertSharingSection() {
 
   const handleUpload = useCallback(async (cert: StoredCertificate) => {
     if (!user) return;
-    const uname = username || cert.commonName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 32);
-    if (uname.length < 3) {
-      toast.error('username 3자 이상 필요 — 아래에서 수정하세요');
-      return;
-    }
-    setUploading(true);
+    setUploadingFp(cert.fingerprint);
     try {
       await uploadCertBundle(user.id, {
-        username: uname,
         display_name: cert.commonName,
         email: cert.email,
         cert_classic: cert.pemCertificate,
@@ -215,14 +204,13 @@ function CertSharingSection() {
       });
       const b = await getMyCertBundle(user.id);
       setMyBundle(b);
-      if (b) setUsername(b.username);
       toast.success('인증서 공유 완료');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '업로드 실패');
     } finally {
-      setUploading(false);
+      setUploadingFp(null);
     }
-  }, [user, username]);
+  }, [user]);
 
   const handleDelete = useCallback(async () => {
     if (!user) return;
@@ -236,7 +224,6 @@ function CertSharingSection() {
     }
   }, [user]);
 
-  // 비로그인
   if (!user) {
     return (
       <div className="rounded-xl border border-zinc-200 p-4 text-center">
@@ -250,7 +237,6 @@ function CertSharingSection() {
 
   return (
     <div className="space-y-3">
-      {/* 로컬 인증서 목록 + 공유 상태 */}
       {localCerts.length === 0 ? (
         <div className="rounded-xl border border-zinc-200 p-4 text-center">
           <p className="text-xs text-zinc-400">인증서가 없습니다. 먼저 키를 생성하세요.</p>
@@ -258,6 +244,7 @@ function CertSharingSection() {
       ) : (
         localCerts.map(cert => {
           const isShared = myBundle?.fingerprint === cert.fingerprint;
+          const isUploading = uploadingFp === cert.fingerprint;
           return (
             <div key={cert.fingerprint} className={`rounded-xl border-2 p-4 ${isShared ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-200'}`}>
               <div className="flex items-start justify-between gap-2 mb-2">
@@ -273,13 +260,14 @@ function CertSharingSection() {
                 )}
               </div>
 
-              {/* 인증서 배지 */}
               <div className="flex gap-1 mb-2">
                 <span className="text-[8px] bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded font-bold">ECDSA</span>
-                {cert.pqcCertificates?.kem && <span className="text-[8px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-bold">ML-KEM</span>}
-                {cert.pqcCertificates?.dsa && <span className="text-[8px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-bold">ML-DSA</span>}
-                {!cert.pqcCertificates?.kem && <span className="text-[8px] bg-zinc-50 text-zinc-300 px-1.5 py-0.5 rounded font-bold">ML-KEM ✗</span>}
-                {!cert.pqcCertificates?.dsa && <span className="text-[8px] bg-zinc-50 text-zinc-300 px-1.5 py-0.5 rounded font-bold">ML-DSA ✗</span>}
+                {cert.pqcCertificates?.kem
+                  ? <span className="text-[8px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-bold">ML-KEM</span>
+                  : <span className="text-[8px] bg-zinc-50 text-zinc-300 px-1.5 py-0.5 rounded font-bold">ML-KEM ✗</span>}
+                {cert.pqcCertificates?.dsa
+                  ? <span className="text-[8px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-bold">ML-DSA</span>
+                  : <span className="text-[8px] bg-zinc-50 text-zinc-300 px-1.5 py-0.5 rounded font-bold">ML-DSA ✗</span>}
               </div>
 
               {isShared ? (
@@ -297,8 +285,8 @@ function CertSharingSection() {
                     업데이트: {new Date(myBundle!.updated_at).toLocaleDateString('ko-KR')}
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleUpload(cert)} disabled={uploading} className="text-[10px] text-zinc-500 hover:text-[#175DDC]">
-                      {uploading ? '업로드 중...' : '재업로드'}
+                    <button onClick={() => handleUpload(cert)} disabled={isUploading} className="text-[10px] text-zinc-500 hover:text-[#175DDC]">
+                      {isUploading ? '업로드 중...' : '재업로드'}
                     </button>
                     {deleteConfirm ? (
                       <div className="flex items-center gap-1">
@@ -313,23 +301,15 @@ function CertSharingSection() {
                   </div>
                 </div>
               ) : (
-                <button onClick={() => handleUpload(cert)} disabled={uploading}
+                <button onClick={() => handleUpload(cert)} disabled={isUploading}
                   className="w-full text-xs bg-[#175DDC] text-white py-2 rounded-lg hover:bg-[#0C3276] transition-colors disabled:opacity-50">
-                  {uploading ? '업로드 중...' : '공유'}
+                  {isUploading ? '업로드 중...' : '공유'}
                 </button>
               )}
             </div>
           );
         })
       )}
-
-      {/* username 설정 */}
-      <div className="space-y-1">
-        <label className="text-[10px] text-zinc-400">공유 주소 (username)</label>
-        <input type="text" value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-          placeholder="my-username (3~32자)" maxLength={32}
-          className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
-      </div>
     </div>
   );
 }

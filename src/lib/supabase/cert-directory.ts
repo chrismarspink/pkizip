@@ -21,7 +21,6 @@ export interface CertBundle {
 export async function uploadCertBundle(
   userId: string,
   bundle: {
-    username: string;
     display_name: string;
     email?: string;
     cert_classic?: string;
@@ -30,15 +29,26 @@ export async function uploadCertBundle(
     fingerprint?: string;
   }
 ): Promise<void> {
-  if (!/^[a-z0-9-]{3,32}$/.test(bundle.username)) {
-    throw new Error('username은 소문자·숫자·하이픈 3~32자만 가능합니다');
-  }
-  const { error } = await supabase.from('cert_bundles').upsert(
-    { ...bundle, user_id: userId, is_public: true, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id' },
-  );
+  // username 자동 생성: fingerprint 앞 8자
+  const username = 'u-' + (bundle.fingerprint || userId).slice(0, 8).toLowerCase();
+
+  console.log('[PKIZIP-cert] upload:', { userId, username, name: bundle.display_name });
+  const row = {
+    user_id: userId,
+    username,
+    display_name: bundle.display_name,
+    email: bundle.email ?? null,
+    cert_classic: bundle.cert_classic ?? null,
+    cert_kem: bundle.cert_kem ?? null,
+    cert_dsa: bundle.cert_dsa ?? null,
+    fingerprint: bundle.fingerprint ?? null,
+    is_public: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from('cert_bundles').upsert(row, { onConflict: 'user_id' });
+  console.log('[PKIZIP-cert] upsert result:', error ? error.message : 'OK');
   if (error) {
-    if (error.code === '23505') throw new Error('이미 사용 중인 username입니다');
     throw new Error(`업로드 실패: ${error.message}`);
   }
 }
