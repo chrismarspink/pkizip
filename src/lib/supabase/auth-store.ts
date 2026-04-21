@@ -86,5 +86,7 @@ supabase.auth.onAuthStateChange(async (_event, session) => {
   useAuthStore.setState({ session, user: session?.user ?? null, loading: false });
   if (session?.user) {
     await useAuthStore.getState().loadProfile();
+    // TSA 기본 인증서 등록 (최초 로그인 시)
+    import('../tsa-certs').then(m => m.ensureTsaCerts(session.user.id)).catch(() => {});
   }
 });
