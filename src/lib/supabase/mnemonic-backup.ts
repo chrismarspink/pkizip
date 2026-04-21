@@ -1,10 +1,29 @@
 /**
  * 니모닉 암호화 백업/복구 — 클라이언트 사이드 암호화만
- *
- * 서버에 평문 니모닉 절대 저장 안 함.
- * Web Crypto PBKDF2 (100,000회, 비동기) + AES-256-GCM
+ * Supabase REST API를 fetch로 직접 호출
  */
-import { supabase } from './client';
+
+const SUPABASE_URL = 'https://ikyhpuerwljxypyzkpiw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlreWhwdWVyd2xqeHlweXprcGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1OTM1NjQsImV4cCI6MjA5MjE2OTU2NH0.31GrKSlBzcGRXCU7yHioEVIChO3EMi6di75O6mLFlBU';
+
+function getAccessToken(): string | null {
+  try {
+    const raw = localStorage.getItem('sb-ikyhpuerwljxypyzkpiw-auth-token');
+    if (!raw) return null;
+    return JSON.parse(raw)?.access_token ?? null;
+  } catch { return null; }
+}
+
+function headers(): Record<string, string> {
+  const token = getAccessToken();
+  const h: Record<string, string> = {
+    'apikey': SUPABASE_ANON_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal',
+  };
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
 
 const toB64 = (b: Uint8Array) => {
   const chunks: string[] = [];
@@ -48,30 +67,32 @@ export async function backupMnemonic(
   );
   console.log('[PKIZIP-backup] encrypt 완료, upsert...');
 
-  // userId가 전달되지 않으면 세션에서 가져옴
-  let uid = userId;
-  if (!uid) {
-    const { data } = await supabase.auth.getSession();
-    uid = data.session?.user?.id;
-  }
-  if (!uid) throw new Error('로그인 필요');
-  console.log('[PKIZIP-backup] userId:', uid);
+  if (!userId) throw new Error('로그인 필요');
 
-  const { error } = await supabase.from('mnemonic_backups').upsert(
-    {
-      user_id: uid,
-      identity_id: identityId,
-      encrypted_blob: toB64(new Uint8Array(ct)),
-      kdf_salt: toB64(salt),
-      kdf_iterations: 100_000,
-      iv: toB64(iv),
-      hint: hint ?? null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,identity_id' },
-  );
-  console.log('[PKIZIP-backup] upsert 결과:', error ? error.message : 'OK');
-  if (error) throw new Error(`백업 저장 실패: ${error.message}`);
+  const body = {
+    user_id: userId,
+    identity_id: identityId,
+    encrypted_blob: toB64(new Uint8Array(ct)),
+    kdf_salt: toB64(salt),
+    kdf_iterations: 100_000,
+    iv: toB64(iv),
+    hint: hint ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/mnemonic_backups?on_conflict=user_id,identity_id`, {
+    method: 'POST',
+    headers: { ...headers(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(body),
+  });
+
+  console.log('[PKIZIP-backup] upsert status:', res.status);
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('[PKIZIP-backup] upsert error:', err);
+    throw new Error(`백업 저장 실패: ${res.status} ${err}`);
+  }
+  console.log('[PKIZIP-backup] 완료');
 }
 
 /** Supabase에서 조회 → 복호화 → 니모닉 반환 */
@@ -79,12 +100,14 @@ export async function restoreMnemonic(
   backupPassword: string,
   identityId: string
 ): Promise<string> {
-  const { data, error } = await supabase
-    .from('mnemonic_backups')
-    .select('*')
-    .eq('identity_id', identityId)
-    .single();
-  if (error || !data) throw new Error('백업을 찾을 수 없습니다');
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/mnemonic_backups?identity_id=eq.${identityId}&select=*&limit=1`,
+    { headers: headers() },
+  );
+  if (!res.ok) throw new Error('백업을 찾을 수 없습니다');
+  const rows = await res.json();
+  const data = rows?.[0];
+  if (!data) throw new Error('백업을 찾을 수 없습니다');
 
   const key = await deriveKey(backupPassword, frB64(data.kdf_salt), ['decrypt']);
 
@@ -102,9 +125,10 @@ export async function restoreMnemonic(
 
 /** 백업 목록 조회 */
 export async function listBackups() {
-  const { data } = await supabase
-    .from('mnemonic_backups')
-    .select('identity_id, hint, updated_at')
-    .order('updated_at', { ascending: false });
-  return data ?? [];
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/mnemonic_backups?select=identity_id,hint,updated_at&order=updated_at.desc`,
+    { headers: headers() },
+  );
+  if (!res.ok) return [];
+  return await res.json();
 }
