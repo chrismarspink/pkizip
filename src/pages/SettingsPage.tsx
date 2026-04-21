@@ -8,7 +8,7 @@ import { Shield, ChevronDown, Share2, Copy, Trash2, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
 import { useAuthStore } from '@/lib/supabase/auth-store';
-import { uploadCertBundle, getMyCertBundle, deleteCertBundle, type CertBundle } from '@/lib/supabase/cert-directory';
+import { uploadCertBundle, getMyCertBundles, deleteCertBundle, type CertBundle } from '@/lib/supabase/cert-directory';
 import { getAllCertificates } from '@/lib/crypto/key-manager';
 import { AuthDialog } from '@/components/auth/AuthDialog';
 
@@ -174,21 +174,23 @@ import type { StoredCertificate } from '@/lib/crypto/key-manager';
 function CertSharingSection() {
   const user = useAuthStore(s => s.user);
   const [showAuth, setShowAuth] = useState(false);
-  const [myBundle, setMyBundle] = useState<CertBundle | null>(null);
+  const [sharedBundles, setSharedBundles] = useState<CertBundle[]>([]);
   const [localCerts, setLocalCerts] = useState<StoredCertificate[]>([]);
   const [uploadingFp, setUploadingFp] = useState<string | null>(null);
+  const [deletingFp, setDeletingFp] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (!loaded) {
       getAllCertificates().then(setLocalCerts).catch(() => {});
       if (user) {
-        getMyCertBundle(user.id).then(setMyBundle).catch(() => {});
+        getMyCertBundles(user.id).then(setSharedBundles).catch(() => {});
       }
       setLoaded(true);
     }
   }, [user, loaded]);
+
+  const sharedFps = new Set(sharedBundles.map(b => b.fingerprint));
 
   const handleUpload = useCallback(async (cert: StoredCertificate) => {
     if (!user) return;
@@ -202,8 +204,7 @@ function CertSharingSection() {
         cert_dsa: cert.pqcCertificates?.dsa,
         fingerprint: cert.fingerprint,
       });
-      const b = await getMyCertBundle(user.id);
-      setMyBundle(b);
+      setSharedBundles(await getMyCertBundles(user.id));
       toast.success('인증서 공유 완료');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '업로드 실패');
@@ -212,13 +213,13 @@ function CertSharingSection() {
     }
   }, [user]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = useCallback(async (fp: string) => {
     if (!user) return;
     try {
-      await deleteCertBundle(user.id);
-      setMyBundle(null);
-      setDeleteConfirm(false);
-      toast.success('인증서 공유 삭제 완료');
+      await deleteCertBundle(user.id, fp);
+      setSharedBundles(await getMyCertBundles(user.id));
+      setDeletingFp(null);
+      toast.success('공유 삭제 완료');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '삭제 실패');
     }
@@ -237,13 +238,15 @@ function CertSharingSection() {
 
   return (
     <div className="space-y-3">
+      <p className="text-[10px] text-zinc-400">공유 {sharedBundles.length}/5</p>
       {localCerts.length === 0 ? (
         <div className="rounded-xl border border-zinc-200 p-4 text-center">
           <p className="text-xs text-zinc-400">인증서가 없습니다. 먼저 키를 생성하세요.</p>
         </div>
       ) : (
         localCerts.map(cert => {
-          const isShared = myBundle?.fingerprint === cert.fingerprint;
+          const shared = sharedBundles.find(b => b.fingerprint === cert.fingerprint);
+          const isShared = !!shared;
           const isUploading = uploadingFp === cert.fingerprint;
           return (
             <div key={cert.fingerprint} className={`rounded-xl border-2 p-4 ${isShared ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-200'}`}>
@@ -271,34 +274,20 @@ function CertSharingSection() {
               </div>
 
               {isShared ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="font-mono text-[11px] bg-white rounded-lg px-2 py-1 border border-zinc-200 flex-1 truncate">
-                      pkizip.app/k/{myBundle!.username}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleUpload(cert)} disabled={isUploading} className="text-[10px] text-zinc-500 hover:text-[#175DDC]">
+                    {isUploading ? '업로드 중...' : '재업로드'}
+                  </button>
+                  {deletingFp === cert.fingerprint ? (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => handleDelete(cert.fingerprint)} className="text-[10px] text-white bg-red-500 rounded px-2 py-0.5">삭제</button>
+                      <button onClick={() => setDeletingFp(null)} className="text-[10px] text-zinc-400">취소</button>
                     </div>
-                    <button onClick={() => { navigator.clipboard.writeText(`pkizip.app/k/${myBundle!.username}`); toast.success('복사됨'); }}
-                      className="text-[10px] text-[#175DDC] hover:underline shrink-0">
-                      <Copy className="w-3 h-3" />
+                  ) : (
+                    <button onClick={() => setDeletingFp(cert.fingerprint)} className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-red-500">
+                      <Trash2 className="w-2.5 h-2.5" /> 공유 삭제
                     </button>
-                  </div>
-                  <div className="text-[10px] text-zinc-400">
-                    업데이트: {new Date(myBundle!.updated_at).toLocaleDateString('ko-KR')}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleUpload(cert)} disabled={isUploading} className="text-[10px] text-zinc-500 hover:text-[#175DDC]">
-                      {isUploading ? '업로드 중...' : '재업로드'}
-                    </button>
-                    {deleteConfirm ? (
-                      <div className="flex items-center gap-1">
-                        <button onClick={handleDelete} className="text-[10px] text-white bg-red-500 rounded px-2 py-0.5">삭제</button>
-                        <button onClick={() => setDeleteConfirm(false)} className="text-[10px] text-zinc-400">취소</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setDeleteConfirm(true)} className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-red-500">
-                        <Trash2 className="w-2.5 h-2.5" /> 삭제
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
               ) : (
                 <button onClick={() => handleUpload(cert)} disabled={isUploading}

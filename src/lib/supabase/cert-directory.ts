@@ -1,31 +1,29 @@
 /**
  * 인증서 번들 디렉토리 — 공개키만 서버 저장
- * Supabase REST API를 fetch로 직접 호출 (supabase-js 세션 문제 우회)
+ * Supabase REST API를 fetch로 직접 호출
+ * 사용자당 최대 5개 인증서 공유 가능
  */
 
 const SUPABASE_URL = 'https://ikyhpuerwljxypyzkpiw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlreWhwdWVyd2xqeHlweXprcGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1OTM1NjQsImV4cCI6MjA5MjE2OTU2NH0.31GrKSlBzcGRXCU7yHioEVIChO3EMi6di75O6mLFlBU';
 
+const MAX_SHARED = 5;
+
 function getAccessToken(): string | null {
-  // Supabase JS가 localStorage에 저장하는 세션 키
-  const key = `sb-ikyhpuerwljxypyzkpiw-auth-token`;
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem('sb-ikyhpuerwljxypyzkpiw-auth-token');
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.access_token ?? null;
-  } catch {
-    return null;
-  }
+    return JSON.parse(raw)?.access_token ?? null;
+  } catch { return null; }
 }
 
-function headers(): Record<string, string> {
+function hdrs(prefer?: string): Record<string, string> {
   const token = getAccessToken();
   const h: Record<string, string> = {
     'apikey': SUPABASE_ANON_KEY,
     'Content-Type': 'application/json',
-    'Prefer': 'return=minimal',
   };
+  if (prefer) h['Prefer'] = prefer;
   if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
 }
@@ -43,7 +41,17 @@ export interface CertBundle {
   updated_at: string;
 }
 
-/** 인증서 번들 업로드 또는 갱신 */
+/** 내 공유 인증서 전체 조회 */
+export async function getMyCertBundles(userId: string): Promise<CertBundle[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/cert_bundles?user_id=eq.${userId}&select=*&order=updated_at.desc`,
+    { headers: hdrs() },
+  );
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+/** 인증서 번들 업로드 또는 갱신 (사용자당 최대 5개) */
 export async function uploadCertBundle(
   userId: string,
   bundle: {
@@ -55,8 +63,14 @@ export async function uploadCertBundle(
     fingerprint?: string;
   }
 ): Promise<void> {
+  const existing = await getMyCertBundles(userId);
+  const alreadyShared = existing.find(b => b.fingerprint === bundle.fingerprint);
+
+  if (!alreadyShared && existing.length >= MAX_SHARED) {
+    throw new Error(`최대 ${MAX_SHARED}개까지 공유 가능합니다. 기존 공유 인증서를 삭제한 후 다시 시도하세요.`);
+  }
+
   const username = 'u-' + (bundle.fingerprint || userId).slice(0, 8).toLowerCase();
-  console.log('[PKIZIP-cert] upload:', { userId, username, name: bundle.display_name });
 
   const body = {
     user_id: userId,
@@ -71,36 +85,23 @@ export async function uploadCertBundle(
     updated_at: new Date().toISOString(),
   };
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/cert_bundles?on_conflict=user_id`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/cert_bundles?on_conflict=user_id,fingerprint`, {
     method: 'POST',
-    headers: { ...headers(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    headers: hdrs('resolution=merge-duplicates,return=minimal'),
     body: JSON.stringify(body),
   });
 
-  console.log('[PKIZIP-cert] upsert status:', res.status);
   if (!res.ok) {
     const err = await res.text();
-    console.error('[PKIZIP-cert] upsert error:', err);
     throw new Error(`업로드 실패: ${res.status} ${err}`);
   }
 }
 
-/** 내 인증서 번들 조회 */
-export async function getMyCertBundle(userId: string): Promise<CertBundle | null> {
+/** 특정 인증서 삭제 (fingerprint 기준) */
+export async function deleteCertBundle(userId: string, fingerprint: string): Promise<void> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/cert_bundles?user_id=eq.${userId}&select=*&limit=1`,
-    { headers: headers() },
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.[0] ?? null;
-}
-
-/** 인증서 번들 삭제 */
-export async function deleteCertBundle(userId: string): Promise<void> {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/cert_bundles?user_id=eq.${userId}`,
-    { method: 'DELETE', headers: headers() },
+    `${SUPABASE_URL}/rest/v1/cert_bundles?user_id=eq.${userId}&fingerprint=eq.${fingerprint}`,
+    { method: 'DELETE', headers: hdrs() },
   );
   if (!res.ok) throw new Error(`삭제 실패: ${res.status}`);
 }
@@ -112,12 +113,9 @@ export async function searchCertBundles(query: string): Promise<CertBundle[]> {
   const filter = `or=(username.ilike.*${q}*,display_name.ilike.*${q}*,email.ilike.*${q}*)`;
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/cert_bundles?is_public=eq.true&${filter}&select=id,username,display_name,email,fingerprint,cert_kem,cert_dsa,cert_classic,uploaded_at,updated_at&limit=20`,
-    { headers: headers() },
+    { headers: hdrs() },
   );
-  if (!res.ok) {
-    console.error('[PKIZIP] cert search error:', res.status);
-    return [];
-  }
+  if (!res.ok) return [];
   return await res.json();
 }
 
@@ -125,7 +123,7 @@ export async function searchCertBundles(query: string): Promise<CertBundle[]> {
 export async function getCertBundleByUsername(username: string): Promise<CertBundle | null> {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/cert_bundles?username=eq.${username.toLowerCase()}&select=*&limit=1`,
-    { headers: headers() },
+    { headers: hdrs() },
   );
   if (!res.ok) return null;
   const data = await res.json();
