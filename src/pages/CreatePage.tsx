@@ -299,6 +299,8 @@ export function CreatePage() {
         if (cryptoMode !== 'pqc-only') algos.push('ECDH P-256 (암호화)', 'AES-256-GCM', 'ECDSA P-256 (서명)');
         if (result.stats.pqcKem) algos.push('ML-KEM-1024 (양자 암호화)');
         if (result.stats.pqcDsa) algos.push('ML-DSA-87 (양자 서명)');
+        if (result.stats.timestamp?.method === 'tst') algos.push(`TSA (${result.stats.timestamp.tsaName})`);
+        else if (result.stats.timestamp?.method === 'signingTime') algos.push('signingTime (로컬)');
       } else if (options.sign) {
         // SignedMessage
         const currentKey = useAppStore.getState().keyIdentity;
@@ -314,6 +316,8 @@ export function CreatePage() {
         info = `SignedMessage (0x${currentKey.signingKey.fingerprint})`;
         if (cryptoMode !== 'pqc-only') algos.push('ECDSA P-256 (서명)');
         if (result.stats.pqcDsa) algos.push('ML-DSA-87 (양자 서명)');
+        if (result.stats.timestamp?.method === 'tst') algos.push(`TSA (${result.stats.timestamp.tsaName})`);
+        else if (result.stats.timestamp?.method === 'signingTime') algos.push('signingTime (로컬)');
       } else {
         const result = await compressOnly(files);
         pkiData = result.pkiData;

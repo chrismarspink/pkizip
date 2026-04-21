@@ -2,9 +2,10 @@
  * PKI Operations - 고수준 통합 API
  *
  * 압축 + 암호화(ECDH + ML-KEM 하이브리드) + 서명(ECDSA + ML-DSA 하이브리드)
- * CMS RFC 5652, RFC 9936 (ML-KEM CMS), RFC 9882 (ML-DSA CMS) 준거
+ * CMS RFC 5652, RFC 9936 (ML-KEM CMS), RFC 9882 (ML-DSA CMS), RFC 3161 (TSA) 준거
  */
 import { compress, decompress } from '../compression/compressor';
+import { getTimestampToken, type TimestampResult } from '../tsa-client';
 import type { FileEntry } from '../compression/compressor';
 import { toInputFiles, toFileEntries } from '../compression/compression-types';
 import {
@@ -94,6 +95,7 @@ export interface SealResult {
     recipientCount: number;
     pqcKem: boolean;
     pqcDsa: boolean;
+    timestamp?: TimestampResult;
   };
 }
 
@@ -272,9 +274,34 @@ export async function seal(options: SealOptions): Promise<SealResult> {
     };
   }
 
+  // 5. 타임스탬프 (TSA — 서명이 있을 때만)
+  let tsResult: TimestampResult | undefined;
+  if (hasFlag(flags, FLAG_SIGNED) && payload.length > 0) {
+    try {
+      tsResult = await getTimestampToken(payload);
+      if (tsResult.method === 'tst' && tsResult.timestampToken) {
+        // TST를 헤더에 저장 (unsignedAttrs 대용)
+        header.timestamp = {
+          method: 'tst',
+          tsaName: tsResult.tsaName,
+          token: arrayBufferToBase64(tsResult.timestampToken),
+        };
+        console.log(`[PKIZIP] TSA 타임스탬프: ${tsResult.tsaName}`);
+      } else if (tsResult.method === 'signingTime') {
+        header.timestamp = {
+          method: 'signingTime',
+          signingTime: (tsResult.signingTime ?? new Date()).toISOString(),
+        };
+        console.log('[PKIZIP] TSA 폴백: signingTime');
+      }
+    } catch (err) {
+      console.warn('[PKIZIP] TSA 실패:', err);
+    }
+  }
+
   header.flags = flags;
 
-  // 5. 컨테이너 패킹
+  // 6. 컨테이너 패킹
   const container: PkiContainer = { header, payload };
   const pkiData = writePkiContainer(container);
 
@@ -296,6 +323,7 @@ export async function seal(options: SealOptions): Promise<SealResult> {
       recipientCount: encrypt?.recipients.length ?? 0,
       pqcKem: pqcKemDone,
       pqcDsa: pqcDsaDone,
+      timestamp: tsResult,
     },
   };
 }

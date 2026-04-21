@@ -89,6 +89,13 @@ export interface PkiHeader {
     dsaAlgorithm?: string;
     kemKeyId?: string;
   };
+  /** RFC 3161 타임스탬프 */
+  timestamp?: {
+    method: 'tst' | 'signingTime';
+    tsaName?: string;
+    token?: string;        // Base64 DER TST
+    signingTime?: string;  // ISO timestamp (폴백)
+  };
   merkleProof?: {
     merkleRoot: string;
     proofPath: string[];

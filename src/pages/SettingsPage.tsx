@@ -4,12 +4,13 @@
  * 아이덴티티 관리는 CertsPage(인증서 카드 면 2)로 이동됨.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload } from 'lucide-react';
+import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { uploadCertBundle, getMyCertBundles, deleteCertBundle, type CertBundle } from '@/lib/supabase/cert-directory';
 import { listBackups, deleteBackup, type BackupEntry } from '@/lib/supabase/mnemonic-backup';
+import { getTsaSettings, saveTsaSettings, DEFAULT_TSA_LIST, type TsaServer } from '@/lib/tsa-health';
 import { getAllCertificates } from '@/lib/crypto/key-manager';
 import { AuthDialog } from '@/components/auth/AuthDialog';
 
@@ -32,6 +33,14 @@ export function SettingsPage() {
           <Share2 className="w-4 h-4" /> 인증서 공유
         </h2>
         <CertSharingSection />
+      </div>
+
+      {/* 타임스탬프 설정 */}
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Clock className="w-4 h-4" /> 타임스탬프 (RFC 3161)
+        </h2>
+        <TsaSettingsSection />
       </div>
 
       {/* 니모닉 백업 관리 */}
@@ -377,6 +386,79 @@ function BackupManagementSection() {
             )}
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+// ══ 타임스탬프 설정 ══
+
+function TsaSettingsSection() {
+  const [settings, setSettings] = useState(() => getTsaSettings());
+  const [expanded, setExpanded] = useState(false);
+
+  const toggle = (enabled: boolean) => {
+    const next = { ...settings, enabled };
+    setSettings(next);
+    saveTsaSettings(next);
+  };
+
+  const toggleServer = (id: string) => {
+    const servers = settings.servers.map(s =>
+      s.id === id ? { ...s, enabled: !s.enabled } : s
+    );
+    const next = { ...settings, servers };
+    setSettings(next);
+    saveTsaSettings(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className={`rounded-xl border-2 p-4 shadow-sm ${settings.enabled ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-300 bg-white'}`}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-[#175DDC]" />
+            <span className="font-medium text-sm">서명 타임스탬프</span>
+          </div>
+          <button onClick={() => toggle(!settings.enabled)}
+            className={`w-10 h-5 rounded-full transition-colors relative ${settings.enabled ? 'bg-[#175DDC]' : 'bg-zinc-300'}`}>
+            <div className={`w-4 h-4 rounded-full bg-white shadow absolute top-0.5 transition-transform ${settings.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+        <p className="text-[10px] text-zinc-500">
+          {settings.enabled
+            ? '서명 시 RFC 3161 TSA에서 타임스탬프를 발급받습니다. 실패 시 로컬 시각으로 폴백합니다.'
+            : '타임스탬프 비활성 — 서명에 시각 정보가 포함되지 않습니다.'}
+        </p>
+
+        {settings.enabled && (
+          <button onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-800 mt-2 transition-colors">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            {expanded ? '접기' : 'TSA 서버 설정'}
+          </button>
+        )}
+      </div>
+
+      {settings.enabled && expanded && (
+        <div className="space-y-2 pl-1">
+          <p className="text-[10px] text-zinc-400">우선순위 순 (위에서 아래로 시도, 실패 시 다음)</p>
+          {settings.servers.map(s => (
+            <div key={s.id} className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2">
+              <div>
+                <div className="text-xs font-medium">{s.name}</div>
+                <div className="text-[10px] text-zinc-400 font-mono truncate max-w-[250px]">{s.url}</div>
+              </div>
+              <button onClick={() => toggleServer(s.id)}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${s.enabled ? 'bg-[#175DDC] text-white' : 'bg-zinc-100 text-zinc-400'}`}>
+                {s.enabled ? '활성' : '비활성'}
+              </button>
+            </div>
+          ))}
+          <p className="text-[10px] text-zinc-400">
+            타임아웃: {settings.timeoutMs / 1000}초 · TSA에는 서명값의 SHA-256 해시만 전송됩니다.
+          </p>
+        </div>
       )}
     </div>
   );
