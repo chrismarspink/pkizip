@@ -264,6 +264,20 @@ export function FilesTempPage() {
             if (h.pqcKemRecipientInfo && !pqcOpts?.shield) {
               push({ type: 'text', id: id(), content: 'ML-KEM 암호화가 포함되어 있지만 PQC 키가 없어 검증하지 못했습니다', tone: 'warning' });
             }
+            // TST 검증 결과
+            if (result.timestampVerification) {
+              const tv = result.timestampVerification;
+              if (tv.method === 'tst' && tv.valid) {
+                push({ type: 'text', id: id(), content: `✓ TSA 타임스탬프 유효${tv.genTime ? ' · ' + tv.genTime.toLocaleString('ko-KR') : ''}${tv.tsaName ? ' (' + tv.tsaName + ')' : ''}`, tone: 'success' });
+              } else if (tv.method === 'tst' && !tv.valid) {
+                push({ type: 'text', id: id(), content: `✗ 타임스탬프 검증 실패: ${tv.errors.map(e => e.message).join(', ')}`, tone: 'error' });
+              } else if (tv.method === 'signingTime') {
+                push({ type: 'text', id: id(), content: `서명자 주장 시각${tv.genTime ? ' · ' + tv.genTime.toLocaleString('ko-KR') : ''} (신뢰도 낮음)`, tone: 'warning' });
+              }
+              if (tv.warnings.length > 0) {
+                push({ type: 'text', id: id(), content: tv.warnings.join('; '), tone: 'muted' });
+              }
+            }
             if (result.verification.length > 0) {
               await showVerificationResults(result.verification, push);
             }

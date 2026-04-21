@@ -6,6 +6,7 @@
  */
 import { compress, decompress } from '../compression/compressor';
 import { getTimestampToken, type TimestampResult } from '../tsa-client';
+import { verifyTimestampToken, type TstVerifyResult } from '../tsa-verify';
 import type { FileEntry } from '../compression/compressor';
 import { toInputFiles, toFileEntries } from '../compression/compression-types';
 import {
@@ -104,6 +105,7 @@ export interface OpenResult {
   header: PkiHeader;
   verification: VerificationResult[];
   pqcVerification?: { valid: boolean; algorithm: string; signedAt?: string };
+  timestampVerification?: TstVerifyResult;
   isEncrypted: boolean;
   isSigned: boolean;
 }
@@ -487,7 +489,32 @@ export async function open(
     }));
   }
 
-  return { files, header, verification, pqcVerification, isEncrypted, isSigned };
+  // TST 검증 (헤더에 타임스탬프가 있을 때)
+  let timestampVerification: TstVerifyResult | undefined;
+  if (header.timestamp?.method === 'tst' && header.timestamp.token) {
+    try {
+      const tstDer = new Uint8Array(
+        atob(header.timestamp.token).split('').map(c => c.charCodeAt(0))
+      );
+      timestampVerification = await verifyTimestampToken(tstDer, payload);
+      console.log('[PKIZIP] TST 검증:', timestampVerification.valid ? '유효' : '무효');
+    } catch (err) {
+      console.warn('[PKIZIP] TST 검증 실패:', err);
+      timestampVerification = {
+        valid: false, method: 'tst', errors: [{ step: 'tst_parse', message: String(err), fatal: true }], warnings: [],
+      };
+    }
+  } else if (header.timestamp?.method === 'signingTime') {
+    timestampVerification = {
+      valid: true,
+      genTime: header.timestamp.signingTime ? new Date(header.timestamp.signingTime) : undefined,
+      method: 'signingTime',
+      errors: [],
+      warnings: ['TST 없음. signingTime은 서명자 주장 시각으로 신뢰도가 낮습니다.'],
+    };
+  }
+
+  return { files, header, verification, pqcVerification, timestampVerification, isEncrypted, isSigned };
 }
 
 /**
