@@ -4,11 +4,12 @@
  * 아이덴티티 관리는 CertsPage(인증서 카드 면 2)로 이동됨.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, ChevronDown, Share2, Copy, Trash2, Lock } from 'lucide-react';
+import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { uploadCertBundle, getMyCertBundles, deleteCertBundle, type CertBundle } from '@/lib/supabase/cert-directory';
+import { listBackups, deleteBackup, type BackupEntry } from '@/lib/supabase/mnemonic-backup';
 import { getAllCertificates } from '@/lib/crypto/key-manager';
 import { AuthDialog } from '@/components/auth/AuthDialog';
 
@@ -31,6 +32,14 @@ export function SettingsPage() {
           <Share2 className="w-4 h-4" /> 인증서 공유
         </h2>
         <CertSharingSection />
+      </div>
+
+      {/* 니모닉 백업 관리 */}
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <CloudUpload className="w-4 h-4" /> 니모닉 백업
+        </h2>
+        <BackupManagementSection />
       </div>
     </div>
   );
@@ -298,6 +307,76 @@ function CertSharingSection() {
             </div>
           );
         })
+      )}
+    </div>
+  );
+}
+
+// ══ 니모닉 백업 관리 ══
+
+function BackupManagementSection() {
+  const user = useAuthStore(s => s.user);
+  const [showAuth, setShowAuth] = useState(false);
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user && !loaded) {
+      listBackups(user.id).then(setBackups).catch(() => {});
+      setLoaded(true);
+    }
+  }, [user, loaded]);
+
+  const handleDelete = useCallback(async (identityId: string) => {
+    if (!user) return;
+    try {
+      await deleteBackup(user.id, identityId);
+      setBackups(await listBackups(user.id));
+      setDeletingId(null);
+      toast.success('백업 삭제 완료');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '삭제 실패');
+    }
+  }, [user]);
+
+  if (!user) {
+    return (
+      <div className="rounded-xl border border-zinc-200 p-4 text-center">
+        <Lock className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
+        <p className="text-xs text-zinc-500 mb-3">로그인하면 니모닉을 서버에 암호화 백업할 수 있습니다.</p>
+        <button onClick={() => setShowAuth(true)} className="text-xs bg-[#175DDC] text-white px-4 py-2 rounded-lg">로그인</button>
+        <AuthDialog open={showAuth} onOpenChange={setShowAuth} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] text-zinc-400">백업 {backups.length}/5 · 니모닉 생성 시 "서버에 암호화 백업 저장"을 체크하면 저장됩니다.</p>
+      {backups.length === 0 ? (
+        <div className="rounded-xl border border-zinc-200 p-4 text-center">
+          <p className="text-xs text-zinc-400">저장된 백업이 없습니다.</p>
+        </div>
+      ) : (
+        backups.map(b => (
+          <div key={b.identity_id} className="rounded-xl border border-zinc-200 p-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-xs font-medium truncate">{b.hint || b.identity_id.slice(0, 12)}</div>
+              <div className="text-[10px] text-zinc-400">{new Date(b.updated_at).toLocaleDateString('ko-KR')}</div>
+            </div>
+            {deletingId === b.identity_id ? (
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => handleDelete(b.identity_id)} className="text-[10px] text-white bg-red-500 rounded px-2 py-0.5">삭제</button>
+                <button onClick={() => setDeletingId(null)} className="text-[10px] text-zinc-400">취소</button>
+              </div>
+            ) : (
+              <button onClick={() => setDeletingId(b.identity_id)} className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-red-500 shrink-0">
+                <Trash2 className="w-2.5 h-2.5" /> 삭제
+              </button>
+            )}
+          </div>
+        ))
       )}
     </div>
   );

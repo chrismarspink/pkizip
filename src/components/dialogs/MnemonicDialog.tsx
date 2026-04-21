@@ -8,7 +8,7 @@ import { saveIdentity, addToKeyRing, saveCertificate, type PublicKeyEntry, type 
 import { generateSelfSignedCertificate, type CertificateInfo } from '@/lib/crypto/certificate';
 import { useAppStore } from '@/lib/store/app-store';
 import { useAuthStore } from '@/lib/supabase/auth-store';
-import { backupMnemonic } from '@/lib/supabase/mnemonic-backup';
+import { backupMnemonic, listBackups, restoreMnemonic, type BackupEntry } from '@/lib/supabase/mnemonic-backup';
 import { PQCBundle } from '@/lib/pqc/pqc-bundle.js';
 import { PQCKeystore } from '@/lib/pqc/pqc-keystore.js';
 import { PQCShield } from '@/lib/pqc/pqc-shield.js';
@@ -51,6 +51,13 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   const [backupPwConfirm, setBackupPwConfirm] = useState('');
   const [backupHint, setBackupHint] = useState('');
 
+  // 서버 백업 복구
+  const [backupList, setBackupList] = useState<BackupEntry[]>([]);
+  const [restoreMode, setRestoreMode] = useState<'manual' | 'server'>('manual');
+  const [selectedBackupId, setSelectedBackupId] = useState('');
+  const [restorePw, setRestorePw] = useState('');
+  const [restoring, setRestoring] = useState(false);
+
   const { setKeyIdentity, setCertificate, setIdentities, setActiveIdentityId } = useAppStore();
 
   const handleProfileNext = () => {
@@ -63,6 +70,10 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       setMnemonic(result.mnemonic);
       setStep('mnemonic-show');
     } else {
+      // 로그인 상태면 서버 백업 목록 로드
+      if (authUser) {
+        listBackups(authUser.id).then(setBackupList).catch(() => {});
+      }
       setStep('mnemonic-input');
     }
   };
@@ -72,6 +83,26 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
     setMnemonic(mnemonicInput.trim().toLowerCase());
     setError('');
     setStep('password');
+  };
+
+  const handleServerRestore = async () => {
+    if (!authUser || !selectedBackupId || !restorePw) return;
+    setRestoring(true);
+    setError('');
+    try {
+      const recovered = await restoreMnemonic(restorePw, selectedBackupId, authUser.id);
+      if (!isValidMnemonic(recovered)) {
+        setError('복구된 니모닉이 유효하지 않습니다.');
+        return;
+      }
+      setMnemonic(recovered.trim().toLowerCase());
+      toast.success('서버 백업에서 니모닉 복구 성공');
+      setStep('password');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '복구 실패');
+    } finally {
+      setRestoring(false);
+    }
   };
 
   const handleSaveKey = async () => {
@@ -217,6 +248,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
     setError(''); setShowMnemonic(false); setCertInfo(null); setLoadingMsg('');
     setBackupEnabled(false); setBackupPw(''); setBackupPwConfirm(''); setBackupHint('');
     setLogotype(null); setCardColor('navy');
+    setRestoreMode('manual'); setSelectedBackupId(''); setRestorePw(''); setBackupList([]);
     onOpenChange(false);
   };
 
@@ -284,13 +316,59 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
             {/* Mnemonic Input (recover) */}
             {step === 'mnemonic-input' && (
               <motion.div key="mninput" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
-                <label className="text-xs font-medium text-zinc-700">기존 니모닉 12단어</label>
-                <textarea value={mnemonicInput} onChange={e => { setMnemonicInput(e.target.value); setError(''); }} rows={3} placeholder="word1 word2 ... word12"
-                  className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#175DDC] resize-none" autoFocus />
+                {/* 탭: 직접 입력 / 서버 백업 */}
+                {authUser && backupList.length > 0 && (
+                  <div className="flex gap-1 bg-zinc-100 rounded-lg p-0.5 mb-2">
+                    <button onClick={() => setRestoreMode('manual')}
+                      className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${restoreMode === 'manual' ? 'bg-white shadow text-zinc-800' : 'text-zinc-500'}`}>
+                      직접 입력
+                    </button>
+                    <button onClick={() => setRestoreMode('server')}
+                      className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${restoreMode === 'server' ? 'bg-white shadow text-zinc-800' : 'text-zinc-500'}`}>
+                      서버 백업 ({backupList.length})
+                    </button>
+                  </div>
+                )}
+
+                {restoreMode === 'manual' ? (
+                  <>
+                    <label className="text-xs font-medium text-zinc-700">기존 니모닉 12단어</label>
+                    <textarea value={mnemonicInput} onChange={e => { setMnemonicInput(e.target.value); setError(''); }} rows={3} placeholder="word1 word2 ... word12"
+                      className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#175DDC] resize-none" autoFocus />
+                  </>
+                ) : (
+                  <>
+                    <label className="text-xs font-medium text-zinc-700">백업 선택</label>
+                    <div className="space-y-1.5">
+                      {backupList.map(b => (
+                        <button key={b.identity_id} onClick={() => setSelectedBackupId(b.identity_id)}
+                          className={`w-full text-left rounded-lg px-3 py-2.5 border-2 transition-all ${
+                            selectedBackupId === b.identity_id ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-100 hover:border-zinc-300'
+                          }`}>
+                          <div className="text-xs font-medium">{b.hint || b.identity_id.slice(0, 8)}</div>
+                          <div className="text-[10px] text-zinc-400">{new Date(b.updated_at).toLocaleDateString('ko-KR')}</div>
+                        </button>
+                      ))}
+                    </div>
+                    {selectedBackupId && (
+                      <input type="password" value={restorePw} onChange={e => setRestorePw(e.target.value)}
+                        placeholder="백업 패스워드"
+                        className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
+                        onKeyDown={e => e.key === 'Enter' && handleServerRestore()} />
+                    )}
+                  </>
+                )}
+
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-between pt-2">
                   <BtnGhost onClick={() => setStep('profile')}>이전</BtnGhost>
-                  <Btn onClick={handleMnemonicInputNext}>다음 <ChevronRight className="w-4 h-4" /></Btn>
+                  {restoreMode === 'manual' ? (
+                    <Btn onClick={handleMnemonicInputNext}>다음 <ChevronRight className="w-4 h-4" /></Btn>
+                  ) : (
+                    <Btn onClick={handleServerRestore} disabled={restoring || !selectedBackupId || !restorePw}>
+                      {restoring ? '복구 중...' : '백업에서 복구'}
+                    </Btn>
+                  )}
                 </div>
               </motion.div>
             )}

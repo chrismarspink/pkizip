@@ -1,10 +1,13 @@
 /**
- * 니모닉 암호화 백업/복구 — 클라이언트 사이드 암호화만
- * Supabase REST API를 fetch로 직접 호출
+ * 니모닉 암호화 백업/복구
+ * 클라이언트 사이드 암호화 → Supabase REST API 직접 호출
+ * 사용자당 최대 5개 백업
  */
 
 const SUPABASE_URL = 'https://ikyhpuerwljxypyzkpiw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlreWhwdWVyd2xqeHlweXprcGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1OTM1NjQsImV4cCI6MjA5MjE2OTU2NH0.31GrKSlBzcGRXCU7yHioEVIChO3EMi6di75O6mLFlBU';
+
+const MAX_BACKUPS = 5;
 
 function getAccessToken(): string | null {
   try {
@@ -14,13 +17,13 @@ function getAccessToken(): string | null {
   } catch { return null; }
 }
 
-function headers(): Record<string, string> {
+function hdrs(prefer?: string): Record<string, string> {
   const token = getAccessToken();
   const h: Record<string, string> = {
     'apikey': SUPABASE_ANON_KEY,
     'Content-Type': 'application/json',
-    'Prefer': 'return=minimal',
   };
+  if (prefer) h['Prefer'] = prefer;
   if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
 }
@@ -40,14 +43,27 @@ async function deriveKey(password: string, salt: Uint8Array, usage: KeyUsage[]):
   );
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations: 100_000, hash: 'SHA-256' },
-    km,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    usage,
+    km, { name: 'AES-GCM', length: 256 }, false, usage,
   );
 }
 
-/** 클라이언트 사이드 암호화 → Supabase 저장 */
+export interface BackupEntry {
+  identity_id: string;
+  hint: string | null;
+  updated_at: string;
+}
+
+/** 백업 목록 조회 */
+export async function listBackups(userId: string): Promise<BackupEntry[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/mnemonic_backups?user_id=eq.${userId}&select=identity_id,hint,updated_at&order=updated_at.desc`,
+    { headers: hdrs() },
+  );
+  if (!res.ok) return [];
+  return await res.json();
+}
+
+/** 클라이언트 사이드 암호화 → 서버 저장 (최대 5개) */
 export async function backupMnemonic(
   mnemonic: string,
   backupPassword: string,
@@ -55,19 +71,21 @@ export async function backupMnemonic(
   hint?: string,
   userId?: string,
 ): Promise<void> {
-  console.log('[PKIZIP-backup] 시작: deriveKey...');
+  if (!userId) throw new Error('로그인 필요');
+
+  // 기존 백업 개수 확인
+  const existing = await listBackups(userId);
+  const alreadyExists = existing.some(e => e.identity_id === identityId);
+  if (!alreadyExists && existing.length >= MAX_BACKUPS) {
+    throw new Error(`최대 ${MAX_BACKUPS}개까지 백업 가능합니다. 기존 백업을 삭제한 후 다시 시도하세요.`);
+  }
+
   const salt = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(backupPassword, salt, ['encrypt']);
-  console.log('[PKIZIP-backup] deriveKey 완료, encrypt...');
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    new TextEncoder().encode(mnemonic),
+    { name: 'AES-GCM', iv }, key, new TextEncoder().encode(mnemonic),
   );
-  console.log('[PKIZIP-backup] encrypt 완료, upsert...');
-
-  if (!userId) throw new Error('로그인 필요');
 
   const body = {
     user_id: userId,
@@ -82,27 +100,25 @@ export async function backupMnemonic(
 
   const res = await fetch(`${SUPABASE_URL}/rest/v1/mnemonic_backups?on_conflict=user_id,identity_id`, {
     method: 'POST',
-    headers: { ...headers(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    headers: hdrs('resolution=merge-duplicates,return=minimal'),
     body: JSON.stringify(body),
   });
 
-  console.log('[PKIZIP-backup] upsert status:', res.status);
   if (!res.ok) {
     const err = await res.text();
-    console.error('[PKIZIP-backup] upsert error:', err);
     throw new Error(`백업 저장 실패: ${res.status} ${err}`);
   }
-  console.log('[PKIZIP-backup] 완료');
 }
 
-/** Supabase에서 조회 → 복호화 → 니모닉 반환 */
+/** 서버에서 조회 → 복호화 → 니모닉 반환 */
 export async function restoreMnemonic(
   backupPassword: string,
-  identityId: string
+  identityId: string,
+  userId: string,
 ): Promise<string> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/mnemonic_backups?identity_id=eq.${identityId}&select=*&limit=1`,
-    { headers: headers() },
+    `${SUPABASE_URL}/rest/v1/mnemonic_backups?user_id=eq.${userId}&identity_id=eq.${identityId}&select=*&limit=1`,
+    { headers: hdrs() },
   );
   if (!res.ok) throw new Error('백업을 찾을 수 없습니다');
   const rows = await res.json();
@@ -110,12 +126,9 @@ export async function restoreMnemonic(
   if (!data) throw new Error('백업을 찾을 수 없습니다');
 
   const key = await deriveKey(backupPassword, frB64(data.kdf_salt), ['decrypt']);
-
   try {
     const pt = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: frB64(data.iv) },
-      key,
-      frB64(data.encrypted_blob),
+      { name: 'AES-GCM', iv: frB64(data.iv) }, key, frB64(data.encrypted_blob),
     );
     return new TextDecoder().decode(pt);
   } catch {
@@ -123,12 +136,11 @@ export async function restoreMnemonic(
   }
 }
 
-/** 백업 목록 조회 */
-export async function listBackups() {
+/** 특정 백업 삭제 */
+export async function deleteBackup(userId: string, identityId: string): Promise<void> {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/mnemonic_backups?select=identity_id,hint,updated_at&order=updated_at.desc`,
-    { headers: headers() },
+    `${SUPABASE_URL}/rest/v1/mnemonic_backups?user_id=eq.${userId}&identity_id=eq.${identityId}`,
+    { method: 'DELETE', headers: hdrs() },
   );
-  if (!res.ok) return [];
-  return await res.json();
+  if (!res.ok) throw new Error(`삭제 실패: ${res.status}`);
 }
