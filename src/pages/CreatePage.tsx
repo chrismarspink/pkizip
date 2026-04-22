@@ -280,12 +280,23 @@ export function CreatePage() {
         if (!currentKey) { toast.error('키가 활성화되지 않았습니다.'); setStep('options'); return; }
         const { importPublicKeyFromJWK } = await import('@/lib/crypto/hd-key');
         const recipientInfos: import('@/lib/crypto/encryption').RecipientInfo[] = [];
+        const skipped: string[] = [];
         for (const e of recipientEntries) {
           if (!recipients.has(e.fingerprint)) continue;
-          const pubKey = await importPublicKeyFromJWK(e.encryptionKeyJWK, 'encrypt');
+          const jwk = e.encryptionKeyJWK as JsonWebKey;
+          if (!jwk || !jwk.kty) {
+            skipped.push(e.label || e.fingerprint);
+            continue;
+          }
+          const pubKey = await importPublicKeyFromJWK(jwk, 'encrypt');
           recipientInfos.push({ fingerprint: e.fingerprint, encryptionPublicKey: pubKey, label: e.label });
         }
-        if (recipientInfos.length === 0) { toast.error('수신자가 없습니다.'); setStep('details'); return; }
+        if (skipped.length > 0) {
+          toast.warning(`암호화 공개키가 없어 제외: ${skipped.join(', ')}. 상대방이 인증서를 재공유해야 합니다.`);
+        }
+        if (recipientInfos.length === 0) {
+          toast.error('유효한 수신자가 없습니다 (암호화 공개키 필요)'); setStep('details'); return;
+        }
         const pqcOpts = loadPqcForSeal();
         const result = await seal({
           files, compress: true,
