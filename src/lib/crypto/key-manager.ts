@@ -23,6 +23,13 @@ export interface PublicKeyEntry {
   encryptionKeyJWK: JsonWebKey;
   createdAt: number;
   type: 'local' | 'imported';
+  // 옵션 메타 (imported 시 서버 디렉토리에서 복사)
+  displayName?: string;
+  email?: string;
+  username?: string;
+  certClassicPem?: string;
+  certKemPem?: string;
+  certDsaPem?: string;
 }
 
 export interface EncryptedIdentity {
