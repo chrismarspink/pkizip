@@ -2,7 +2,7 @@
 -- pkizip Multi-tenant Migration (B plan)
 -- 2026-04-22
 -- ============================================
--- Supabase SQL Editor에서 한 번에 실행 가능
+-- Supabase SQL Editor에서 한 번에 실행 가능 (idempotent)
 
 BEGIN;
 
@@ -41,7 +41,7 @@ UPDATE tenants SET plan = 'free'
 WHERE plan = 'local' AND id != '00000000-0000-0000-0000-000000000001';
 
 -- ───────────────────────────────────────────
--- 3. tenant_invites
+-- 3. 신규 테이블
 -- ───────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tenant_invites (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -54,41 +54,10 @@ CREATE TABLE IF NOT EXISTS tenant_invites (
   accepted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_invites_email ON tenant_invites(email) WHERE accepted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_invites_tenant ON tenant_invites(tenant_id);
 ALTER TABLE tenant_invites ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "invites_select_admin" ON tenant_invites;
-DROP POLICY IF EXISTS "invites_insert_admin" ON tenant_invites;
-DROP POLICY IF EXISTS "invites_delete_admin" ON tenant_invites;
-DROP POLICY IF EXISTS "invites_select_by_email" ON tenant_invites;
-DROP POLICY IF EXISTS "invites_update_self" ON tenant_invites;
-
-CREATE POLICY "invites_select_admin" ON tenant_invites FOR SELECT
-  USING (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ));
-CREATE POLICY "invites_insert_admin" ON tenant_invites FOR INSERT
-  WITH CHECK (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ));
-CREATE POLICY "invites_delete_admin" ON tenant_invites FOR DELETE
-  USING (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ));
-CREATE POLICY "invites_select_by_email" ON tenant_invites FOR SELECT
-  USING (email = (SELECT email FROM auth.users WHERE id = auth.uid()));
-CREATE POLICY "invites_update_self" ON tenant_invites FOR UPDATE
-  USING (email = (SELECT email FROM auth.users WHERE id = auth.uid()))
-  WITH CHECK (email = (SELECT email FROM auth.users WHERE id = auth.uid()));
-
--- ───────────────────────────────────────────
--- 4. audit_logs
--- ───────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit_logs (
   id bigserial PRIMARY KEY,
   tenant_id uuid REFERENCES tenants(id) ON DELETE CASCADE,
@@ -101,26 +70,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   user_agent text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_audit_tenant_created ON audit_logs(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id);
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "audit_select_admin" ON audit_logs;
-DROP POLICY IF EXISTS "audit_insert_self" ON audit_logs;
-
-CREATE POLICY "audit_select_admin" ON audit_logs FOR SELECT
-  USING (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ));
--- 클라이언트에서 자기 행동 기록만 허용 (actor_id = 본인)
-CREATE POLICY "audit_insert_self" ON audit_logs FOR INSERT
-  WITH CHECK (actor_id = auth.uid());
-
--- ───────────────────────────────────────────
--- 5. tenant_policies
--- ───────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tenant_policies (
   tenant_id uuid PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
   require_pqc boolean DEFAULT false,
@@ -131,70 +84,151 @@ CREATE TABLE IF NOT EXISTS tenant_policies (
   updated_by uuid REFERENCES auth.users(id),
   updated_at timestamptz DEFAULT now()
 );
-
 ALTER TABLE tenant_policies ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "policy_select_member" ON tenant_policies;
-DROP POLICY IF EXISTS "policy_insert_admin" ON tenant_policies;
-DROP POLICY IF EXISTS "policy_update_admin" ON tenant_policies;
-DROP POLICY IF EXISTS "policy_delete_admin" ON tenant_policies;
-
-CREATE POLICY "policy_select_member" ON tenant_policies FOR SELECT
-  USING (tenant_id IN (
-    SELECT tenant_id FROM tenant_members WHERE user_id = auth.uid()
-  ));
-CREATE POLICY "policy_insert_admin" ON tenant_policies FOR INSERT
-  WITH CHECK (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ));
-CREATE POLICY "policy_update_admin" ON tenant_policies FOR UPDATE
-  USING (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ))
-  WITH CHECK (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ));
-CREATE POLICY "policy_delete_admin" ON tenant_policies FOR DELETE
-  USING (tenant_id IN (
-    SELECT tenant_id FROM tenant_members
-    WHERE user_id = auth.uid() AND role IN ('owner', 'admin')
-  ));
-
--- ───────────────────────────────────────────
--- 6. system_admins
--- ───────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS system_admins (
   user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   role text NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'superadmin')),
   created_at timestamptz DEFAULT now()
 );
-
 ALTER TABLE system_admins ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "sys_select_self" ON system_admins;
-CREATE POLICY "sys_select_self" ON system_admins FOR SELECT
-  USING (user_id = auth.uid());
-
+-- ───────────────────────────────────────────
+-- 4. 헬퍼 함수 (SECURITY DEFINER — RLS 재귀 방지)
+-- ───────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.is_system_admin()
-RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT EXISTS (SELECT 1 FROM system_admins WHERE user_id = auth.uid());
 $$;
 
--- system_admin 전용 전체 테넌트 조회 정책
-DROP POLICY IF EXISTS "tenants_select_sysadmin" ON tenants;
-CREATE POLICY "tenants_select_sysadmin" ON tenants FOR SELECT
-  USING (public.is_system_admin());
+CREATE OR REPLACE FUNCTION public.is_tenant_member(tid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (SELECT 1 FROM tenant_members WHERE tenant_id = tid AND user_id = auth.uid());
+$$;
 
-DROP POLICY IF EXISTS "members_select_sysadmin" ON tenant_members;
-CREATE POLICY "members_select_sysadmin" ON tenant_members FOR SELECT
-  USING (public.is_system_admin());
+CREATE OR REPLACE FUNCTION public.is_tenant_admin(tid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (SELECT 1 FROM tenant_members
+    WHERE tenant_id = tid AND user_id = auth.uid() AND role IN ('owner', 'admin'));
+$$;
 
-DROP POLICY IF EXISTS "audit_select_sysadmin" ON audit_logs;
-CREATE POLICY "audit_select_sysadmin" ON audit_logs FOR SELECT
-  USING (public.is_system_admin());
+CREATE OR REPLACE FUNCTION public.is_tenant_owner(tid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (SELECT 1 FROM tenant_members
+    WHERE tenant_id = tid AND user_id = auth.uid() AND role = 'owner');
+$$;
+
+-- ───────────────────────────────────────────
+-- 5. 기존 정책 전부 제거 (구 이름 + 새 이름)
+-- ───────────────────────────────────────────
+DROP POLICY IF EXISTS "tenants_select_member"       ON tenants;
+DROP POLICY IF EXISTS "tenants_select_sysadmin"     ON tenants;
+DROP POLICY IF EXISTS "tenants_insert_authenticated" ON tenants;
+DROP POLICY IF EXISTS "tenants_update_admin"        ON tenants;
+DROP POLICY IF EXISTS "tenants_delete_owner"        ON tenants;
+DROP POLICY IF EXISTS "tenants_select"              ON tenants;
+DROP POLICY IF EXISTS "tenants_insert"              ON tenants;
+DROP POLICY IF EXISTS "tenants_update"              ON tenants;
+DROP POLICY IF EXISTS "tenants_delete"              ON tenants;
+
+DROP POLICY IF EXISTS "members_select_own"          ON tenant_members;
+DROP POLICY IF EXISTS "members_select_same_tenant"  ON tenant_members;
+DROP POLICY IF EXISTS "members_select_sysadmin"     ON tenant_members;
+DROP POLICY IF EXISTS "members_insert_self"         ON tenant_members;
+DROP POLICY IF EXISTS "members_insert_admin"        ON tenant_members;
+DROP POLICY IF EXISTS "members_update_admin"        ON tenant_members;
+DROP POLICY IF EXISTS "members_delete_admin"        ON tenant_members;
+DROP POLICY IF EXISTS "members_select"              ON tenant_members;
+DROP POLICY IF EXISTS "members_insert"              ON tenant_members;
+DROP POLICY IF EXISTS "members_update"              ON tenant_members;
+DROP POLICY IF EXISTS "members_delete"              ON tenant_members;
+
+DROP POLICY IF EXISTS "invites_select_admin"        ON tenant_invites;
+DROP POLICY IF EXISTS "invites_insert_admin"        ON tenant_invites;
+DROP POLICY IF EXISTS "invites_delete_admin"        ON tenant_invites;
+DROP POLICY IF EXISTS "invites_select_by_email"     ON tenant_invites;
+DROP POLICY IF EXISTS "invites_update_self"         ON tenant_invites;
+DROP POLICY IF EXISTS "invites_select"              ON tenant_invites;
+DROP POLICY IF EXISTS "invites_insert"              ON tenant_invites;
+DROP POLICY IF EXISTS "invites_update"              ON tenant_invites;
+DROP POLICY IF EXISTS "invites_delete"              ON tenant_invites;
+
+DROP POLICY IF EXISTS "audit_select_admin"          ON audit_logs;
+DROP POLICY IF EXISTS "audit_insert_self"           ON audit_logs;
+DROP POLICY IF EXISTS "audit_select_sysadmin"       ON audit_logs;
+DROP POLICY IF EXISTS "audit_select"                ON audit_logs;
+DROP POLICY IF EXISTS "audit_insert"                ON audit_logs;
+
+DROP POLICY IF EXISTS "policy_select_member"        ON tenant_policies;
+DROP POLICY IF EXISTS "policy_insert_admin"         ON tenant_policies;
+DROP POLICY IF EXISTS "policy_update_admin"         ON tenant_policies;
+DROP POLICY IF EXISTS "policy_delete_admin"         ON tenant_policies;
+DROP POLICY IF EXISTS "policy_select"               ON tenant_policies;
+DROP POLICY IF EXISTS "policy_insert"               ON tenant_policies;
+DROP POLICY IF EXISTS "policy_update"               ON tenant_policies;
+DROP POLICY IF EXISTS "policy_delete"               ON tenant_policies;
+
+DROP POLICY IF EXISTS "sys_select_self"             ON system_admins;
+
+-- ───────────────────────────────────────────
+-- 6. 재작성된 정책 (헬퍼 함수 사용 → 재귀 없음)
+-- ───────────────────────────────────────────
+
+-- tenants
+CREATE POLICY "tenants_select" ON tenants FOR SELECT
+  USING (public.is_tenant_member(id) OR public.is_system_admin());
+CREATE POLICY "tenants_insert" ON tenants FOR INSERT
+  TO authenticated WITH CHECK (true);
+CREATE POLICY "tenants_update" ON tenants FOR UPDATE
+  USING (public.is_tenant_admin(id) OR public.is_system_admin())
+  WITH CHECK (public.is_tenant_admin(id) OR public.is_system_admin());
+CREATE POLICY "tenants_delete" ON tenants FOR DELETE
+  USING (public.is_tenant_owner(id) OR public.is_system_admin());
+
+-- tenant_members
+CREATE POLICY "members_select" ON tenant_members FOR SELECT
+  USING (user_id = auth.uid() OR public.is_tenant_member(tenant_id) OR public.is_system_admin());
+CREATE POLICY "members_insert" ON tenant_members FOR INSERT
+  WITH CHECK (user_id = auth.uid() OR public.is_tenant_admin(tenant_id));
+CREATE POLICY "members_update" ON tenant_members FOR UPDATE
+  USING (public.is_tenant_admin(tenant_id))
+  WITH CHECK (public.is_tenant_admin(tenant_id));
+CREATE POLICY "members_delete" ON tenant_members FOR DELETE
+  USING (public.is_tenant_admin(tenant_id) OR user_id = auth.uid());
+
+-- tenant_invites
+CREATE POLICY "invites_select" ON tenant_invites FOR SELECT
+  USING (public.is_tenant_admin(tenant_id)
+    OR email = (SELECT email FROM auth.users WHERE id = auth.uid()));
+CREATE POLICY "invites_insert" ON tenant_invites FOR INSERT
+  WITH CHECK (public.is_tenant_admin(tenant_id));
+CREATE POLICY "invites_update" ON tenant_invites FOR UPDATE
+  USING (email = (SELECT email FROM auth.users WHERE id = auth.uid()))
+  WITH CHECK (email = (SELECT email FROM auth.users WHERE id = auth.uid()));
+CREATE POLICY "invites_delete" ON tenant_invites FOR DELETE
+  USING (public.is_tenant_admin(tenant_id));
+
+-- audit_logs
+CREATE POLICY "audit_select" ON audit_logs FOR SELECT
+  USING ((tenant_id IS NOT NULL AND public.is_tenant_admin(tenant_id))
+    OR public.is_system_admin());
+CREATE POLICY "audit_insert" ON audit_logs FOR INSERT
+  WITH CHECK (actor_id = auth.uid());
+
+-- tenant_policies
+CREATE POLICY "policy_select" ON tenant_policies FOR SELECT
+  USING (public.is_tenant_member(tenant_id));
+CREATE POLICY "policy_insert" ON tenant_policies FOR INSERT
+  WITH CHECK (public.is_tenant_admin(tenant_id));
+CREATE POLICY "policy_update" ON tenant_policies FOR UPDATE
+  USING (public.is_tenant_admin(tenant_id))
+  WITH CHECK (public.is_tenant_admin(tenant_id));
+CREATE POLICY "policy_delete" ON tenant_policies FOR DELETE
+  USING (public.is_tenant_admin(tenant_id));
+
+-- system_admins
+CREATE POLICY "sys_select_self" ON system_admins FOR SELECT
+  USING (user_id = auth.uid());
 
 -- ───────────────────────────────────────────
 -- 7. 초기 superadmin 등록 (jkkim@innotium.com)
