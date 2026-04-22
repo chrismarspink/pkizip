@@ -239,6 +239,47 @@ export function parsePemCertificate(pem: string): CertificateInfo | null {
 }
 
 /**
+ * PEM 인증서에서 Logotype(RFC 3709) 추출 → data URL 반환
+ * 우리가 저장한 포맷: extnValue = DER(OctetString(raw JPEG bytes))
+ */
+export function extractLogotypeFromPem(pem: string): string | null {
+  try {
+    const der = pemToDer(pem);
+    const asn1 = asn1js.fromBER(der);
+    if (asn1.offset === -1) return null;
+    const cert = new pkijs.Certificate({ schema: asn1.result });
+    const ext = cert.extensions?.find(e => e.extnID === '1.3.6.1.5.5.7.1.12');
+    if (!ext) return null;
+
+    // extnValue는 pkijs에서 OctetString. 그 안에 우리가 넣은 OctetString(raw JPEG)이 들어있음
+    const outerHex = ext.extnValue.valueBlock.valueHexView;
+    const inner = asn1js.fromBER(outerHex.buffer.slice(
+      outerHex.byteOffset, outerHex.byteOffset + outerHex.byteLength
+    ) as ArrayBuffer);
+    let raw: Uint8Array;
+    if (inner.offset !== -1 && inner.result instanceof asn1js.OctetString) {
+      raw = new Uint8Array(inner.result.valueBlock.valueHexView);
+    } else {
+      // 이중 래핑이 아니면 outerHex 자체가 raw
+      raw = new Uint8Array(outerHex);
+    }
+    if (raw.length === 0) return null;
+
+    let bin = '';
+    for (let i = 0; i < raw.length; i += 8192) {
+      bin += String.fromCharCode(...raw.subarray(i, i + 8192));
+    }
+    // JPEG 헤더 확인 (FF D8) — 아니면 PNG 헤더 (89 50 4E 47)
+    const mime = raw[0] === 0xff && raw[1] === 0xd8 ? 'image/jpeg'
+               : raw[0] === 0x89 && raw[1] === 0x50 ? 'image/png'
+               : 'image/jpeg';
+    return `data:${mime};base64,${btoa(bin)}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * DER → PEM 변환
  */
 function derToPem(der: ArrayBuffer, label: string): string {
