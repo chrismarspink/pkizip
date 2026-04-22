@@ -37,6 +37,8 @@ export interface CertBundle {
   cert_kem?: string;
   cert_dsa?: string;
   fingerprint?: string;
+  /** ECDH P-256 암호화 공개키 (JWK) — cert_classic의 서명 키와 별개 */
+  enc_jwk_classic?: JsonWebKey;
   uploaded_at: string;
   updated_at: string;
 }
@@ -61,6 +63,7 @@ export async function uploadCertBundle(
     cert_kem?: string;
     cert_dsa?: string;
     fingerprint?: string;
+    enc_jwk_classic?: JsonWebKey;
   }
 ): Promise<void> {
   const existing = await getMyCertBundles(userId);
@@ -80,6 +83,7 @@ export async function uploadCertBundle(
     cert_classic: bundle.cert_classic ?? null,
     cert_kem: bundle.cert_kem ?? null,
     cert_dsa: bundle.cert_dsa ?? null,
+    enc_jwk_classic: bundle.enc_jwk_classic ?? null,
     fingerprint: bundle.fingerprint ?? null,
     is_public: true,
     updated_at: new Date().toISOString(),
@@ -112,7 +116,7 @@ export async function searchCertBundles(query: string): Promise<CertBundle[]> {
   if (q.length < 2) return [];
   const filter = `or=(username.ilike.*${q}*,display_name.ilike.*${q}*,email.ilike.*${q}*)`;
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/cert_bundles?is_public=eq.true&${filter}&select=id,username,display_name,email,fingerprint,cert_kem,cert_dsa,cert_classic,uploaded_at,updated_at&limit=20`,
+    `${SUPABASE_URL}/rest/v1/cert_bundles?is_public=eq.true&${filter}&select=id,username,display_name,email,fingerprint,cert_kem,cert_dsa,cert_classic,enc_jwk_classic,uploaded_at,updated_at&limit=20`,
     { headers: hdrs() },
   );
   if (!res.ok) return [];

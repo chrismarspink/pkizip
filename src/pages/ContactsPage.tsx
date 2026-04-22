@@ -82,11 +82,14 @@ export function ContactsPage() {
   const handleAdd = useCallback(async (b: CertBundle) => {
     const fp = b.fingerprint || b.username;
     try {
+      if (!b.enc_jwk_classic) {
+        toast.warning('이 인증서에는 암호화 공개키가 없어 주소록에 추가해도 암호화 발송 대상으로 쓸 수 없습니다');
+      }
       await addToKeyRing({
         fingerprint: fp,
         label: `${b.display_name}${b.email ? ` <${b.email}>` : ''}`,
         signingKeyJWK: {},
-        encryptionKeyJWK: {},
+        encryptionKeyJWK: b.enc_jwk_classic ?? {},
         createdAt: Date.now(),
         type: 'imported',
         displayName: b.display_name,

@@ -11,7 +11,7 @@ import { useAuthStore } from '@/lib/supabase/auth-store';
 import { uploadCertBundle, getMyCertBundles, deleteCertBundle, type CertBundle } from '@/lib/supabase/cert-directory';
 import { listBackups, deleteBackup, type BackupEntry } from '@/lib/supabase/mnemonic-backup';
 import { getTsaSettings, saveTsaSettings, DEFAULT_TSA_LIST, type TsaServer } from '@/lib/tsa-health';
-import { getAllCertificates } from '@/lib/crypto/key-manager';
+import { getAllCertificates, getFromKeyRing } from '@/lib/crypto/key-manager';
 import { AuthDialog } from '@/components/auth/AuthDialog';
 
 export function SettingsPage() {
@@ -214,6 +214,10 @@ function CertSharingSection() {
     if (!user) return;
     setUploadingFp(cert.fingerprint);
     try {
+      // 로컬 keyring에서 암호화 JWK 가져오기 (수신자가 나에게 암호화할 때 필요)
+      const localEntry = await getFromKeyRing(cert.fingerprint);
+      const encJwk = localEntry?.encryptionKeyJWK && (localEntry.encryptionKeyJWK as JsonWebKey).kty
+        ? localEntry.encryptionKeyJWK : undefined;
       await uploadCertBundle(user.id, {
         display_name: cert.commonName,
         email: cert.email,
@@ -221,6 +225,7 @@ function CertSharingSection() {
         cert_kem: cert.pqcCertificates?.kem,
         cert_dsa: cert.pqcCertificates?.dsa,
         fingerprint: cert.fingerprint,
+        enc_jwk_classic: encJwk,
       });
       setSharedBundles(await getMyCertBundles(user.id));
       toast.success('인증서 공유 완료');
