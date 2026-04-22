@@ -2,7 +2,7 @@
  * ContactsPage — 내 주소록 + 인증서 디렉토리 검색
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Search, UserPlus, Lock, Info, Trash2, X as XIcon, Shield } from 'lucide-react';
+import { Search, UserPlus, Lock, Info, Trash2, X as XIcon } from 'lucide-react';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { searchCertBundles, type CertBundle } from '@/lib/supabase/cert-directory';
 import {
@@ -236,10 +236,10 @@ function ContactCard({ contact, inKeyring, onAdd, onRemove, onDetail }: {
   return (
     <div className="bg-white border border-zinc-200 rounded-xl p-4">
       <div className="flex items-start gap-3">
-        <div className="w-12 h-12 rounded-lg bg-zinc-100 flex items-center justify-center overflow-hidden shrink-0">
+        <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0">
           {logotype
             ? <img src={logotype} alt="logo" className="w-full h-full object-cover" />
-            : <Shield className="w-5 h-5 text-zinc-400" />}
+            : <Identicon seed={contact.fingerprint} size={48} />}
         </div>
 
         <div className="min-w-0 flex-1">
@@ -307,10 +307,10 @@ function DetailDialog({ contact, onClose }: { contact: Contact; onClose: () => v
         </div>
         <div className="p-5 space-y-4">
           <div className="flex items-center gap-3">
-            <div className="w-16 h-16 rounded-xl bg-zinc-100 flex items-center justify-center overflow-hidden shrink-0">
+            <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0">
               {logotype
                 ? <img src={logotype} alt="logo" className="w-full h-full object-cover" />
-                : <Shield className="w-7 h-7 text-zinc-400" />}
+                : <Identicon seed={contact.fingerprint} size={64} />}
             </div>
             <div className="min-w-0">
               <div className="font-semibold truncate">{contact.displayName}</div>
@@ -341,6 +341,41 @@ function DetailDialog({ contact, onClose }: { contact: Contact; onClose: () => v
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Identicon (5x5 대칭 SVG, fingerprint 기반 결정론적 생성) ──
+function Identicon({ seed, size = 48 }: { seed: string; size?: number }) {
+  const clean = (seed || '0').replace(/^0x/i, '').padStart(16, '0');
+  const bytes: number[] = [];
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes.push(parseInt(clean.slice(i, i + 2), 16) || 0);
+  }
+  const hue = ((bytes[0] << 8) | (bytes[1] ?? 0)) % 360;
+  const color = `hsl(${hue} 65% 45%)`;
+  const bg = `hsl(${hue} 20% 94%)`;
+
+  const cells: boolean[][] = [];
+  let bitIdx = 0;
+  for (let y = 0; y < 5; y++) {
+    const row: boolean[] = [];
+    for (let x = 0; x < 3; x++) {
+      const byte = bytes[Math.floor(bitIdx / 8) % bytes.length];
+      row.push(((byte >> (bitIdx % 8)) & 1) === 1);
+      bitIdx++;
+    }
+    row.push(row[1], row[0]); // 좌우 대칭
+    cells.push(row);
+  }
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 5 5" style={{ background: bg, display: 'block' }}>
+      {cells.flatMap((row, y) =>
+        row.map((on, x) =>
+          on ? <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={color} /> : null
+        )
+      )}
+    </svg>
   );
 }
 
