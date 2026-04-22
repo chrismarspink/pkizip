@@ -1,7 +1,7 @@
 /**
  * 테넌트 CRUD + 멤버 관리
  */
-import { restGet, restPost, restPatch, restDelete, SUPABASE_URL, SUPABASE_ANON_KEY, getAccessToken } from './rest';
+import { restGet, restPost, restPatch, restDelete, rpc, SUPABASE_URL, SUPABASE_ANON_KEY, getAccessToken } from './rest';
 
 export interface Tenant {
   id: string;
@@ -43,12 +43,10 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
   return rows[0] ?? null;
 }
 
-/** 새 조직 생성 (caller가 owner) */
-export async function createTenant(userId: string, name: string, slug: string, plan: 'team' | 'enterprise' = 'team'): Promise<Tenant> {
-  const rows = await restPost<Tenant[]>('tenants', { name, slug, plan });
-  const t = rows[0];
-  await restPost('tenant_members', { tenant_id: t.id, user_id: userId, role: 'owner' }, 'return=minimal');
-  return t;
+/** 새 조직 생성 (caller가 owner) — 원자적 RPC */
+export async function createTenant(_userId: string, name: string, slug: string, plan: 'team' | 'enterprise' = 'team'): Promise<Tenant> {
+  const rows = await rpc<Tenant[]>('create_tenant_with_owner', { p_name: name, p_slug: slug, p_plan: plan });
+  return Array.isArray(rows) ? rows[0] : (rows as unknown as Tenant);
 }
 
 /** 테넌트 삭제 (owner만) */

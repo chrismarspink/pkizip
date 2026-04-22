@@ -96,27 +96,71 @@ ALTER TABLE system_admins ENABLE ROW LEVEL SECURITY;
 -- ───────────────────────────────────────────
 -- 4. 헬퍼 함수 (SECURITY DEFINER — RLS 재귀 방지)
 -- ───────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.is_system_admin()
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM system_admins WHERE user_id = auth.uid());
+DROP FUNCTION IF EXISTS public.is_system_admin()        CASCADE;
+DROP FUNCTION IF EXISTS public.is_tenant_member(uuid)   CASCADE;
+DROP FUNCTION IF EXISTS public.is_tenant_admin(uuid)    CASCADE;
+DROP FUNCTION IF EXISTS public.is_tenant_owner(uuid)    CASCADE;
+
+CREATE FUNCTION public.is_system_admin()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp SET row_security = off AS $$
+  SELECT EXISTS (SELECT 1 FROM public.system_admins WHERE user_id = auth.uid());
 $$;
 
-CREATE OR REPLACE FUNCTION public.is_tenant_member(tid uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM tenant_members WHERE tenant_id = tid AND user_id = auth.uid());
+CREATE FUNCTION public.is_tenant_member(tid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp SET row_security = off AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.tenant_members WHERE tenant_id = tid AND user_id = auth.uid()
+  );
 $$;
 
-CREATE OR REPLACE FUNCTION public.is_tenant_admin(tid uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM tenant_members
-    WHERE tenant_id = tid AND user_id = auth.uid() AND role IN ('owner', 'admin'));
+CREATE FUNCTION public.is_tenant_admin(tid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp SET row_security = off AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.tenant_members
+    WHERE tenant_id = tid AND user_id = auth.uid() AND role IN ('owner','admin')
+  );
 $$;
 
-CREATE OR REPLACE FUNCTION public.is_tenant_owner(tid uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (SELECT 1 FROM tenant_members
-    WHERE tenant_id = tid AND user_id = auth.uid() AND role = 'owner');
+CREATE FUNCTION public.is_tenant_owner(tid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp SET row_security = off AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.tenant_members
+    WHERE tenant_id = tid AND user_id = auth.uid() AND role = 'owner'
+  );
 $$;
+
+-- tenant + owner 원자적 생성 (RETURNING RLS 우회)
+CREATE OR REPLACE FUNCTION public.create_tenant_with_owner(
+  p_name text, p_slug text, p_plan text DEFAULT 'team'
+) RETURNS SETOF tenants
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp SET row_security = off AS $$
+DECLARE
+  new_tenant tenants;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'authentication required' USING ERRCODE = '42501';
+  END IF;
+  IF p_plan NOT IN ('free','team','enterprise') THEN
+    RAISE EXCEPTION 'invalid plan: %', p_plan;
+  END IF;
+
+  INSERT INTO public.tenants (name, slug, plan)
+  VALUES (p_name, p_slug, p_plan)
+  RETURNING * INTO new_tenant;
+
+  INSERT INTO public.tenant_members (tenant_id, user_id, role)
+  VALUES (new_tenant.id, auth.uid(), 'owner');
+
+  RETURN NEXT new_tenant;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.create_tenant_with_owner(text, text, text) TO authenticated;
 
 -- ───────────────────────────────────────────
 -- 5. 기존 정책 전부 제거 (구 이름 + 새 이름)
