@@ -6,7 +6,7 @@ import { Search, UserPlus, Lock, Info, Trash2, X as XIcon } from 'lucide-react';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { searchCertBundles, type CertBundle } from '@/lib/supabase/cert-directory';
 import {
-  addToKeyRing, getAllKeyRingEntries, removeFromKeyRing, type PublicKeyEntry,
+  addToKeyRing, getAllKeyRingEntries, getFromKeyRing, removeFromKeyRing, type PublicKeyEntry,
 } from '@/lib/crypto/key-manager';
 import { parsePemCertificate, extractLogotypeFromPem } from '@/lib/crypto/certificate';
 import { AuthDialog } from '@/components/auth/AuthDialog';
@@ -82,6 +82,12 @@ export function ContactsPage() {
   const handleAdd = useCallback(async (b: CertBundle) => {
     const fp = b.fingerprint || b.username;
     try {
+      // 로컬 아이덴티티(내 개인 키) 덮어쓰기 방지
+      const existing = await getFromKeyRing(fp);
+      if (existing?.type === 'local') {
+        toast.error('이 인증서는 이미 내 로컬 아이덴티티입니다. 주소록에 추가할 수 없습니다.');
+        return;
+      }
       if (!b.enc_jwk_classic) {
         toast.warning('이 인증서에는 암호화 공개키가 없어 주소록에 추가해도 암호화 발송 대상으로 쓸 수 없습니다');
       }

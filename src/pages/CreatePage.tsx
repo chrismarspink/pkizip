@@ -278,12 +278,25 @@ export function CreatePage() {
         // EnvelopedMessage: 선택된 수신자만 암호화
         const currentKey = useAppStore.getState().keyIdentity;
         if (!currentKey) { toast.error('키가 활성화되지 않았습니다.'); setStep('options'); return; }
-        const { importPublicKeyFromJWK } = await import('@/lib/crypto/hd-key');
+        const { importPublicKeyFromJWK, exportPublicKeyJWK } = await import('@/lib/crypto/hd-key');
+        const { addToKeyRing } = await import('@/lib/crypto/key-manager');
         const recipientInfos: import('@/lib/crypto/encryption').RecipientInfo[] = [];
         const skipped: string[] = [];
         for (const e of recipientEntries) {
           if (!recipients.has(e.fingerprint)) continue;
-          const jwk = e.encryptionKeyJWK as JsonWebKey;
+          let jwk = e.encryptionKeyJWK as JsonWebKey;
+          // 자기 자신을 수신자로 선택한 경우: 활성 키에서 JWK 복구
+          if ((!jwk || !jwk.kty) && e.fingerprint === currentKey.signingKey.fingerprint) {
+            jwk = await exportPublicKeyJWK(currentKey.encryptionKey.publicKey);
+            // keyring 엔트리 복구
+            await addToKeyRing({
+              ...e,
+              encryptionKeyJWK: jwk,
+              signingKeyJWK: await exportPublicKeyJWK(currentKey.signingKey.publicKey),
+              type: 'local',
+            });
+            console.log('[PKIZIP] 로컬 keyring 엔트리 복구:', e.fingerprint);
+          }
           if (!jwk || !jwk.kty) {
             skipped.push(e.label || e.fingerprint);
             continue;
