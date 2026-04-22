@@ -59,14 +59,14 @@ export async function updateTenant(tenantId: string, patch: Partial<Pick<Tenant,
   await restPatch(`tenants?id=eq.${tenantId}`, patch);
 }
 
-/** 멤버 목록 (profile join) */
+/** 멤버 목록 (RPC — RLS 재귀/FK 임베딩 우회) */
 export async function listMembers(tenantId: string): Promise<TenantMember[]> {
-  type Row = { tenant_id: string; user_id: string; role: 'owner'|'admin'|'member'; created_at: string;
-    profiles: { id: string; display_name: string | null } | null };
-  const rows = await restGet<Row[]>(`tenant_members?tenant_id=eq.${tenantId}&select=*,profiles(id,display_name)&order=created_at.asc`);
-  return rows.map(r => ({
+  type Row = { tenant_id: string; user_id: string; role: 'owner'|'admin'|'member';
+    created_at: string; display_name: string | null };
+  const rows = await rpc<Row[]>('list_tenant_members', { tid: tenantId });
+  return (rows ?? []).map(r => ({
     tenant_id: r.tenant_id, user_id: r.user_id, role: r.role, created_at: r.created_at,
-    profile: r.profiles ?? undefined,
+    profile: { id: r.user_id, display_name: r.display_name },
   }));
 }
 
