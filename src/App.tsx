@@ -7,8 +7,16 @@ import { CertsPage } from '@/pages/CertsPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { MePage } from '@/pages/MePage';
-import { TeamPage } from '@/pages/TeamPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { TeamLayout } from '@/components/team/TeamLayout';
+import { TeamDashboardPage } from '@/pages/team/TeamDashboardPage';
+import { TeamMembersPage } from '@/pages/team/TeamMembersPage';
+import { TeamInvitesPage } from '@/pages/team/TeamInvitesPage';
+import { TeamContactsPage } from '@/pages/team/TeamContactsPage';
+import { TeamPoliciesPage } from '@/pages/team/TeamPoliciesPage';
+import { TeamAuditPage } from '@/pages/team/TeamAuditPage';
+import { TeamBillingPage } from '@/pages/team/TeamBillingPage';
+import { TeamSettingsPage } from '@/pages/team/TeamSettingsPage';
 
 export function App() {
   // GitHub Pages: /pkizip/ 서브 경로 지원
@@ -25,8 +33,17 @@ export function App() {
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/me" element={<MePage />} />
-          <Route path="/team/:slug" element={<TeamPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/team/:slug" element={<TeamLayout />}>
+            <Route index element={<TeamDashboardPage />} />
+            <Route path="members" element={<TeamMembersPage />} />
+            <Route path="invites" element={<TeamInvitesPage />} />
+            <Route path="contacts" element={<TeamContactsPage />} />
+            <Route path="policies" element={<TeamPoliciesPage />} />
+            <Route path="audit" element={<TeamAuditPage />} />
+            <Route path="settings" element={<TeamSettingsPage />} />
+            <Route path="billing" element={<TeamBillingPage />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>
