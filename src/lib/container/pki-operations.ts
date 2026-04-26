@@ -349,6 +349,9 @@ export async function open(
   const container = readPkiContainer(pkiData);
   const { header } = container;
   let { payload } = container;
+  // TSA는 seal 시점의 (암호화/서명 직전이 아닌, 컨테이너 저장 직전) payload에 대해 발급되므로
+  // 복호화·압축해제로 payload가 변형되기 전 원본을 보관한다.
+  const onDiskPayload = new Uint8Array(payload);
 
   const isEncrypted = hasFlag(header.flags, FLAG_ENCRYPTED);
   const isSigned = hasFlag(header.flags, FLAG_SIGNED);
@@ -496,7 +499,8 @@ export async function open(
       const tstDer = new Uint8Array(
         atob(header.timestamp.token).split('').map(c => c.charCodeAt(0))
       );
-      timestampVerification = await verifyTimestampToken(tstDer, payload);
+      // seal()은 암호화 후 payload로 TST 발급 → 검증도 같은 raw payload여야 함
+      timestampVerification = await verifyTimestampToken(tstDer, onDiskPayload);
       console.log('[PKIZIP] TST 검증:', timestampVerification.valid ? '유효' : '무효');
     } catch (err) {
       console.warn('[PKIZIP] TST 검증 실패:', err);
