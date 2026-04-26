@@ -66,32 +66,66 @@ function buildTimestampRequest(hash: Uint8Array, nonce: Uint8Array): Uint8Array 
   return new Uint8Array(req.toBER());
 }
 
-/** 단일 TSA에 타임스탬프 요청 */
+// Supabase Edge Function 프록시 (CORS 우회)
+const TSA_PROXY_URL = 'https://ikyhpuerwljxypyzkpiw.supabase.co/functions/v1/tsa-proxy';
+
+/** 단일 TSA에 타임스탬프 요청 (직접 → 실패 시 Edge Function 프록시 폴백) */
 async function requestTst(
   server: TsaServer,
   reqDer: Uint8Array,
   timeoutMs: number,
 ): Promise<Uint8Array> {
+  // 직접 호출 시도
+  try {
+    return await rawTsaPost(server.url, reqDer, timeoutMs);
+  } catch (directErr) {
+    const msg = directErr instanceof Error ? directErr.message : String(directErr);
+    console.warn(`[PKIZIP-TSA] 직접 호출 실패 (${server.name}): ${msg} → 프록시 시도`);
+  }
+
+  // CORS 우회: Edge Function 프록시
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const res = await fetch(server.url, {
+    const res = await fetch(TSA_PROXY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/timestamp-query',
+        'x-tsa-url': server.url,
+      },
+      body: reqDer as unknown as BodyInit,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`TSA proxy HTTP ${res.status} ${errBody}`);
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('timestamp-reply')) {
+      throw new Error(`TSA proxy 응답 타입 오류: ${ct}`);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function rawTsaPost(url: string, reqDer: Uint8Array, timeoutMs: number): Promise<Uint8Array> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/timestamp-query' },
       body: reqDer as unknown as BodyInit,
       signal: controller.signal,
     });
-
     if (!res.ok) throw new Error(`TSA HTTP ${res.status}`);
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('timestamp-reply')) {
-      throw new Error(`TSA 응답 타입 오류: ${contentType}`);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('timestamp-reply')) {
+      throw new Error(`TSA 응답 타입 오류: ${ct}`);
     }
-
-    const buf = await res.arrayBuffer();
-    return new Uint8Array(buf);
+    return new Uint8Array(await res.arrayBuffer());
   } finally {
     clearTimeout(timer);
   }
