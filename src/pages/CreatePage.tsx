@@ -12,6 +12,7 @@ import { packInnerPayload } from '@/lib/container/inner-payload';
 import { signData } from '@/lib/crypto/signing';
 import { serializeSignerInfos } from '@/lib/container/pki-format';
 import type { FileEntry } from '@/lib/compression/compressor';
+import { SigningConsentDialog } from '@/components/dialogs/SigningConsentDialog';
 
 type Step = 'files' | 'options' | 'details' | 'processing' | 'done';
 
@@ -107,6 +108,17 @@ export function CreatePage() {
   const [unlockPw, setUnlockPw] = useState('');
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [hasPinRegistered, setHasPinRegistered] = useState(false);
+
+  // 서명 동의 게이트
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentIntent, setConsentIntent] = useState('');
+  const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
+
+  const requestSigningConsent = (intent: string): Promise<boolean> => {
+    setConsentIntent(intent);
+    setConsentOpen(true);
+    return new Promise(resolve => { consentResolverRef.current = resolve; });
+  };
 
   // 키 잠금 해제 (생체 인증 → PIN → 비밀번호)
   const ensureKey = async (): Promise<boolean> => {
@@ -242,6 +254,16 @@ export function CreatePage() {
   };
 
   const runProcessing = async () => {
+    // 서명/봉인 작업이면 매번 사용자 동의 요구
+    if (options.sign || options.enveloped) {
+      const action = options.enveloped ? '봉인 (서명+암호화)'
+                   : options.encrypted ? '암호화 + 서명'
+                   : '서명';
+      const intent = `${files.length}개 파일을 ${action}합니다. 본인 확인이 필요합니다.`;
+      const ok = await requestSigningConsent(intent);
+      if (!ok) { toast('서명 취소됨'); return; }
+    }
+
     setStep('processing');
     try {
       let pkiData: Uint8Array;
@@ -665,6 +687,22 @@ export function CreatePage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 서명 동의 다이얼로그 */}
+      <SigningConsentDialog
+        open={consentOpen}
+        intent={consentIntent}
+        onResolve={() => {
+          setConsentOpen(false);
+          consentResolverRef.current?.(true);
+          consentResolverRef.current = null;
+        }}
+        onCancel={() => {
+          setConsentOpen(false);
+          consentResolverRef.current?.(false);
+          consentResolverRef.current = null;
+        }}
+      />
     </div>
   );
 }
