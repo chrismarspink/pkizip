@@ -4,10 +4,12 @@
  * 기존 CertsPage(인증서 카드)와 SettingsPage(아이덴티티 섹션)를 통합.
  * 각 인증서 카드는 3면 (앞면/상세/설정)으로 스와이프 전환.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { CertWallet } from '@/components/cert/CertWallet';
 import { Identicon } from '@/components/cert/Identicon';
-import { Shield, Clock, Plus, Import } from 'lucide-react';
+import { Shield, Clock, Plus, Import, QrCode } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { QrDisplayModal } from '@/components/qr/QrDisplayModal';
 import { MnemonicDialog } from '@/components/dialogs/MnemonicDialog';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
@@ -28,6 +30,8 @@ import {
 } from '@/lib/crypto/pin';
 
 export function CertsPage() {
+  const { t } = useTranslation();
+  const [qrFor, setQrFor] = useState<StoredCertificate | null>(null);
   const {
     setKeyIdentity, setActiveIdentityId: storeSetActive,
     setIdentities, activeIdentityId, isKeyLoaded,
@@ -39,6 +43,13 @@ export function CertsPage() {
   const [metas, setMetas] = useState<EncryptedIdentity[]>([]);
   const [certs, setCerts] = useState<Map<string, StoredCertificate>>(new Map());
   const [contacts, setContacts] = useState<PublicKeyEntry[]>([]);
+  const [localKeyring, setLocalKeyring] = useState<PublicKeyEntry[]>([]);
+  const localEncJwk = useMemo(() => {
+    if (!qrFor) return null;
+    const e = localKeyring.find(k => k.fingerprint === qrFor.fingerprint);
+    const jwk = e?.encryptionKeyJWK as JsonWebKey | undefined;
+    return (jwk && jwk.kty) ? jwk : null;
+  }, [qrFor, localKeyring]);
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricMap, setBiometricMap] = useState<Record<string, boolean>>({});
   const [pinMap, setPinMap] = useState<Record<string, boolean>>({});
@@ -82,6 +93,7 @@ export function CertsPage() {
 
     const entries = await getAllKeyRingEntries();
     setContacts(entries.filter(e => e.type === 'imported'));
+    setLocalKeyring(entries.filter(e => e.type === 'local'));
 
   }
 
@@ -224,6 +236,23 @@ export function CertsPage() {
         <CertWallet cards={cardProps} />
       )}
 
+      {/* 활성 인증서 QR 공유 */}
+      {cardProps.length > 0 && (
+        <div className="mt-4 flex justify-center">
+          <button
+            onClick={() => {
+              const active = cardProps.find(p => p.isActive);
+              const cert = active?.cert ?? cardProps[0]?.cert;
+              if (cert) setQrFor(cert);
+              else toast.error('인증서가 없습니다');
+            }}
+            className="flex items-center gap-1.5 text-sm text-[#175DDC] border border-[#175DDC]/30 hover:bg-[#175DDC]/5 rounded-lg px-4 py-2"
+          >
+            <QrCode className="w-4 h-4" /> {t('certificates.showQr')}
+          </button>
+        </div>
+      )}
+
       {/* 니모닉 생성/복구 버튼 */}
       <div className="grid grid-cols-2 gap-3 mt-6">
         <button
@@ -261,6 +290,21 @@ export function CertsPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* QR 표시 모달 */}
+      {qrFor && (
+        <QrDisplayModal
+          open={true}
+          onClose={() => setQrFor(null)}
+          cert={{
+            fingerprint: qrFor.fingerprint,
+            name: qrFor.commonName,
+            email: qrFor.email,
+            pubkey: qrFor.pemCertificate,
+            enc_jwk: localEncJwk ?? undefined,
+          }}
+        />
       )}
 
       {/* 니모닉 다이얼로그 */}

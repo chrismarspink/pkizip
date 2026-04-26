@@ -4,8 +4,10 @@
  * 아이덴티티 관리는 CertsPage(인증서 카드 면 2)로 이동됨.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload, Clock } from 'lucide-react';
+import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload, Clock, Languages, Fingerprint } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
+import { changeLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, type Language } from '@/i18n';
 import { useAppStore } from '@/lib/store/app-store';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { uploadCertBundle, getMyCertBundles, deleteCertBundle, type CertBundle } from '@/lib/supabase/cert-directory';
@@ -15,14 +17,31 @@ import { getAllCertificates, getFromKeyRing } from '@/lib/crypto/key-manager';
 import { AuthDialog } from '@/components/auth/AuthDialog';
 
 export function SettingsPage() {
+  const { t } = useTranslation();
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
-      <h1 className="text-xl font-bold mb-6">설정</h1>
+      <h1 className="text-xl font-bold mb-6">{t('settings.title')}</h1>
+
+      {/* 언어 */}
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Languages className="w-4 h-4" /> {t('settings.language')}
+        </h2>
+        <LanguageSection />
+      </div>
+
+      {/* 생체 인증 */}
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Fingerprint className="w-4 h-4" /> {t('settings.biometric')}
+        </h2>
+        <BiometricSection />
+      </div>
 
       {/* 양자 암호 섹션 */}
       <div className="mb-6">
         <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <Shield className="w-4 h-4" /> 양자 암호 (Post-Quantum)
+          <Shield className="w-4 h-4" /> {t('settings.pqc')}
         </h2>
         <PQCSettings />
       </div>
@@ -464,6 +483,107 @@ function TsaSettingsSection() {
             타임아웃: {settings.timeoutMs / 1000}초 · TSA에는 서명값의 SHA-256 해시만 전송됩니다.
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ══ 언어 선택 컴포넌트 ══
+function LanguageSection() {
+  const { t } = useTranslation();
+  const [current, setCurrent] = useState<Language>(getCurrentLanguage());
+
+  const handleChange = (lng: Language) => {
+    changeLanguage(lng);
+    setCurrent(lng);
+  };
+
+  return (
+    <div className="bg-white border border-zinc-200 rounded-xl p-4">
+      <p className="text-xs text-zinc-500 mb-3">{t('settings.languageDesc')}</p>
+      <div className="space-y-1">
+        {SUPPORTED_LANGUAGES.map(lng => (
+          <label key={lng} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-50 cursor-pointer">
+            <input type="radio" name="lng" checked={current === lng} onChange={() => handleChange(lng)} />
+            <span className="text-sm">{t(`languages.${lng}`)}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ══ 생체 인증 컴포넌트 ══
+function BiometricSection() {
+  const { t } = useTranslation();
+  const [supported, setSupported] = useState<{ supported: boolean; prfSupported: boolean; reason?: string } | null>(null);
+  const [registered, setRegistered] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { checkBiometricSupport, isBiometricRegistered } = await import('@/lib/crypto/biometric-key');
+      setSupported(await checkBiometricSupport());
+      setRegistered(await isBiometricRegistered());
+    })();
+  }, []);
+
+  const onRegister = async () => {
+    setBusy(true);
+    try {
+      const { registerBiometric } = await import('@/lib/crypto/biometric-key');
+      await registerBiometric();
+      setRegistered(true);
+      toast.success(t('biometric.registerSuccess'));
+    } catch (err) {
+      toast.error(`${t('biometric.registerFail')}: ${err instanceof Error ? err.message : err}`);
+    } finally { setBusy(false); }
+  };
+
+  const onUnregister = async () => {
+    if (!confirm(t('biometric.unregister'))) return;
+    setBusy(true);
+    try {
+      const { removeBiometric } = await import('@/lib/crypto/biometric-key');
+      await removeBiometric();
+      setRegistered(false);
+      toast.success(t('common.success'));
+    } finally { setBusy(false); }
+  };
+
+  if (!supported) return <div className="bg-white border border-zinc-200 rounded-xl p-4 text-sm text-zinc-500">{t('common.loading')}</div>;
+
+  if (!supported.supported) {
+    return (
+      <div className="bg-white border border-zinc-200 rounded-xl p-4 text-sm text-zinc-500">
+        {t('biometric.notSupported')} {supported.reason && <span className="text-xs">({supported.reason})</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-zinc-200 rounded-xl p-4 space-y-3">
+      <p className="text-xs text-zinc-500">{t('settings.biometricDesc')}</p>
+      <div className="flex items-center gap-2 text-sm">
+        <span className={`px-2 py-0.5 rounded text-xs ${registered ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+          {registered ? t('biometric.registered') : t('biometric.notRegistered')}
+        </span>
+        {!supported.prfSupported && (
+          <span className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700">
+            {t('biometric.prfNotSupported')}
+          </span>
+        )}
+      </div>
+      {!registered ? (
+        <button onClick={onRegister} disabled={busy}
+          className="px-4 py-2 text-sm bg-[#175DDC] text-white rounded-lg disabled:opacity-50">
+          {busy ? t('common.loading') : t('biometric.register')}
+        </button>
+      ) : (
+        <button onClick={onUnregister} disabled={busy}
+          className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg disabled:opacity-50">
+          {t('biometric.unregister')}
+        </button>
       )}
     </div>
   );

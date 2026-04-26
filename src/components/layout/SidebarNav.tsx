@@ -1,18 +1,19 @@
 import { useLocation, Link } from 'react-router-dom';
 import { Shield, Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { APP_VERSION } from '@/version';
 
-const NAV_ITEMS = [
-  { path: '/', icon: Home, label: '홈' },
-  { path: '/create', icon: FilePlus, label: '생성' },
-  { path: '/files', icon: FileArchive, label: '파일' },
-  { path: '/certs', icon: ShieldCheck, label: '인증서' },
-  { path: '/contacts', icon: BookUser, label: '주소록' },
-  { path: '/settings', icon: Settings, label: '설정' },
-];
-
 export function SidebarNav() {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
+  const NAV_ITEMS = [
+    { path: '/', icon: Home, label: t('nav.home') },
+    { path: '/create', icon: FilePlus, label: t('nav.create') },
+    { path: '/files', icon: FileArchive, label: t('nav.files') },
+    { path: '/certs', icon: ShieldCheck, label: t('nav.certificates') },
+    { path: '/contacts', icon: BookUser, label: t('nav.contacts') },
+    { path: '/settings', icon: Settings, label: t('nav.settings') },
+  ];
 
   return (
     <nav className="flex flex-col items-center py-4 gap-1 bg-white border-r border-zinc-200 w-[60px] shrink-0">

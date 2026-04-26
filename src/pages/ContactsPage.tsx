@@ -2,7 +2,9 @@
  * ContactsPage — 내 주소록 + 인증서 디렉토리 검색
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Search, UserPlus, Lock, Info, Trash2, X as XIcon } from 'lucide-react';
+import { Search, UserPlus, Lock, Info, Trash2, X as XIcon, QrCode } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { QrScanModal } from '@/components/qr/QrScanModal';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { searchCertBundles, type CertBundle } from '@/lib/supabase/cert-directory';
 import {
@@ -58,6 +60,9 @@ export function ContactsPage() {
   const [myKeyring, setMyKeyring] = useState<PublicKeyEntry[]>([]);
   const [detail, setDetail] = useState<Contact | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const [showQrScan, setShowQrScan] = useState(false);
+  const { t } = useTranslation();
 
   const myFps = useMemo(() => new Set(myKeyring.map(e => e.fingerprint)), [myKeyring]);
 
@@ -126,12 +131,12 @@ export function ContactsPage() {
   if (!user) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
-        <h1 className="text-xl font-bold mb-2">주소록</h1>
+        <h1 className="text-xl font-bold mb-2">{t('contacts.title')}</h1>
         <div className="text-center py-20">
           <Lock className="w-16 h-16 mx-auto mb-4 text-zinc-200" />
-          <p className="text-zinc-500 mb-4">로그인 후 인증서를 검색하고 주소록에 추가할 수 있습니다.</p>
+          <p className="text-zinc-500 mb-4">{t('contacts.loginRequired')}</p>
           <button onClick={() => setShowAuth(true)}
-            className="bg-[#175DDC] text-white px-5 py-2.5 rounded-xl text-sm font-medium">로그인</button>
+            className="bg-[#175DDC] text-white px-5 py-2.5 rounded-xl text-sm font-medium">{t('nav.signin')}</button>
         </div>
         <AuthDialog open={showAuth} onOpenChange={setShowAuth} />
       </div>
@@ -142,15 +147,23 @@ export function ContactsPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
-      <h1 className="text-xl font-bold mb-2">주소록</h1>
-      <p className="text-sm text-zinc-500 mb-4">이름, 이메일, username으로 인증서를 검색하세요.</p>
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-xl font-bold">{t('contacts.title')}</h1>
+        <button onClick={() => setShowQrScan(true)}
+          className="flex items-center gap-1 text-xs text-[#175DDC] hover:bg-[#175DDC]/5 border border-[#175DDC]/30 rounded-lg px-3 py-1.5">
+          <QrCode className="w-3.5 h-3.5" /> {t('certificates.scanQr')}
+        </button>
+      </div>
+      <p className="text-sm text-zinc-500 mb-4">{t('contacts.subtitle')}</p>
 
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
         <input type="text" value={query} onChange={e => handleSearch(e.target.value)}
-          placeholder="검색 (최소 2자)"
+          placeholder={t('contacts.search')}
           className="w-full border border-zinc-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
       </div>
+
+      <QrScanModal open={showQrScan} onClose={() => setShowQrScan(false)} onAdded={() => reloadKeyring()} />
 
       {isSearchMode ? (
         <SearchResults
