@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { startQrScan, type QrScanResult } from '@/lib/qr-scanner';
 import { addToKeyRing, getFromKeyRing } from '@/lib/crypto/key-manager';
+import { getCertBundleByUsername } from '@/lib/supabase/cert-directory';
 
 interface Props {
   open: boolean;
@@ -70,20 +71,35 @@ export function QrScanModal({ open, onClose, onAdded }: Props) {
     }
     setAdding(true);
     try {
-      const label = memo.trim() || result.data.name || result.data.email || fp;
+      // QR엔 메타만 들어있으므로 서버 디렉토리에서 PEM/JWK fetch
+      let bundle: Awaited<ReturnType<typeof getCertBundleByUsername>> = null;
+      if (result.data.username) {
+        try { bundle = await getCertBundleByUsername(result.data.username); }
+        catch { /* 비로그인이거나 서버 에러 — 메타만으로 추가 */ }
+      }
+      // fingerprint 검증: QR 메타 vs 서버 번들이 다르면 거부
+      if (bundle && bundle.fingerprint && bundle.fingerprint !== fp) {
+        toast.error(`핑거프린트 불일치 — QR: ${fp.slice(0,8)} vs 서버: ${bundle.fingerprint.slice(0,8)}`);
+        return;
+      }
+
+      const label = memo.trim() || result.data.name || bundle?.display_name || result.data.email || fp;
       await addToKeyRing({
         fingerprint: fp,
         label,
         signingKeyJWK: {},
-        encryptionKeyJWK: result.data.enc_jwk ?? {},
+        encryptionKeyJWK: bundle?.enc_jwk_classic ?? {},
         createdAt: Date.now(),
         type: 'imported',
-        displayName: result.data.name ?? (memo.trim() || undefined),
-        email: result.data.email,
-        username: result.data.username,
-        certClassicPem: result.data.pubkey,
+        displayName: bundle?.display_name ?? result.data.name ?? (memo.trim() || undefined),
+        email: bundle?.email ?? result.data.email,
+        username: result.data.username ?? bundle?.username,
+        certClassicPem: bundle?.cert_classic ?? undefined,
+        certKemPem: bundle?.cert_kem ?? undefined,
+        certDsaPem: bundle?.cert_dsa ?? undefined,
       });
       toast.success(t('qr.addSuccess'));
+      if (!bundle) toast.warning('인증서 본문은 서버에서 가져오지 못했습니다 (메타만 등록).');
       onAdded?.(fp);
       onClose();
     } catch (err) {

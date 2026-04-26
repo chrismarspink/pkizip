@@ -4,7 +4,7 @@
  * 기존 CertsPage(인증서 카드)와 SettingsPage(아이덴티티 섹션)를 통합.
  * 각 인증서 카드는 3면 (앞면/상세/설정)으로 스와이프 전환.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CertWallet } from '@/components/cert/CertWallet';
 import { Identicon } from '@/components/cert/Identicon';
 import { Shield, Clock, Plus, Import, QrCode } from 'lucide-react';
@@ -43,13 +43,7 @@ export function CertsPage() {
   const [metas, setMetas] = useState<EncryptedIdentity[]>([]);
   const [certs, setCerts] = useState<Map<string, StoredCertificate>>(new Map());
   const [contacts, setContacts] = useState<PublicKeyEntry[]>([]);
-  const [localKeyring, setLocalKeyring] = useState<PublicKeyEntry[]>([]);
-  const localEncJwk = useMemo(() => {
-    if (!qrFor) return null;
-    const e = localKeyring.find(k => k.fingerprint === qrFor.fingerprint);
-    const jwk = e?.encryptionKeyJWK as JsonWebKey | undefined;
-    return (jwk && jwk.kty) ? jwk : null;
-  }, [qrFor, localKeyring]);
+  const [, setLocalKeyring] = useState<PublicKeyEntry[]>([]);
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricMap, setBiometricMap] = useState<Record<string, boolean>>({});
   const [pinMap, setPinMap] = useState<Record<string, boolean>>({});
@@ -292,7 +286,7 @@ export function CertsPage() {
         </div>
       )}
 
-      {/* QR 표시 모달 */}
+      {/* QR 표시 모달 — 메타만 (PEM/JWK는 서버에서 fetch) */}
       {qrFor && (
         <QrDisplayModal
           open={true}
@@ -301,8 +295,8 @@ export function CertsPage() {
             fingerprint: qrFor.fingerprint,
             name: qrFor.commonName,
             email: qrFor.email,
-            pubkey: qrFor.pemCertificate,
-            enc_jwk: localEncJwk ?? undefined,
+            username: 'u-' + qrFor.fingerprint.slice(0, 8).toLowerCase(),
+            url: `${window.location.origin}${import.meta.env.BASE_URL}contacts?u=u-${qrFor.fingerprint.slice(0, 8).toLowerCase()}`,
           }}
         />
       )}

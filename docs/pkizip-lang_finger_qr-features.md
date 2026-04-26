@@ -419,31 +419,72 @@ npm install jsQR qrcode
 # qrcode: QR 이미지 생성
 ```
 
-### QR 코드 데이터 포맷
+### QR 코드 데이터 포맷 (슬림 — 2026-04-26 개정)
 
 ```json
 {
   "type": "pkizip-cert",
   "version": 1,
+  "fingerprint": "20a52b52...",
+  "username": "u-20a52b52",
+  "name": "홍길동",
   "email": "bbb@company.com",
-  "fingerprint": "0x0e732654",
-  "url": "https://pkizip.com/cert/bbb-company-com",
-  "pubkey": "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----"
+  "url": "https://chrismarspink.github.io/pkizip/contacts?u=u-20a52b52"
 }
 ```
 
 ```
 QR에 포함:
-  type: pkizip 인증서 QR임을 식별
-  version: 포맷 버전 (호환성)
-  email: 인증서 소유자 이메일
-  fingerprint: 빠른 검증용
-  url: 인증서 URL (갱신 구독용)
-  pubkey: 현재 공개키 PEM (오프라인 추가용)
+  type        pkizip 인증서 QR임을 식별
+  version     포맷 버전
+  fingerprint 핑거프린트 (필수, 검증 ID)
+  username    서버 디렉토리(cert_bundles) ID — 스캔 측이 이걸로 PEM/JWK fetch
+  name/email  표시·확인용
+  url         사용자 안내용 인증서 페이지 URL
+
+QR에 절대 포함하지 않는 것:
+  pubkey (PEM 인증서 본문)  ← QR 용량 한계 초과
+  enc_jwk (ECDH JWK)         ← 서버에서 가져옴
+  개인키                      ← 절대 금지
 
 보안:
-  공개키만 포함 (개인키 절대 불포함)
-  QR 크기 최적화를 위해 pubkey는 선택적
+  username으로 서버에서 PEM/JWK fetch 후
+  스캔된 fingerprint와 서버 fingerprint 일치 검증 필수
+```
+
+### 페이로드 크기 분석
+
+| 모드 | 크기 | QR Version |
+|------|------|------------|
+| 슬림 (현재) | ~250 bytes | v8~10 (51×51) — 안정 |
+| pubkey 포함 | ~1.8~2.2 KB | v40 (177×177) 임계점 — 스캔 어려움 |
+| pubkey + 로고 | 20+ KB | 표준 한계 10× 초과 — 생성 자체 실패 |
+
+**QR Version 40, errorCorrectionLevel='M' = byte 모드 최대 2,331 bytes**
+→ pubkey는 절대 QR에 직접 포함하지 않는다.
+
+### 스캔 후 처리 흐름 (개정)
+
+```
+QR 스캔 성공 → pkizip-cert 타입 + fingerprint 확인
+    ↓
+QR.username으로 cert_bundles에서 PEM/enc_jwk 조회
+  - 비로그인: 서버 조회 실패 → 메타만 등록 (경고 토스트)
+  - 로그인 + 번들 있음: PEM/JWK 받아옴
+    ↓
+fingerprint 검증
+  - QR.fingerprint vs 서버.fingerprint 불일치 → 거부
+    ↓
+addToKeyRing({
+  fingerprint, label, signingKeyJWK: {},
+  encryptionKeyJWK: bundle.enc_jwk_classic ?? {},
+  certClassicPem: bundle.cert_classic,
+  certKemPem: bundle.cert_kem,
+  certDsaPem: bundle.cert_dsa,
+  type: 'imported',
+})
+    ↓
+"인증서가 추가되었습니다" 토스트
 ```
 
 ### qr-generator.ts (신규)

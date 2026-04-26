@@ -14,9 +14,7 @@ interface Props {
     name?: string;
     email?: string;
     username?: string;
-    pubkey?: string;
     url?: string;
-    enc_jwk?: JsonWebKey;
   };
 }
 
@@ -33,10 +31,8 @@ export function QrDisplayModal({ open, onClose, cert }: Props) {
       email: cert.email,
       username: cert.username,
       url: cert.url,
-      pubkey: cert.pubkey,
-      enc_jwk: cert.enc_jwk,
     }).then(setDataUrl).catch(() => setDataUrl(null));
-  }, [open, cert.fingerprint, cert.email, cert.name, cert.username, cert.url, cert.pubkey, cert.enc_jwk]);
+  }, [open, cert.fingerprint, cert.email, cert.name, cert.username, cert.url]);
 
   if (!open) return null;
 

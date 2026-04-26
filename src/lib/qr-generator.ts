@@ -1,24 +1,32 @@
 /**
- * QR 코드 생성 — pkizip 인증서 공유 포맷
+ * QR 코드 생성 — pkizip 인증서 공유 (슬림 포맷)
+ *
+ * QR에는 식별·표시용 메타만 포함하고, 실제 인증서 PEM/JWK는 서버
+ * 디렉토리(cert_bundles)에서 username 기준으로 fetch한다.
+ *
+ * 페이로드 ≈ 200~300 bytes → QR version 8~10, 어느 환경에서도 안정 스캔.
  */
 import QRCode from 'qrcode';
 
 export interface CertQrPayload {
   type: 'pkizip-cert';
   version: 1;
-  email?: string;
+  /** 인증서 핑거프린트 (필수) */
   fingerprint: string;
-  url?: string;
-  pubkey?: string;
-  /** 표시명 (이름) */
-  name?: string;
-  /** username (서버 디렉토리 ID) */
+  /** 서버 디렉토리 username — 스캔 측이 이걸로 PEM/JWK fetch */
   username?: string;
-  /** ECDH 공개키 JWK */
-  enc_jwk?: JsonWebKey;
+  /** 표시명 */
+  name?: string;
+  /** 이메일 (확인용) */
+  email?: string;
+  /** 인증서 배포 URL (옵션, 사용자 안내용) */
+  url?: string;
 }
 
-/** PEM/JWK/메타로 QR data URL 생성 */
+/**
+ * QR data URL 생성.
+ * pubkey/enc_jwk는 의도적으로 제외 — QR 용량 한계 초과 방지.
+ */
 export async function generateCertQr(payload: Omit<CertQrPayload, 'type' | 'version'>): Promise<string> {
   const data: CertQrPayload = { type: 'pkizip-cert', version: 1, ...payload };
   return await QRCode.toDataURL(JSON.stringify(data), {
@@ -27,11 +35,4 @@ export async function generateCertQr(payload: Omit<CertQrPayload, 'type' | 'vers
     margin: 2,
     color: { dark: '#000000', light: '#FFFFFF' },
   });
-}
-
-/** 경량 모드: 인증서 PEM 없이 url+fingerprint만 (작은 QR) */
-export async function generateCompactCertQr(p: {
-  url: string; fingerprint: string; email?: string; name?: string;
-}): Promise<string> {
-  return generateCertQr(p);
 }
