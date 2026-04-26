@@ -4,6 +4,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Search, UserPlus, Lock, Info, Trash2, X as XIcon, QrCode } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { QrScanModal } from '@/components/qr/QrScanModal';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { searchCertBundles, type CertBundle } from '@/lib/supabase/cert-directory';
@@ -368,12 +369,11 @@ function DetailDialog({ contact, onClose }: { contact: Contact; onClose: () => v
 
 // ── Identicon (5x5 대칭 SVG, fingerprint 기반 결정론적 생성) ──
 function Identicon({ seed, size = 48 }: { seed: string; size?: number }) {
-  const clean = (seed || '0').replace(/^0x/i, '').padStart(16, '0');
-  const bytes: number[] = [];
-  for (let i = 0; i < clean.length; i += 2) {
-    bytes.push(parseInt(clean.slice(i, i + 2), 16) || 0);
-  }
-  const hue = ((bytes[0] << 8) | (bytes[1] ?? 0)) % 360;
+  // 짧은 시드는 padStart로 앞쪽이 0이 되어 빈 카드가 되는 문제 → SHA-256으로 균일 분산
+  const cleanInput = (seed || '0').replace(/^0x/i, '');
+  const hash = sha256(new TextEncoder().encode(cleanInput));
+  const bytes: number[] = Array.from(hash);
+  const hue = ((bytes[0] << 8) | bytes[1]) % 360;
   const color = `hsl(${hue} 65% 45%)`;
   const bg = `hsl(${hue} 20% 94%)`;
 
