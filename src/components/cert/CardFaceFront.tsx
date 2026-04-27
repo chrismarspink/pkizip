@@ -25,9 +25,9 @@ export function CardFaceFront({ cert, identityName, isActive, pqcEnabled }: Card
     <div
       className="p-5 text-white relative h-full"
       style={{
-        background: isActive
-          ? getCardBackground(cert.cardColor)
-          : 'linear-gradient(135deg, #52525b, #3f3f46)',
+        background: getCardBackground(cert.cardColor),
+        // 비활성 시 채도/명도 낮춤 (잠금 표시 유지)
+        filter: isActive ? undefined : 'saturate(0.4) brightness(0.7)',
       }}
     >
       {/* 헤더 라인 */}
