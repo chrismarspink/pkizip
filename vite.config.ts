@@ -60,6 +60,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+        // 새 SW 즉시 활성화 + 옛 캐시 청산 → stale chunk 404 방지
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        // 동적 import 청크는 navigation fallback 대상에서 제외하지 않으면
+        // 404 시 index.html이 반환되어 JS parse 에러 발생
+        navigationPreload: false,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
