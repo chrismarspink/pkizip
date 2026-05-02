@@ -27,6 +27,7 @@
     "@supabase/supabase-js": "^2.103.3",
     "@tanstack/react-virtual": "^3.13.23",
     "@types/qrcode": "^1.5.6",
+    "@xenova/transformers": "^2.17.2",
     "asn1js": "^3.0.7",
     "clsx": "^2.1.1",
     "fflate": "^0.8.2",
