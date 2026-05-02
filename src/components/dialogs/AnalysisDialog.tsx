@@ -217,6 +217,16 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     return buildHighlight(current.text, current.findings, findKeywordOccurrences(current.text));
   }, [current.text, current.findings]);
   const noPIIButGrade = current.findings.length === 0 && c.grade !== 'O';
+  // 등급을 끌어올린 실제 원인 — 키워드 / 언어 하한 / 둘 다
+  const hasKeywordReason = c.reasons.some(r => r.kind === 'keyword');
+  const hasLanguageReason = c.reasons.some(r => r.kind === 'language');
+  const noPIINoSignalReasonText = hasKeywordReason && hasLanguageReason
+    ? '본문에 등급 키워드(노란색 강조) + 비한국어 하한이 적용되었습니다.'
+    : hasKeywordReason
+      ? '본문에 등급 키워드(아래 노란색 강조)가 포함된 경우입니다.'
+      : hasLanguageReason
+        ? `비한국어 (${current.language.detected}) 로 감지되어 보수적으로 ${c.grade} 하한이 적용되었습니다.`
+        : '판정 근거 표를 확인해주세요.';
 
   return (
     <AnimatePresence>
@@ -343,7 +353,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               </div>
               {noPIIButGrade && (
                 <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                  ⚠ PII 엔티티가 0건인데 {c.grade} 등급입니다 — 본문에 등급 키워드(아래 노란색 강조)가 포함된 경우입니다.
+                  ⚠ PII 엔티티가 0건인데 {c.grade} 등급입니다 — {noPIINoSignalReasonText}
                 </div>
               )}
               <div className="flex items-center gap-2 mb-2 text-[11px]">

@@ -180,9 +180,30 @@ export function classify(findings: Finding[], text: string): Classification {
 /**
  * 비한국어 문서 등급 하한 적용 — langdetect 결과로 호출.
  * 영문 등 다국어 문서는 PII 탐지 정확도가 떨어지므로 S 하한.
+ *
+ * **단, 어떤 신호도 없는 문서에는 적용하지 않음** — 언어만 다르다고 해서
+ * 깨끗한 문서를 S 로 만들면 안 됨 (PDF 추출 깨짐 / 짧은 텍스트로 인한
+ * 언어 오탐을 막기 위한 가드). 최소 entity 1건 OR keyword 1건 OR 텍스트
+ * 길이 ≥ 200자 + 신뢰도 ≥ 0.7 일 때만 하한 적용.
  */
-export function applyLanguageFloor(c: Classification, language: string): Classification {
+export function applyLanguageFloor(
+  c: Classification,
+  language: string,
+  ctx: { textLength?: number; languageConfidence?: number; und?: boolean } = {},
+): Classification {
   if (language === 'ko' || c.grade !== 'O') return c;
+  if (language === 'und' || ctx.und) return c;     // 언어 미정이면 하한 X
+
+  const hasEntity = c.reasons.some(r => r.kind === 'entity');
+  const hasKeyword = c.reasons.some(r => r.kind === 'keyword');
+  const langConf = ctx.languageConfidence ?? 0.7;
+  const textLen = ctx.textLength ?? 0;
+
+  // 가드: 신호가 전혀 없고 (entity 0 + keyword 0) 텍스트도 짧거나 언어 신뢰도 낮으면
+  // 깨끗한 문서로 보고 O 유지. 이 경우 PDF 추출 실패·franc 오탐 가능성 높음.
+  const noSignal = !hasEntity && !hasKeyword;
+  if (noSignal && (textLen < 200 || langConf < 0.7)) return c;
+
   return {
     ...c,
     grade: 'S',

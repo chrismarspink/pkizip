@@ -42,7 +42,10 @@ export function analyze(text: string, opts: AnalyzeOptions = {}): AnalysisResult
   let classification = classify(findings, text);
 
   if (opts.applyLanguageFloor !== false) {
-    classification = applyLanguageFloor(classification, language.detected);
+    classification = applyLanguageFloor(classification, language.detected, {
+      textLength: text.length,
+      languageConfidence: language.confidence,
+    });
   }
 
   const explanation = explain(classification, findings);
@@ -116,7 +119,10 @@ export async function analyzeAsync(
   const language = base.language;
   let classification = classify(merged, text);
   if (opts.applyLanguageFloor !== false) {
-    classification = applyLanguageFloor(classification, language.detected);
+    classification = applyLanguageFloor(classification, language.detected, {
+      textLength: text.length,
+      languageConfidence: language.confidence,
+    });
   }
   return {
     ...base,
@@ -185,7 +191,10 @@ export function downgradeToTarget(
     curFindings = detect(curText);
     lastClassification = classify(curFindings, curText);
     if (opts.applyLanguageFloor !== false) {
-      lastClassification = applyLanguageFloor(lastClassification, initial.language.detected);
+      lastClassification = applyLanguageFloor(lastClassification, initial.language.detected, {
+        textLength: curText.length,
+        languageConfidence: initial.language.confidence,
+      });
     }
 
     history.push({
@@ -231,7 +240,10 @@ export function anonymizeOnce(
   const newFindings = detect(anon.anonymizedText);
   let newClass = classify(newFindings, anon.anonymizedText);
   if (opts.applyLanguageFloor !== false) {
-    newClass = applyLanguageFloor(newClass, result.language.detected);
+    newClass = applyLanguageFloor(newClass, result.language.detected, {
+      textLength: anon.anonymizedText.length,
+      languageConfidence: result.language.confidence,
+    });
   }
   return {
     ...result,
