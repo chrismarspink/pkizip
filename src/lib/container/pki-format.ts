@@ -102,6 +102,95 @@ export interface PkiHeader {
     txId: string;
     timestamp: number;
   };
+
+  /** ─────────────────────────────────────────────────────
+   *  v2 — AI 분류 / MIP 라벨 / 가명·익명화 / OCR / 언어 / HE 검색키
+   *  헤더 자체는 평문이라 복호화 없이 등급/암호화여부 확인 가능
+   *  ML-DSA 서명 대상에 포함 → 등급 변조 방지
+   *  ───────────────────────────────────────────────────── */
+
+  /** AI 분류 결과 — 평문 메타 */
+  classification?: {
+    grade: 'C' | 'S' | 'O';                          // C 위험 / S 민감 / O 공개
+    score: number;                                    // 누적 점수
+    confidence: number;                               // 0..1
+    classifierVersion: string;                        // e.g., "rule-v1.2"
+    explanation?: string;                             // 자연어 요약 (1-2 문장)
+    findingsSummary?: Record<string, number>;         // entity_type → count
+    /** 최종 결정 (rule-v1 vs neural ensemble 결과) */
+    ensemble?: {
+      ruleGrade: 'C' | 'S' | 'O';
+      neuralGrade?: 'C' | 'S' | 'O';
+      finalGrade: 'C' | 'S' | 'O';
+      alpha?: number;
+    };
+  };
+
+  /** MIP-호환 sensitivity label (Microsoft Information Protection 표준 차용) */
+  mipLabel?: {
+    siteId: string;                                   // 조직/테넌트 GUID (없으면 'pkizip-default')
+    enabled: boolean;
+    method: 'Standard' | 'Privileged';
+    contentBits: number;                              // bitmask
+    setDate: string;                                  // ISO timestamp
+    labelId: string;                                  // 등급별 GUID
+    labelName: string;                                // 'Critical' | 'Sensitive' | 'Open'
+    sensitivityValue: number;                         // C=9, S=5, O=0
+    tooltip: string;
+    /** 라벨 적용 주체 (송신자 fingerprint) */
+    appliedBy?: string;
+  };
+
+  /** OCR 적용 메타 (이미지·스캔 PDF) */
+  ocr?: {
+    applied: boolean;
+    engine?: 'tesseract.js' | 'easyocr';
+    languages?: string[];                              // 추출에 사용된 언어
+    confidence?: number;                                // 0..1
+    pages?: number;
+  };
+
+  /** 문서 언어 — 우회 방지 / 설명 제공 */
+  language?: {
+    detected: string;                                  // ISO 639-1 ('ko', 'en', 'ja' 등)
+    confidence: number;
+    multilingual?: boolean;
+    detectorVersion?: string;
+  };
+
+  /** 가명처리 / 익명화 */
+  pseudonymization?: {
+    applied: boolean;                                  // 변환이 일어났는지
+    isReversible: boolean;                             // true=가명, false=익명
+    policyVersion: string;                             // 적용된 정책 (e.g., 'anon-policy-v1')
+    methodBreakdown?: Record<string, number>;          // method → count (mask/replace/...)
+    targetGrade?: 'C' | 'S' | 'O';
+    finalGrade?: 'C' | 'S' | 'O';
+    iterations?: number;
+    /** 매핑 테이블 동봉 정책 (legacy/hybrid/pqc-only 봉인) */
+    mappingTable?: {
+      included: boolean;                               // 봉투에 포함됐는지
+      sealedAlgorithm?: 'classic' | 'hybrid' | 'pqc-only';   // 동봉 시 적용 알고리즘
+      sealedKeyId?: string;                             // 매핑 테이블 봉인 키 식별자
+    };
+  };
+
+  /** HE 검색키 — node-seal BFV (옵션) */
+  searchKey?: {
+    included: boolean;
+    engine: 'node-seal' | 'openfhe';                  // 백엔드 — 차후 마이그레이션 대비
+    scheme: 'BFV' | 'CKKS' | 'BGV';
+    polyModulusDegree: number;
+    tokenCount?: number;                                // 인덱싱된 토큰 수
+    publicKeyId?: string;
+  };
+
+  /** 워크플로 컨텍스트 — 송신자가 선택한 의도 */
+  intent?: {
+    purpose: 'internal' | 'external';
+    cryptoKind: 'classic' | 'hybrid' | 'pqc-only' | 'pqc-he';
+    requestedBy?: string;
+  };
 }
 
 export interface PkiContainer {
@@ -226,6 +315,53 @@ function checkMagic(data: Uint8Array, offset: number): boolean {
 export function isPkiFile(data: Uint8Array): boolean {
   if (data.length < 12) return false;
   return checkMagic(data, 0);
+}
+
+/**
+ * 봉투의 **헤더만** 빠르게 읽어 평문 메타 추출 (복호화 X).
+ * 파일 탐색기 / 호버 미리보기 / 등급 아이콘 결정용.
+ *
+ * 동작: Magic + Version + Flags + Header만 디코딩 (Payload 건너뜀).
+ * 큰 파일도 첫 ~10KB 만 읽으면 충분.
+ */
+export function readPkiHeader(data: Uint8Array): PkiHeader | null {
+  if (data.length < 16) return null;
+  if (!checkMagic(data, 0)) return null;
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let offset = 4;            // magic
+  offset += 2;               // version
+  offset += 2;               // flags
+  if (offset + 4 > data.length) return null;
+  const headerLen = view.getUint32(offset, false);
+  offset += 4;
+  if (offset + headerLen > data.length) return null;
+  try {
+    const headerBytes = data.subarray(offset, offset + headerLen);
+    return JSON.parse(new TextDecoder().decode(headerBytes)) as PkiHeader;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 등급 아이콘 키 도출 — 파일 탐색기에서 사용.
+ * 헤더 없이도 동작 (격하 fallback: 'unknown').
+ */
+export function deriveBadge(header: PkiHeader | null): {
+  grade: 'C' | 'S' | 'O' | 'unknown';
+  encrypted: boolean;
+  pqc: boolean;
+  he: boolean;
+  signed: boolean;
+} {
+  if (!header) return { grade: 'unknown', encrypted: false, pqc: false, he: false, signed: false };
+  return {
+    grade: header.classification?.grade ?? 'unknown',
+    encrypted: !!header.encryption || !!header.pqcKemRecipientInfo,
+    pqc: !!header.pqcKemRecipientInfo || header.pqcHeader?.pqcProtected === true,
+    he: !!header.searchKey?.included,
+    signed: !!(header.signatures?.length || header.pqcSignerInfo),
+  };
 }
 
 /**

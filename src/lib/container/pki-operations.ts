@@ -62,6 +62,19 @@ export interface SealOptions {
     signer?: { sign: (data: Uint8Array) => Promise<PqcSignResult> };
     mode?: string;
   };
+  /**
+   * v2 — AI 분석 + 분류 + 가명/익명화 + MIP 라벨 결과를 헤더에 동봉.
+   * AnalysisDialog 의 onAccept 가 만든 메타를 그대로 전달하면 자동 매핑.
+   */
+  analysisMeta?: {
+    classification?: PkiHeader['classification'];
+    mipLabel?: PkiHeader['mipLabel'];
+    pseudonymization?: PkiHeader['pseudonymization'];
+    ocr?: PkiHeader['ocr'];
+    language?: PkiHeader['language'];
+    searchKey?: PkiHeader['searchKey'];
+    intent?: PkiHeader['intent'];
+  };
 }
 
 /** PQCShield.encapsulateCEK 반환 타입 */
@@ -153,6 +166,20 @@ export async function seal(options: SealOptions): Promise<SealResult> {
       originalSize: compressResult.originalSize,
     },
   };
+
+  // v2 — AI 분석 메타 자동 매핑 (analysisMeta 가 있으면 헤더에 복사)
+  // 평문이라 복호화 없이도 외부에서 등급/암호화여부 확인 가능.
+  // ML-DSA 서명 대상에 포함되어 변조 시 검증 실패.
+  if (options.analysisMeta) {
+    const m = options.analysisMeta;
+    if (m.classification)    header.classification    = m.classification;
+    if (m.mipLabel)          header.mipLabel          = m.mipLabel;
+    if (m.pseudonymization)  header.pseudonymization  = m.pseudonymization;
+    if (m.ocr)               header.ocr               = m.ocr;
+    if (m.language)          header.language          = m.language;
+    if (m.searchKey)         header.searchKey         = m.searchKey;
+    if (m.intent)            header.intent            = m.intent;
+  }
 
   let pqcKemDone = false;
   let pqcDsaDone = false;

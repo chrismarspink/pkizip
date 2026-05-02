@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Shield, Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings } from 'lucide-react';
+import { Shield, Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { APP_VERSION } from '@/version';
 
@@ -10,6 +10,7 @@ export function SidebarNav() {
     { path: '/', icon: Home, label: t('nav.home') },
     { path: '/create', icon: FilePlus, label: t('nav.create') },
     { path: '/files', icon: FileArchive, label: t('nav.files') },
+    { path: '/explorer', icon: FolderSearch, label: '내 파일' },
     { path: '/certs', icon: ShieldCheck, label: t('nav.certificates') },
     { path: '/contacts', icon: BookUser, label: t('nav.contacts') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },

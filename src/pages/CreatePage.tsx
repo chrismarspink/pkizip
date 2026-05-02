@@ -13,8 +13,13 @@ import { signData } from '@/lib/crypto/signing';
 import { serializeSignerInfos } from '@/lib/container/pki-format';
 import type { FileEntry } from '@/lib/compression/compressor';
 import { SigningConsentDialog } from '@/components/dialogs/SigningConsentDialog';
+import { AnalysisDialog, type AnalysisDecision } from '@/components/dialogs/AnalysisDialog';
+import { analyze as analyzePipeline, analyzeAsync as analyzePipelineAsync } from '@/lib/analysis/pipeline';
+import { extractAll } from '@/lib/analysis/text-extractor';
+import { createMipLabel } from '@/lib/mip/mip-label';
+import type { AnalysisResult } from '@/lib/analysis/types';
 
-type Step = 'files' | 'options' | 'details' | 'processing' | 'done';
+type Step = 'files' | 'analyze' | 'options' | 'details' | 'processing' | 'done';
 
 interface CmsOptions {
   compress: boolean;
@@ -25,10 +30,68 @@ interface CmsOptions {
 
 const STEPS = [
   { key: 'files', label: '파일 선택' },
+  { key: 'analyze', label: '분석' },
   { key: 'options', label: '옵션' },
   { key: 'details', label: '상세' },
   { key: 'processing', label: '처리' },
 ] as const;
+
+/** AnalysisDecision → SealOptions.analysisMeta 매핑 */
+function decisionToSealMeta(d: AnalysisDecision, fingerprint?: string) {
+  const c = d.result.classification;
+  const meta: NonNullable<Parameters<typeof seal>[0]['analysisMeta']> = {
+    classification: {
+      grade: c.grade,
+      score: c.score,
+      confidence: c.confidence,
+      classifierVersion: c.version,
+      explanation: d.result.explanation?.summary,
+      findingsSummary: Object.fromEntries(
+        d.result.findings.reduce((m, f) => m.set(f.entityType, (m.get(f.entityType) || 0) + 1), new Map<string, number>())
+      ),
+    },
+    mipLabel: createMipLabel({ grade: c.grade, appliedBy: fingerprint }),
+    language: {
+      detected: d.result.language.detected,
+      confidence: d.result.language.confidence,
+      multilingual: d.result.language.multilingual,
+      detectorVersion: d.result.language.detectorVersion,
+    },
+    intent: {
+      purpose: d.intent.purpose,
+      cryptoKind: d.intent.cryptoKind,
+      requestedBy: fingerprint,
+    },
+  };
+  if (d.result.ocr?.applied) {
+    meta.ocr = {
+      applied: true,
+      engine: d.result.ocr.engine,
+      languages: d.result.ocr.languages,
+      confidence: d.result.ocr.confidence,
+      pages: d.result.ocr.pages,
+    };
+  }
+  if (d.result.anonymization && d.anonymizationAction !== 'skip') {
+    const a = d.result.anonymization;
+    meta.pseudonymization = {
+      applied: true,
+      isReversible: a.result.isReversible,
+      policyVersion: a.result.policyVersion,
+      methodBreakdown: Object.fromEntries(
+        a.result.replacements.reduce((m, r) => m.set(r.method, (m.get(r.method) || 0) + 1), new Map<string, number>())
+      ),
+      finalGrade: a.finalGrade,
+      iterations: a.iterations.length - 1,
+      mappingTable: {
+        included: false,   // 매핑 봉인은 차후 — 현재는 헤더에 포함 안 함
+        sealedAlgorithm: d.intent.cryptoKind === 'classic' ? 'classic'
+                       : d.intent.cryptoKind === 'pqc-only' ? 'pqc-only' : 'hybrid',
+      },
+    };
+  }
+  return meta;
+}
 
 export function CreatePage() {
   const { keyIdentity, isKeyLoaded, identities, activeIdentityId, setIdentities, setActiveIdentityId } = useAppStore();
@@ -64,6 +127,12 @@ export function CreatePage() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [recipients, setRecipients] = useState<Set<string>>(new Set());
   const [recipientEntries, setRecipientEntries] = useState<import('@/lib/crypto/key-manager').PublicKeyEntry[]>([]);
+
+  // v2 — AI 분석 결과 + 사용자 결정
+  const [analysisInitial, setAnalysisInitial] = useState<AnalysisResult | null>(null);
+  const [analysisDecision, setAnalysisDecision] = useState<AnalysisDecision | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisSkipped, setAnalysisSkipped] = useState(false);
   const [selectedIdentityId, setSelectedIdentityId] = useState<string | null>(null);
   const [resultData, setResultData] = useState<Uint8Array | null>(null);
   const [resultName, setResultName] = useState('');
@@ -202,9 +271,99 @@ export function CreatePage() {
     }
   };
 
+  /**
+   * 분석 단계 진입 — 다중 포맷 텍스트 추출 + 파이프라인 실행.
+   * 지원: txt, pdf, docx, xlsx, pptx, hwp, hwpx, 이미지(OCR).
+   */
+  const enterAnalyzeStep = async () => {
+    setAnalyzing(true);
+    setStep('analyze');   // analyzing 표시 위해 step 먼저 전환
+    try {
+      const extracted = await extractAll(files);
+      const text = extracted.text;
+      const warningCount = extracted.warnings.length;
+
+      if (!text || text.trim().length < 5) {
+        const reasons = extracted.perFile
+          .filter(p => p.text.length === 0)
+          .map(p => `${p.name} (${p.source})`)
+          .join(', ');
+        toast(`텍스트 추출 불가 — ${reasons || '바이너리'} · 분석 건너뜀`, { icon: '⏭' });
+        if (warningCount > 0) console.warn('extraction warnings:', extracted.warnings);
+        setAnalysisSkipped(true);
+        setAnalysisInitial(null);
+        setStep('options');
+        return;
+      }
+
+      // 1) 즉시 룰 기반 분석 → 다이얼로그 빠르게 띄움
+      const baseResult = analyzePipeline(text, {
+        applyLanguageFloor: true,
+        ocrApplied: extracted.ocrApplied,
+        ocrEngine: extracted.ocrEngine,
+        ocrLanguages: extracted.ocrLanguages,
+        ocrConfidence: extracted.ocrConfidence,
+      });
+      // 2) 비동기로 NER 보강 (설정 활성 + 모델 로드된 경우만)
+      const result = await analyzePipelineAsync(text, {
+        applyLanguageFloor: true,
+        ocrApplied: extracted.ocrApplied,
+        ocrEngine: extracted.ocrEngine,
+        ocrLanguages: extracted.ocrLanguages,
+        ocrConfidence: extracted.ocrConfidence,
+      }).catch(() => baseResult);
+      setAnalysisInitial(result);
+      setAnalysisSkipped(false);
+      // 추출 경로 정보 안내
+      const sources = Array.from(new Set(extracted.perFile.map(p => p.source))).join(', ');
+      toast(`분석 준비 완료 — 추출 경로: ${sources}${extracted.ocrApplied ? ' (OCR 적용)' : ''}`, {
+        icon: '🔍',
+      });
+    } catch (e) {
+      console.error('analysis failed:', e);
+      toast.error(`분석 실패 — ${(e as Error).message || '옵션 단계로 이동'}`);
+      setAnalysisSkipped(true);
+      setStep('options');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  /** 분석 다이얼로그 onAccept — 의도/등급에 따라 cryptoMode + options 자동 설정 */
+  const handleAnalysisAccept = (decision: AnalysisDecision) => {
+    setAnalysisDecision(decision);
+
+    // 1) cryptoMode 매핑
+    const ck = decision.intent.cryptoKind;
+    setCryptoMode(ck === 'classic' ? 'classic'
+                : ck === 'pqc-only' ? 'pqc-only'
+                : 'hybrid');                  // hybrid 또는 pqc-he 모두 hybrid 로 (HE는 별도)
+
+    // 2) 등급별 옵션 분기 (사용자 명세 (6))
+    const grade = decision.result.classification.grade;
+    const isExternal = decision.intent.purpose === 'external';
+    if (grade === 'O') {
+      setOptions({ compress: true, sign: true, enveloped: false, encrypted: false });
+    } else if (isExternal) {
+      // S/C 외부 전송 → enveloped (수신자 지정 암호화 + 서명)
+      setOptions({ compress: true, sign: true, enveloped: true, encrypted: false });
+    } else {
+      // S/C 내부 보관 → encrypted (비밀번호 암호화)
+      setOptions({ compress: true, sign: false, enveloped: false, encrypted: true });
+    }
+
+    setStep('options');
+    toast.success(`분석 완료 — ${grade} 등급, 옵션 자동 설정`);
+  };
+
   const goNext = async () => {
     if (step === 'files') {
       if (files.length === 0) { toast.error('파일을 추가하세요.'); return; }
+      // v2 — 분석 단계 진입 (자동 텍스트 추출 + 파이프라인)
+      await enterAnalyzeStep();
+    } else if (step === 'analyze') {
+      // analyze 는 dialog onAccept 가 처리. 직접 next는 스킵으로 처리
+      setAnalysisSkipped(true);
       setStep('options');
     } else if (step === 'options') {
       // 서명/Enveloped 시 키 필요
@@ -241,6 +400,7 @@ export function CreatePage() {
     setStep('files'); setFiles([]); setPassword(''); setPasswordConfirm('');
     setOptions({ compress: true, sign: false, enveloped: false, encrypted: false });
     setResultData(null);
+    setAnalysisInitial(null); setAnalysisDecision(null); setAnalysisSkipped(false);
   };
 
   // PQC 인스턴스 (store에서 가져옴 — 잠금 해제 시 초기화됨)
@@ -333,11 +493,15 @@ export function CreatePage() {
           toast.error('유효한 수신자가 없습니다 (암호화 공개키 필요)'); setStep('details'); return;
         }
         const pqcOpts = loadPqcForSeal();
+        const analysisMeta = analysisDecision
+          ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
+          : undefined;
         const result = await seal({
           files, compress: true,
           encrypt: { recipients: recipientInfos },
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
           pqc: pqcOpts,
+          analysisMeta,
         });
         pkiData = result.pkiData;
         suffix = 'enveloped';
@@ -352,10 +516,14 @@ export function CreatePage() {
         const currentKey = useAppStore.getState().keyIdentity;
         if (!currentKey) { toast.error('키가 활성화되지 않았습니다.'); setStep('options'); return; }
         const pqcOpts = loadPqcForSeal();
+        const analysisMeta = analysisDecision
+          ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
+          : undefined;
         const result = await seal({
           files, compress: true,
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
           pqc: pqcOpts,
+          analysisMeta,
         });
         pkiData = result.pkiData;
         suffix = 'signed';
@@ -459,6 +627,37 @@ export function CreatePage() {
             <div className="flex justify-end mt-6">
               <button onClick={goNext} disabled={files.length === 0} className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30">
                 다음 <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 1.5: 분석 — 텍스트 추출 + PII + 등급 + 정책 */}
+        {step === 'analyze' && (
+          <motion.div key="analyze" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+            <h2 className="text-lg font-bold mb-1">📊 문서 분석</h2>
+            <p className="text-sm text-zinc-500 mb-4">
+              파일 내용을 분석해 보안등급(C/S/O)을 판정하고, 사용 의도에 맞는 처리 옵션을 자동 추천합니다.
+              <br />분석은 100% 브라우저에서 실행 — 텍스트가 서버로 전송되지 않습니다.
+            </p>
+            {analyzing && (
+              <div className="bg-white border border-zinc-200 rounded-xl p-6 flex items-center gap-3">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                <span className="text-sm">분석 중…</span>
+              </div>
+            )}
+            {!analyzing && !analysisInitial && (
+              <div className="bg-white border border-zinc-200 rounded-xl p-6">
+                <p className="text-sm text-zinc-600 mb-3">분석 결과가 없습니다.</p>
+                <button onClick={() => setStep('files')}
+                  className="text-sm bg-zinc-100 px-3 py-1.5 rounded">파일 다시 선택</button>
+              </div>
+            )}
+            <div className="flex justify-between mt-4">
+              <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">← 이전</button>
+              <button onClick={goNext}
+                className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800">
+                분석 건너뛰기 →
               </button>
             </div>
           </motion.div>
@@ -703,6 +902,16 @@ export function CreatePage() {
           consentResolverRef.current = null;
         }}
       />
+
+      {/* v2 — 분석 결과 + 사용자 결정 다이얼로그 */}
+      {step === 'analyze' && analysisInitial && (
+        <AnalysisDialog
+          open={true}
+          initialResult={analysisInitial}
+          onClose={() => { setAnalysisSkipped(true); setStep('options'); }}
+          onAccept={handleAnalysisAccept}
+        />
+      )}
     </div>
   );
 }

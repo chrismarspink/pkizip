@@ -1,0 +1,381 @@
+/**
+ * 파일 탐색기 — PKIZIP 으로 만든 봉투(.pki/.pkizip)만 표시.
+ *
+ * 사용자 명세 (7):
+ *   - 작은 카드 형태, 화면 전체 사용
+ *   - 등급(C/S/O) + 암호화 여부에 따라 다른 아이콘
+ *   - 복호화 없이 정보 보기 (META 헤더만 파싱)
+ *   - 나중에 분리 가능 — 별도 파일 탐색기 컴포넌트로 추출
+ *
+ * 데이터 소스:
+ *   - 사용자가 드래그앤드롭 / 파일선택으로 봉투 추가
+ *   - localStorage(IndexedDB) 에 메타 캐시
+ *   - 옵션: Supabase 에서 본인 봉투 메타 fetch
+ */
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  Upload, FileLock2, FileCheck2, Search, X, FileText, ShieldCheck,
+} from 'lucide-react';
+import { isPkiFile, readPkiHeader, deriveBadge, type PkiHeader } from '@/lib/container/pki-format';
+import { prefs, type ExplorerPrefs } from '@/lib/store/preferences';
+
+interface ExplorerEntry {
+  id: string;                 // uuid
+  name: string;
+  size: number;
+  addedAt: number;
+  header: PkiHeader | null;
+  // 본문(Uint8Array) 은 IndexedDB. 여기선 헤더만.
+}
+
+export function ExplorerPage() {
+  const [entries, setEntries] = useState<ExplorerEntry[]>([]);
+  const [filter, setFilter] = useState('');
+  const [explorerPrefs, setExplorerPrefs] = useState<ExplorerPrefs>(() => prefs.explorer.get());
+  const [selected, setSelected] = useState<ExplorerEntry | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 파일 추가 — 헤더만 파싱 (복호화 X)
+  const handleFiles = useCallback(async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    const additions: ExplorerEntry[] = [];
+    for (const f of list) {
+      const buf = new Uint8Array(await f.arrayBuffer());
+      if (!isPkiFile(buf)) {
+        // PKIZIP 봉투 아님 — 사용자에게 알림
+        console.warn(`Not a PKIZIP file: ${f.name}`);
+        continue;
+      }
+      const header = readPkiHeader(buf);
+      additions.push({
+        id: crypto.randomUUID(),
+        name: f.name, size: f.size, addedAt: Date.now(), header,
+      });
+    }
+    setEntries(prev => [...additions, ...prev]);
+  }, []);
+
+  // 드래그앤드롭
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    if (e.dataTransfer.files.length > 0) void handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
+
+  // 필터 + 정렬
+  const visible = useMemo(() => {
+    let xs = entries;
+    if (filter) {
+      const f = filter.toLowerCase();
+      xs = xs.filter(e =>
+        e.name.toLowerCase().includes(f) ||
+        e.header?.classification?.grade?.toLowerCase().includes(f)
+      );
+    }
+    if (explorerPrefs.filterGrade && explorerPrefs.filterGrade !== 'all') {
+      xs = xs.filter(e => e.header?.classification?.grade === explorerPrefs.filterGrade);
+    }
+    const sortBy = explorerPrefs.sortBy;
+    const dir = explorerPrefs.sortDir === 'asc' ? 1 : -1;
+    xs = [...xs].sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'name') cmp = a.name.localeCompare(b.name);
+      else if (sortBy === 'size') cmp = a.size - b.size;
+      else if (sortBy === 'grade') {
+        const order = { C: 0, S: 1, O: 2, unknown: 3 };
+        cmp = (order[a.header?.classification?.grade ?? 'unknown' as 'C'|'S'|'O'|'unknown'] ?? 3)
+            - (order[b.header?.classification?.grade ?? 'unknown' as 'C'|'S'|'O'|'unknown'] ?? 3);
+      } else cmp = a.addedAt - b.addedAt;
+      return cmp * dir;
+    });
+    return xs;
+  }, [entries, filter, explorerPrefs]);
+
+  function setPref<K extends keyof ExplorerPrefs>(k: K, v: ExplorerPrefs[K]) {
+    const next = prefs.explorer.set({ [k]: v } as Partial<ExplorerPrefs>);
+    setExplorerPrefs(next);
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col" onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
+      {/* 헤더 */}
+      <div className="border-b bg-white sticky top-0 z-10 px-6 py-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <FileText className="w-5 h-5 text-blue-600" />
+            <div>
+              <h1 className="font-semibold text-lg">내 PKIZIP 파일</h1>
+              <p className="text-xs text-zinc-500">
+                복호화 없이 등급·암호화·언어·OCR 등 메타데이터를 즉시 확인
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400" />
+              <input
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+                placeholder="파일명·등급 검색..."
+                className="pl-7 pr-2 py-1.5 border rounded text-sm w-56"
+              />
+            </div>
+            <select value={explorerPrefs.filterGrade || 'all'}
+              onChange={e => setPref('filterGrade', e.target.value as ExplorerPrefs['filterGrade'])}
+              className="px-2 py-1.5 border rounded text-sm">
+              <option value="all">모든 등급</option>
+              <option value="C">C 위험</option>
+              <option value="S">S 민감</option>
+              <option value="O">O 공개</option>
+            </select>
+            <select value={explorerPrefs.sortBy}
+              onChange={e => setPref('sortBy', e.target.value as ExplorerPrefs['sortBy'])}
+              className="px-2 py-1.5 border rounded text-sm">
+              <option value="date">날짜</option>
+              <option value="name">이름</option>
+              <option value="grade">등급</option>
+              <option value="size">크기</option>
+            </select>
+            <button onClick={() => inputRef.current?.click()}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm flex items-center gap-1.5 hover:bg-blue-700">
+              <Upload className="w-4 h-4" /> 파일 추가
+            </button>
+            <input
+              ref={inputRef}
+              type="file" multiple accept=".pki,.pkizip"
+              className="hidden"
+              onChange={e => e.target.files && handleFiles(e.target.files)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 본문 — 카드 그리드 */}
+      <div className={`flex-1 p-6 ${dragging ? 'bg-blue-50' : ''}`}>
+        {entries.length === 0 ? (
+          <EmptyState onPick={() => inputRef.current?.click()} />
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+            {visible.map(e => (
+              <FileCard key={e.id} entry={e} onClick={() => setSelected(e)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 상세 패널 */}
+      {selected && (
+        <DetailPanel entry={selected} onClose={() => setSelected(null)} />
+      )}
+
+      {/* 드래그 오버레이 */}
+      {dragging && (
+        <div className="fixed inset-0 bg-blue-500/10 border-4 border-dashed border-blue-400 pointer-events-none flex items-center justify-center z-50">
+          <div className="text-2xl font-bold text-blue-700">📥 .pki / .pkizip 파일을 놓으세요</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 카드 — 등급 아이콘 + 메타
+// ─────────────────────────────────────────────
+
+function FileCard({ entry, onClick }: { entry: ExplorerEntry; onClick: () => void }) {
+  const badge = deriveBadge(entry.header);
+  const colors = gradeColors(badge.grade);
+  return (
+    <motion.button
+      onClick={onClick}
+      whileHover={{ y: -2 }}
+      className={`text-left bg-white border rounded-xl p-4 hover:shadow-md transition ${colors.border}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${colors.iconBg}`}>
+          {badge.encrypted
+            ? <FileLock2 className={`w-5 h-5 ${colors.icon}`} />
+            : badge.signed
+              ? <FileCheck2 className={`w-5 h-5 ${colors.icon}`} />
+              : <FileText className={`w-5 h-5 ${colors.icon}`} />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm truncate" title={entry.name}>{entry.name}</div>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${colors.pill}`}>
+              {badge.grade.toUpperCase()}
+            </span>
+            {badge.pqc && <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">PQC</span>}
+            {badge.he && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700">🔍 HE</span>}
+            {badge.signed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">✍</span>}
+          </div>
+        </div>
+      </div>
+      {entry.header?.classification?.findingsSummary && (
+        <div className="mt-2 text-[10px] text-zinc-500 line-clamp-1">
+          {Object.entries(entry.header.classification.findingsSummary).slice(0, 3)
+            .map(([k, v]) => `${k}×${v}`).join(' · ')}
+        </div>
+      )}
+      <div className="mt-2 text-[10px] text-zinc-400">
+        {(entry.size / 1024).toFixed(1)} KB
+        {entry.header?.language?.detected && entry.header.language.detected !== 'und' && (
+          <> · {entry.header.language.detected}</>
+        )}
+        {entry.header?.ocr?.applied && <> · OCR</>}
+      </div>
+    </motion.button>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 상세 패널 — 메타 전체 (복호화 X)
+// ─────────────────────────────────────────────
+
+function DetailPanel({ entry, onClose }: { entry: ExplorerEntry; onClose: () => void }) {
+  const h = entry.header;
+  const c = h?.classification;
+  const badge = deriveBadge(h);
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30" />
+      <motion.div
+        initial={{ x: 400 }} animate={{ x: 0 }} exit={{ x: 400 }}
+        onClick={e => e.stopPropagation()}
+        className="relative w-[420px] bg-white shadow-2xl h-full overflow-y-auto"
+      >
+        <div className="sticky top-0 bg-white border-b px-5 py-3 flex items-center justify-between">
+          <h2 className="font-semibold text-sm truncate" title={entry.name}>{entry.name}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="p-5 space-y-4 text-sm">
+          <Row label="등급">
+            <span className={`inline-block px-2 py-0.5 rounded font-bold ${gradeColors(badge.grade).pill}`}>
+              {badge.grade.toUpperCase()}
+            </span>
+            {c && <span className="text-xs text-zinc-500 ml-2">신뢰도 {(c.confidence * 100).toFixed(0)}%</span>}
+          </Row>
+          <Row label="암호화">
+            {badge.encrypted ? (
+              <>🔒 {h?.pqcKemRecipientInfo ? <b className="text-violet-700">PQC</b> : '단순'}
+                {h?.encryption?.algorithm && <span className="text-xs text-zinc-500 ml-2">{h.encryption.algorithm}</span>}
+              </>
+            ) : '없음 (서명만)'}
+          </Row>
+          <Row label="서명">
+            {badge.signed ? <ShieldCheck className="inline w-4 h-4 text-emerald-600 mr-1" /> : '—'}
+            {h?.pqcSignerInfo?.algorithm && <b>{h.pqcSignerInfo.algorithm}</b>}
+            {h?.signatures && h.signatures.length > 0 && <> · {h.signatures.length}개 서명</>}
+          </Row>
+          {c && (
+            <Row label="분류기 버전">
+              <code className="text-xs">{c.classifierVersion}</code>
+            </Row>
+          )}
+          {h?.language?.detected && (
+            <Row label="언어">
+              {h.language.detected.toUpperCase()}
+              <span className="text-xs text-zinc-500 ml-2">{(h.language.confidence * 100).toFixed(0)}%</span>
+            </Row>
+          )}
+          {h?.ocr?.applied && (
+            <Row label="OCR">
+              {h.ocr.engine} · {h.ocr.languages?.join(', ')}
+              {h.ocr.confidence && <span className="text-xs text-zinc-500 ml-2">{(h.ocr.confidence * 100).toFixed(0)}%</span>}
+            </Row>
+          )}
+          {h?.searchKey?.included && (
+            <Row label="HE 검색키">
+              <code className="text-xs">{h.searchKey.engine} · {h.searchKey.scheme}</code>
+              {h.searchKey.tokenCount && <span className="text-xs text-zinc-500 ml-2">{h.searchKey.tokenCount} tokens</span>}
+            </Row>
+          )}
+          {c?.findingsSummary && Object.keys(c.findingsSummary).length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">탐지된 PII</div>
+              <div className="flex flex-wrap gap-1">
+                {Object.entries(c.findingsSummary).map(([k, v]) => (
+                  <span key={k} className="text-xs px-2 py-0.5 bg-zinc-100 rounded font-mono">
+                    {k} <b>×{v}</b>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {c?.explanation && (
+            <div>
+              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">설명</div>
+              <p className="text-xs leading-relaxed text-zinc-700">{c.explanation}</p>
+            </div>
+          )}
+          {h?.pseudonymization?.applied && (
+            <Row label="가명/익명화">
+              {h.pseudonymization.isReversible ? '가명 (복원 가능)' : '익명 (비가역)'}
+              {h.pseudonymization.targetGrade && <> · target {h.pseudonymization.targetGrade}</>}
+            </Row>
+          )}
+          {h?.mipLabel && (
+            <div>
+              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">MIP 라벨</div>
+              <code className="text-xs block bg-zinc-50 p-2 rounded">
+                {h.mipLabel.labelName} (sensitivity={h.mipLabel.sensitivityValue})
+              </code>
+            </div>
+          )}
+          <Row label="추가일시">
+            {new Date(entry.addedAt).toLocaleString()}
+          </Row>
+          <Row label="크기">{(entry.size / 1024).toFixed(1)} KB</Row>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-3">
+      <span className="text-xs text-zinc-500 w-20 flex-shrink-0">{label}</span>
+      <span className="text-sm flex-1">{children}</span>
+    </div>
+  );
+}
+
+function EmptyState({ onPick }: { onPick: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center mb-4">
+        <Upload className="w-7 h-7 text-zinc-400" />
+      </div>
+      <p className="text-sm text-zinc-500 mb-1">아직 파일이 없습니다</p>
+      <p className="text-xs text-zinc-400 mb-4">.pki 또는 .pkizip 파일을 드래그하거나 추가</p>
+      <button onClick={onPick} className="px-4 py-2 bg-blue-600 text-white rounded text-sm">
+        파일 선택
+      </button>
+    </div>
+  );
+}
+
+function gradeColors(grade: 'C' | 'S' | 'O' | 'unknown') {
+  switch (grade) {
+    case 'C': return {
+      border: 'border-red-200', icon: 'text-red-600', iconBg: 'bg-red-50',
+      pill: 'bg-red-100 text-red-700',
+    };
+    case 'S': return {
+      border: 'border-amber-200', icon: 'text-amber-600', iconBg: 'bg-amber-50',
+      pill: 'bg-amber-100 text-amber-700',
+    };
+    case 'O': return {
+      border: 'border-emerald-200', icon: 'text-emerald-600', iconBg: 'bg-emerald-50',
+      pill: 'bg-emerald-100 text-emerald-700',
+    };
+    default: return {
+      border: 'border-zinc-200', icon: 'text-zinc-400', iconBg: 'bg-zinc-50',
+      pill: 'bg-zinc-100 text-zinc-500',
+    };
+  }
+}
