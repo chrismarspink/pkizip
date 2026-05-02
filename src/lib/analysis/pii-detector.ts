@@ -204,6 +204,37 @@ export function detect(text: string, opts: DetectOptions = {}): Finding[] {
 /**
  * Findings 요약 — entity_type → count (PkiHeader.classification.findingsSummary).
  */
+/**
+ * 활성 인식기 메타 — UI 의 "활성 인식기" 패널에서 표시.
+ * 각 정규식 패턴 + denylist 그룹의 entity type, score, source 를 한 줄씩.
+ */
+export interface RecognizerInfo {
+  entityType: string;
+  source: 'regex-kr' | 'regex-common' | 'denylist';
+  score: number;
+  /** validate 함수가 있으면 후처리 검증 (Luhn / 가중합 / 옥텟 검증) */
+  hasValidator: boolean;
+  /** denylist 의 경우 등록 항목 수 */
+  termCount?: number;
+}
+
+export function listRecognizers(): RecognizerInfo[] {
+  const out: RecognizerInfo[] = [];
+  for (const p of KR_PATTERNS) {
+    out.push({ entityType: p.entityType, source: 'regex-kr', score: p.score,
+               hasValidator: !!p.validate });
+  }
+  for (const p of COMMON_PATTERNS) {
+    out.push({ entityType: p.entityType, source: 'regex-common', score: p.score,
+               hasValidator: !!p.validate });
+  }
+  for (const d of BUILTIN_DENY) {
+    out.push({ entityType: d.entityType, source: 'denylist', score: d.score,
+               hasValidator: false, termCount: d.terms.length });
+  }
+  return out;
+}
+
 export function summarize(findings: Finding[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const f of findings) out[f.entityType] = (out[f.entityType] || 0) + 1;

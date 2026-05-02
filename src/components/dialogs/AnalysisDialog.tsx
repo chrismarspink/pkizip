@@ -13,12 +13,14 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Shield, AlertTriangle, CheckCircle2, FileSearch, Sparkles, Eye, Highlighter, ListTree, BookOpen, UserCheck, Save, Table } from 'lucide-react';
+import { X, Shield, AlertTriangle, CheckCircle2, FileSearch, Sparkles, Eye, Highlighter, ListTree, BookOpen, UserCheck, Save, Table, Cpu } from 'lucide-react';
 import type { AnalysisResult, Grade } from '@/lib/analysis/types';
 import { downgradeToTarget, anonymizeOnce } from '@/lib/analysis/pipeline';
 import { loadPolicy } from '@/lib/analysis/anonymization-policy';
 import { findKeywordOccurrences } from '@/lib/analysis/classifier';
-import { saveDecision, textHash } from '@/lib/learning/decision-store';
+import { listRecognizers, type RecognizerInfo } from '@/lib/analysis/pii-detector';
+import * as neuralNer from '@/lib/analysis/neural-ner';
+import { saveDecision, textHash, listDecisions } from '@/lib/learning/decision-store';
 import { evaluate, REASON_MESSAGES, ACTION_MESSAGES, type PolicyDecision } from '@/lib/policy/opa-engine';
 import { prefs, type CryptoKind, type Purpose } from '@/lib/store/preferences';
 
@@ -75,6 +77,27 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   const [userMemo, setUserMemo] = useState('');
   const [decisionSaved, setDecisionSaved] = useState(false);
   const [savingDecision, setSavingDecision] = useState(false);
+
+  // 모델 헤더 — 학습 기준 N건 + 적용시각 (decision-store 에서 읽음)
+  const [modelStats, setModelStats] = useState<{ count: number; lastTs?: number }>({ count: 0 });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await listDecisions(10_000);
+        if (cancelled) return;
+        setModelStats({ count: all.length, lastTs: all[0]?.ts });
+      } catch (e) {
+        console.warn('[AnalysisDialog] decisionStats failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [decisionSaved]);
+
+  // 활성 인식기 — 정규식 / denylist + 신경망 NER 상태
+  const recognizers = useMemo<RecognizerInfo[]>(() => listRecognizers(), []);
+  const nerStatus = useMemo(() => neuralNer.status(), [decisionSaved]);
+  const neuralPrefs = useMemo(() => prefs.neural?.get?.() ?? { nerEnabled: false, nerAutoLoad: false, nerMinScore: 0.5 }, []);
 
   // 분석 결과 (가명/익명화 후 갱신될 수 있음)
   const [current, setCurrent] = useState<AnalysisResult>(initialResult);
@@ -217,9 +240,23 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 옵션 → 등급 → 가명처리 → 정책 검사 한 번에
               </p>
             </div>
-            <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded">
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-start gap-3">
+              <div className="text-right text-[11px] leading-tight">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-mono text-[10px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                  모델: {c.version}
+                </div>
+                <div className="text-zinc-500 mt-1">
+                  학습 기준 <b className="text-zinc-700">{modelStats.count}</b>건
+                  {modelStats.lastTs && (
+                    <> · 적용시각 <span className="font-mono">{formatTs(modelStats.lastTs)}</span></>
+                  )}
+                </div>
+              </div>
+              <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* 본문 */}
@@ -263,7 +300,8 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 <div className="flex-1">
                   <div className="font-semibold">{GRADE_LABEL[c.grade]}</div>
                   <div className="text-xs opacity-80 mt-0.5">
-                    score {c.score} · 신뢰도 {(c.confidence * 100).toFixed(0)}%
+                    score <b>{c.score}</b> · 신뢰도 {(c.confidence * 100).toFixed(0)}%
+                    {' '}· 임계값 S=<b>{c.thresholds.S}</b> C=<b>{c.thresholds.C}</b>
                     {current.language.detected && current.language.detected !== 'und' && (
                       <> · 언어 {current.language.detected}</>
                     )}
@@ -271,6 +309,10 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                   </div>
                 </div>
               </div>
+
+              {/* Score bar — O/S/C 임계값 + 현재 score 위치 */}
+              <ScoreBar score={c.score} sThreshold={c.thresholds.S} cThreshold={c.thresholds.C} />
+
               {showExplain && expl && (
                 <div className="mt-3 pt-3 border-t border-current/20 text-xs leading-relaxed opacity-90">
                   {renderMarkdownBold(expl.narrative)}
@@ -551,6 +593,98 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               </div>
             </details>
 
+            {/* 3-E. 활성 인식기 패널 */}
+            <details className="border rounded-lg bg-white">
+              <summary className="cursor-pointer select-none p-3 text-xs font-semibold text-zinc-600 uppercase flex items-center gap-2 hover:bg-zinc-50">
+                <Cpu className="w-3 h-3" />
+                활성 인식기
+                <span className="ml-auto text-[10px] font-normal text-zinc-400 normal-case">
+                  정규식 {recognizers.filter(r => r.source !== 'denylist').length}개
+                  · denylist {recognizers.filter(r => r.source === 'denylist').length}그룹
+                  · NER {neuralPrefs.nerEnabled ? (nerStatus.loaded ? '활성' : '대기') : '비활성'}
+                </span>
+              </summary>
+              <div className="px-3 pb-3 space-y-3">
+                {/* 정규식 + denylist 표 */}
+                <div className="overflow-x-auto max-h-56 overflow-y-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="sticky top-0 bg-white">
+                      <tr className="text-left text-zinc-500 border-b">
+                        <th className="py-1 pr-2 font-medium">Entity</th>
+                        <th className="py-1 pr-2 font-medium">출처</th>
+                        <th className="py-1 pr-2 font-medium text-right">기본 score</th>
+                        <th className="py-1 pr-2 font-medium">검증/항목</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recognizers.map((r, i) => (
+                        <tr key={`${r.source}-${r.entityType}-${i}`} className="border-b last:border-b-0">
+                          <td className="py-1 pr-2">
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-700">
+                              {r.entityType}
+                            </span>
+                          </td>
+                          <td className="py-1 pr-2 text-[11px]">
+                            <span className={
+                              r.source === 'regex-kr' ? 'text-blue-700' :
+                              r.source === 'regex-common' ? 'text-emerald-700' :
+                              'text-purple-700'
+                            }>
+                              {r.source === 'regex-kr' ? '한국형 정규식' :
+                               r.source === 'regex-common' ? '글로벌 정규식' : 'denylist'}
+                            </span>
+                          </td>
+                          <td className="py-1 pr-2 text-right tabular-nums text-zinc-600">{r.score.toFixed(2)}</td>
+                          <td className="py-1 pr-2 text-[11px] text-zinc-500">
+                            {r.hasValidator && <span className="text-emerald-600">✓ 검증</span>}
+                            {r.termCount !== undefined && <span>{r.termCount}개 항목</span>}
+                            {!r.hasValidator && r.termCount === undefined && <span className="text-zinc-400">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 신경망 NER 상태 */}
+                <div className="border-t pt-2">
+                  <div className="text-[11px] font-semibold text-zinc-600 mb-1.5 flex items-center gap-1.5">
+                    <Cpu className="w-3 h-3" /> 신경망 NER (transformers.js · 클라이언트 추론)
+                  </div>
+                  {!neuralPrefs.nerEnabled ? (
+                    <div className="text-xs text-zinc-500 bg-zinc-50 rounded px-2 py-1.5">
+                      비활성 — 설정에서 옵트인 필요 (모델 ~280MB 다운로드)
+                    </div>
+                  ) : nerStatus.loaded ? (
+                    <div className="text-xs bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+                      <div className="font-mono text-emerald-700">{nerStatus.modelId}</div>
+                      <div className="text-[10px] text-emerald-600 mt-0.5">
+                        device <b>{nerStatus.device}</b> · minScore {neuralPrefs.nerMinScore}
+                        · 휴리스틱 필터 적용 (한국 성씨/조사/접두어)
+                      </div>
+                    </div>
+                  ) : nerStatus.loading ? (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                      모델 로드 중…
+                    </div>
+                  ) : nerStatus.loadError ? (
+                    <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                      로드 실패: {nerStatus.loadError}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-zinc-500 bg-zinc-50 rounded px-2 py-1.5">
+                      대기 — 첫 분석 시 모델 다운로드 (auto-load: {neuralPrefs.nerAutoLoad ? '켜짐' : '꺼짐'})
+                    </div>
+                  )}
+                  {nerStatus.tried.length > 0 && (
+                    <div className="text-[10px] text-zinc-400 mt-1">
+                      후보 시도: {nerStatus.tried.map(t => `${t.model.split('/').pop()}${t.ok ? '✓' : '✗'}`).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </details>
+
             {/* 4. 가명/익명화 */}
             <section className="border rounded-lg p-3">
               <div className="text-xs font-semibold text-zinc-500 uppercase mb-2 flex items-center gap-2">
@@ -653,6 +787,62 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
       </motion.div>
     </AnimatePresence>
   );
+}
+
+/**
+ * Score bar — O(0~S) / S(S~C) / C(C~) 그라데이션 + 임계 마커 + 현재 score 위치.
+ * HE-TEST 의 그라데이션 게이지 동등.
+ */
+function ScoreBar({ score, sThreshold, cThreshold }: {
+  score: number; sThreshold: number; cThreshold: number;
+}) {
+  // 표시 범위 — score 가 cThreshold 보다 높으면 그만큼 늘림
+  const max = Math.max(cThreshold * 1.5, score * 1.1, cThreshold + 1);
+  const pct = (v: number) => Math.max(0, Math.min(100, (v / max) * 100));
+  const sPct = pct(sThreshold);
+  const cPct = pct(cThreshold);
+  const scorePct = pct(score);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-current/10">
+      <div className="relative h-3 rounded-full overflow-hidden"
+        style={{
+          background: `linear-gradient(to right,
+            #10b981 0%, #10b981 ${sPct}%,
+            #f59e0b ${sPct}%, #f59e0b ${cPct}%,
+            #ef4444 ${cPct}%, #ef4444 100%)`,
+        }}
+      >
+        {/* 현재 score 마커 */}
+        <div
+          className="absolute top-0 h-full w-0.5 bg-zinc-900 shadow"
+          style={{ left: `calc(${scorePct}% - 1px)` }}
+        />
+      </div>
+      <div className="relative h-4 mt-1 text-[10px] text-current/70">
+        <span style={{ position: 'absolute', left: '0%' }}>0</span>
+        <span style={{ position: 'absolute', left: `${sPct}%`, transform: 'translateX(-50%)' }}>
+          S={sThreshold}
+        </span>
+        <span style={{ position: 'absolute', left: `${cPct}%`, transform: 'translateX(-50%)' }}>
+          C={cThreshold}
+        </span>
+        <span
+          className="font-bold"
+          style={{ position: 'absolute', left: `${scorePct}%`, transform: 'translateX(-50%)' }}
+        >
+          ▲ {score}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** 타임스탬프 → "MM-DD HH:MM" 한국 시각 */
+function formatTs(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function ActionButton({ active, onClick, children }: {
