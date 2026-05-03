@@ -191,9 +191,18 @@ export const BUILTIN_RULES: Readonly<CustomRule[]> = Object.freeze([
   },
 ]);
 
-/** 빌트인 + 비활성화 정보를 합쳐서 표시용 룰 배열 반환 */
+/**
+ * 빌트인 + 비활성화 정보를 합쳐서 표시용 룰 배열 반환.
+ * IDB 오류 시에도 BUILTIN_RULES 는 그대로 반환 (모두 enabled 로) — UI 가
+ * 비어버리지 않게 방어.
+ */
 export async function listEffectiveBuiltinRules(): Promise<CustomRule[]> {
-  const disabled = new Set(await listDisabledBuiltinReasons());
+  let disabled = new Set<string>();
+  try {
+    disabled = new Set(await listDisabledBuiltinReasons());
+  } catch (e) {
+    console.warn('[custom-rules] disabled set 로드 실패 — 빌트인 모두 활성으로 표시', e);
+  }
   return BUILTIN_RULES.map(r => ({ ...r, enabled: !disabled.has(r.action.reason) }));
 }
 

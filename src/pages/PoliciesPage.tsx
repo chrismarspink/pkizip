@@ -12,7 +12,7 @@ import { Trash2, Plus, FlaskConical, ToggleLeft, ToggleRight, Save, X, Copy } fr
 import { toast } from 'sonner';
 import {
   listCustomRules, saveCustomRule, deleteCustomRule, clearAllCustomRules, ulid,
-  listEffectiveBuiltinRules, setBuiltinDisabled,
+  listEffectiveBuiltinRules, setBuiltinDisabled, BUILTIN_RULES,
   FIELD_LABELS, OP_LABELS,
   type CustomRule, type Condition, type FieldPath, type Op, type ActionType,
 } from '@/lib/policy/custom-rules';
@@ -28,8 +28,20 @@ export function PoliciesPage() {
   useEffect(() => { void load(); }, []);
 
   async function load() {
-    setRules(await listCustomRules());
-    setBuiltins(await listEffectiveBuiltinRules());
+    try {
+      setRules(await listCustomRules());
+    } catch (e) {
+      console.warn('[PoliciesPage] custom rules 로드 실패', e);
+      setRules([]);
+    }
+    try {
+      const list = await listEffectiveBuiltinRules();
+      console.log('[PoliciesPage] builtin rules 로드:', list.length, list.map(r => r.action.reason));
+      setBuiltins(list);
+    } catch (e) {
+      console.error('[PoliciesPage] builtin rules 로드 실패 — 폴백 적용', e);
+      setBuiltins(BUILTIN_RULES.map(r => ({ ...r })));
+    }
   }
 
   async function persist(rule: CustomRule) {
