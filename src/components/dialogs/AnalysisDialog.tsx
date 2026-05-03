@@ -81,6 +81,11 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   const [decisionSaved, setDecisionSaved] = useState(false);
   const [savingDecision, setSavingDecision] = useState(false);
 
+  // 정책 적용 등급 선택 — 가명/익명화로 등급이 강등됐을 때만 의미 있음
+  //   'processed' = 강등된 등급 + 가명화된 본문 + 완화된 정책 (default)
+  //   'original'  = 원본 등급 + 원본 본문 + 엄격한 정책
+  const [policyGrade, setPolicyGrade] = useState<'original' | 'processed'>('processed');
+
   // 모델 헤더 — 학습 기준 N건 + 적용시각 (decision-store 에서 읽음)
   const [modelStats, setModelStats] = useState<{ count: number; lastTs?: number }>({ count: 0 });
   useEffect(() => {
@@ -105,18 +110,30 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   // 분석 결과 (가명/익명화 후 갱신될 수 있음)
   const [current, setCurrent] = useState<AnalysisResult>(initialResult);
 
-  // current 등급 변화 시 (가명/익명화 적용) — 사용자가 직접 picker 를 누르지
-  // 않았다면 userGrade 도 같이 따라가게. 이렇게 해야 등급 카드와 picker 의
-  // "AI 추천" 별이 서로 다른 등급을 가리키지 않음.
+  // 가명/익명화가 적용되어 등급이 다른 경우 사용자가 정책 등급을 선택
+  const gradesDiffer = initialResult.classification.grade !== current.classification.grade;
+  const anonApplied = !!current.anonymization;
+
+  // 가명화 적용 시 → 'processed' 자동 선택. 미적용 시 → 'original'.
   useEffect(() => {
-    if (!userManuallyPicked) setUserGrade(current.classification.grade);
-  }, [current.classification.grade, userManuallyPicked]);
+    setPolicyGrade(anonApplied ? 'processed' : 'original');
+  }, [anonApplied]);
+
+  // 사용자가 봉투에 들어갈 실제 결과 — text/classification/findings 모두 일관
+  const effective: AnalysisResult = (policyGrade === 'original' && anonApplied)
+    ? initialResult
+    : current;
+
+  // effective 등급 변화 시 (사용자 picker 손 안 댔으면) userGrade 동기화
+  useEffect(() => {
+    if (!userManuallyPicked) setUserGrade(effective.classification.grade);
+  }, [effective.classification.grade, userManuallyPicked]);
 
   // SHAP 토큰 기여도 — 사용자가 명시적으로 실행
   const [shapResult, setShapResult] = useState<AttributionResult | null>(null);
   const [shapRunning, setShapRunning] = useState(false);
-  // current 가 바뀌면 (가명/익명화 적용) 기존 결과 무효화
-  useEffect(() => { setShapResult(null); }, [current.text]);
+  // effective 가 바뀌면 (정책 등급 토글 / 가명화 적용) 기존 결과 무효화
+  useEffect(() => { setShapResult(null); }, [effective.text]);
 
   function runShap() {
     if (shapRunning) return;
@@ -124,7 +141,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     // setTimeout 으로 yield → "분석 중…" UI 가 먼저 렌더되도록
     setTimeout(() => {
       try {
-        const r = computeAttributions(current.text, current.classification, {
+        const r = computeAttributions(effective.text, effective.classification, {
           maxTokens: 200,
           minDelta: 0.05,
         });
@@ -168,22 +185,22 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
       const decision = await evaluate({
         intent: { purpose: intent.purpose, crypto_kind: intent.cryptoKind },
         classification: {
-          grade: current.classification.grade,
-          score: current.classification.score,
-          confidence: current.classification.confidence,
+          grade: effective.classification.grade,
+          score: effective.classification.score,
+          confidence: effective.classification.confidence,
         },
         pseudonymization: {
-          applied: !!current.anonymization,
-          is_reversible: current.anonymization?.result.isReversible ?? false,
-          final_grade: current.anonymization?.finalGrade,
+          applied: !!effective.anonymization,
+          is_reversible: effective.anonymization?.result.isReversible ?? false,
+          final_grade: effective.anonymization?.finalGrade,
         },
-        language: { detected: current.language.detected },
-        ocr: { applied: !!current.ocr?.applied },
+        language: { detected: effective.language.detected },
+        ocr: { applied: !!effective.ocr?.applied },
       });
       if (!cancelled) setPolicy(decision);
     })();
     return () => { cancelled = true; };
-  }, [intent, current]);
+  }, [intent, effective]);
 
   // 가명/익명화 실행
   function runAnonymization(kind: 'pseudonymize' | 'anonymize') {
@@ -206,20 +223,19 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
       prefs.workflow.set({ purpose: intent.purpose, cryptoKind: intent.cryptoKind });
       prefs.anon.set({ defaultAction: anonAction });
     }
-    onAccept({ result: current, intent, policy, anonymizationAction: anonAction });
+    onAccept({ result: effective, intent, policy, anonymizationAction: anonAction });
   }
 
   async function handleSaveDecision() {
     if (savingDecision) return;
     setSavingDecision(true);
     try {
-      // 사용자가 picker 에서 본 AI 추천 = current (가명화 후 최종) 의 등급.
-      // 동의 여부 (gap) 가 picker UI 와 일치하려면 current 기준으로 저장해야 함.
-      const c0 = current.classification;
-      const hash = await textHash(current.text);
+      // picker 에서 보이는 AI 추천 = effective 의 등급. 저장도 effective 기준.
+      const c0 = effective.classification;
+      const hash = await textHash(effective.text);
       await saveDecision({
         textHash: hash,
-        textLength: current.text.length,
+        textLength: effective.text.length,
         ai: {
           grade: c0.grade,
           score: c0.score,
@@ -229,8 +245,8 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
         },
         userGrade,
         memo: userMemo,
-        findings: current.findings,
-        language: current.language.detected,
+        findings: effective.findings,
+        language: effective.language.detected,
       });
       setDecisionSaved(true);
     } catch (e) {
@@ -241,22 +257,22 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     }
   }
 
-  const userGradeGap = Math.abs(GRADE_RANK[current.classification.grade] - GRADE_RANK[userGrade]);
+  const userGradeGap = Math.abs(GRADE_RANK[effective.classification.grade] - GRADE_RANK[userGrade]);
 
   if (!open) return null;
-  const c = current.classification;
-  const expl = current.explanation;
+  const c = effective.classification;
+  const expl = effective.explanation;
   const findingsBy = useMemo(() => {
     const out = new Map<string, number>();
-    for (const f of current.findings) out.set(f.entityType, (out.get(f.entityType) || 0) + 1);
+    for (const f of effective.findings) out.set(f.entityType, (out.get(f.entityType) || 0) + 1);
     return Array.from(out.entries()).sort((a, b) => b[1] - a[1]);
-  }, [current.findings]);
+  }, [effective.findings]);
 
   // 본문 하이라이트 — PII findings + 등급 키워드 매칭 위치
   const highlightedHtml = useMemo(() => {
-    return buildHighlight(current.text, current.findings, findKeywordOccurrences(current.text));
-  }, [current.text, current.findings]);
-  const noPIIButGrade = current.findings.length === 0 && c.grade !== 'O';
+    return buildHighlight(effective.text, effective.findings, findKeywordOccurrences(effective.text));
+  }, [effective.text, effective.findings]);
+  const noPIIButGrade = effective.findings.length === 0 && c.grade !== 'O';
   // 등급을 끌어올린 실제 원인 — 키워드 / 언어 하한 / 둘 다
   const hasKeywordReason = c.reasons.some(r => r.kind === 'keyword');
   const hasLanguageReason = c.reasons.some(r => r.kind === 'language');
@@ -265,7 +281,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     : hasKeywordReason
       ? '본문에 등급 키워드(아래 노란색 강조)가 포함된 경우입니다.'
       : hasLanguageReason
-        ? `비한국어 (${current.language.detected}) 로 감지되어 보수적으로 ${c.grade} 하한이 적용되었습니다.`
+        ? `비한국어 (${effective.language.detected}) 로 감지되어 보수적으로 ${c.grade} 하한이 적용되었습니다.`
         : '판정 근거 표를 확인해주세요.';
 
   return (
@@ -343,8 +359,109 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               </div>
             </section>
 
-            {/* 2. 등급 카드 */}
+            {/* 2-A. 원본 분석 카드 — 항상 노출 (immutable) */}
+            <section className={`border-2 rounded-lg p-3 ${GRADE_COLOR[initialResult.classification.grade]}`}>
+              <div className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                📋 1단계 — 원본 분석 결과
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-2xl font-bold w-10 text-center">{initialResult.classification.grade}</div>
+                <div className="flex-1">
+                  <div className="font-semibold">{GRADE_LABEL[initialResult.classification.grade]}</div>
+                  <div className="text-xs opacity-80 mt-0.5">
+                    원본 score <b>{initialResult.classification.score}</b> · 신뢰도{' '}
+                    {(initialResult.classification.confidence * 100).toFixed(0)}%
+                    · 임계값 S=<b>{initialResult.classification.thresholds.S}</b> C=<b>{initialResult.classification.thresholds.C}</b>
+                  </div>
+                </div>
+              </div>
+              {initialResult.explanation && (
+                <div className="mt-2 pt-2 border-t border-current/20 text-xs leading-relaxed opacity-90">
+                  {renderMarkdownBold(initialResult.explanation.narrative)}
+                </div>
+              )}
+            </section>
+
+            {/* 2-B. 가명/익명화 처리 결과 카드 — 적용 + 등급 변경 시만 노출 */}
+            {gradesDiffer && anonApplied && (
+              <section className={`border-2 rounded-lg p-3 ${GRADE_COLOR[current.classification.grade]}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                  ✨ 2단계 — 가명/익명화 처리 후 결과
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl font-bold w-10 text-center">{current.classification.grade}</div>
+                  <div className="flex-1">
+                    <div className="font-semibold">{GRADE_LABEL[current.classification.grade]}</div>
+                    <div className="text-xs opacity-80 mt-0.5">
+                      처리 후 score <b>{current.classification.score}</b> · 신뢰도{' '}
+                      {(current.classification.confidence * 100).toFixed(0)}%
+                      {current.anonymization && (
+                        <> · 변경 {current.anonymization.result.replacements.length}건 ·{' '}
+                        {current.anonymization.result.isReversible ? '가명처리 (복원 가능)' : '익명화 (비가역)'}</>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* 2-C. 정책 적용 등급 선택 — 가명화로 등급이 바뀐 경우만 의미 있음 */}
+            {gradesDiffer && anonApplied && (
+              <section className="border rounded-lg p-3 bg-blue-50/50 border-blue-200">
+                <div className="text-xs font-semibold text-blue-900 uppercase mb-2 flex items-center gap-2">
+                  ⚖️ 3단계 — 정책 적용 등급 선택 (어느 결과로 봉투를 만들까요?)
+                </div>
+                <div className="space-y-2">
+                  <label className={`block p-2.5 rounded-lg border-2 cursor-pointer transition ${
+                    policyGrade === 'processed'
+                      ? `${GRADE_COLOR[current.classification.grade]} border-current ring-2 ring-current/30`
+                      : 'border-zinc-200 bg-white hover:border-blue-400'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="policy-grade"
+                      checked={policyGrade === 'processed'}
+                      onChange={() => setPolicyGrade('processed')}
+                      className="mr-2"
+                    />
+                    <span className="font-semibold text-sm">
+                      ✅ 강등 수락 — {current.classification.grade} 등급으로 진행
+                    </span>
+                    <div className="text-[11px] mt-1 ml-5 opacity-90">
+                      가명/익명화된 본문이 봉투에 들어가며, {current.classification.grade} 등급에 맞는 완화된 정책이 적용됩니다.
+                    </div>
+                  </label>
+                  <label className={`block p-2.5 rounded-lg border-2 cursor-pointer transition ${
+                    policyGrade === 'original'
+                      ? `${GRADE_COLOR[initialResult.classification.grade]} border-current ring-2 ring-current/30`
+                      : 'border-zinc-200 bg-white hover:border-blue-400'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="policy-grade"
+                      checked={policyGrade === 'original'}
+                      onChange={() => setPolicyGrade('original')}
+                      className="mr-2"
+                    />
+                    <span className="font-semibold text-sm">
+                      ⛔ 강등 거부 — 원본 {initialResult.classification.grade} 등급 유지
+                    </span>
+                    <div className="text-[11px] mt-1 ml-5 opacity-90">
+                      <b>원본 본문</b>이 그대로 봉투에 들어가고 (가명화 무효),
+                      {' '}{initialResult.classification.grade} 등급에 맞는 엄격한 정책 (PQC / 워터마크 등) 이 적용됩니다.
+                    </div>
+                  </label>
+                </div>
+              </section>
+            )}
+
+            {/* 2-D. 적용 중인 결과 카드 (effective 기반 — 정책/봉투 결정 등급) */}
             <section className={`border rounded-lg p-3 ${GRADE_COLOR[c.grade]}`}>
+              <div className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                {gradesDiffer && anonApplied
+                  ? `🎯 ${policyGrade === 'original' ? '원본' : '처리 후'} 등급으로 진행 (정책/봉투 결정)`
+                  : '🎯 분석 결과 (정책/봉투 결정 등급)'}
+              </div>
               <div className="flex items-center gap-3">
                 <div className="text-2xl font-bold w-10 text-center">{c.grade}</div>
                 <div className="flex-1">
@@ -352,29 +469,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                   <div className="text-xs opacity-80 mt-0.5">
                     score <b>{c.score}</b> · 신뢰도 {(c.confidence * 100).toFixed(0)}%
                     {' '}· 임계값 S=<b>{c.thresholds.S}</b> C=<b>{c.thresholds.C}</b>
-                    {current.language.detected && current.language.detected !== 'und' && (
-                      <> · 언어 {current.language.detected}</>
+                    {effective.language.detected && effective.language.detected !== 'und' && (
+                      <> · 언어 {effective.language.detected}</>
                     )}
-                    {current.ocr?.applied && <> · OCR 적용</>}
+                    {effective.ocr?.applied && <> · OCR 적용</>}
                   </div>
                 </div>
               </div>
-
-              {/* 원본 분석 vs 현재 — 가명/익명화로 등급이 바뀐 경우만 노출 */}
-              {initialResult.classification.grade !== c.grade && (
-                <div className="mt-2 pt-2 border-t border-current/20 text-[11px] leading-relaxed opacity-95 flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold">📋 원본 분석:</span>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold ${GRADE_COLOR[initialResult.classification.grade]}`}>
-                    {initialResult.classification.grade} ({initialResult.classification.score}점)
-                  </span>
-                  <span>→</span>
-                  <span className="font-semibold">현재:</span>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold bg-white/40">
-                    {c.grade} ({c.score}점)
-                  </span>
-                  <span className="opacity-80">— 가명/익명화로 강등됨</span>
-                </div>
-              )}
 
               {/* Score bar — O/S/C 임계값 + 현재 score 위치 */}
               <ScoreBar score={c.score} sThreshold={c.thresholds.S} cThreshold={c.thresholds.C} />
@@ -422,7 +523,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 dangerouslySetInnerHTML={{ __html: highlightedHtml }}
               />
               <div className="text-[10px] text-zinc-400 mt-1">
-                {current.text.length.toLocaleString()} chars · 추출된 본문 일부 표시 (최대 4000자)
+                {effective.text.length.toLocaleString()} chars · 추출된 본문 일부 표시 (최대 4000자)
               </div>
             </section>
 
@@ -550,7 +651,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               <div className="grid grid-cols-3 gap-2 mb-2">
                 {(['C', 'S', 'O'] as Grade[]).map(g => {
                   const active = userGrade === g;
-                  const isAi = current.classification.grade === g;
+                  const isAi = effective.classification.grade === g;
                   return (
                     <button
                       key={g}
@@ -587,7 +688,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               <div className="mt-2 flex items-center gap-2">
                 {userGradeGap > 0 ? (
                   <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                    AI({current.classification.grade}) → 사용자({userGrade}) · gap {userGradeGap}단계
+                    AI({effective.classification.grade}) → 사용자({userGrade}) · gap {userGradeGap}단계
                   </span>
                 ) : (
                   <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
