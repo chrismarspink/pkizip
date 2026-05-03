@@ -12,14 +12,19 @@
  *   - localStorage(IndexedDB) 에 메타 캐시
  *   - 옵션: Supabase 에서 본인 봉투 메타 fetch
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Upload, FileLock2, FileCheck2, Search, X, FileText, ShieldCheck,
-  FolderOpen, File as FileIcon, Folder,
+  FolderOpen, File as FileIcon, Folder, RefreshCw, Trash2,
 } from 'lucide-react';
 import { isPkiFile, readPkiHeader, deriveBadge, type PkiHeader } from '@/lib/container/pki-format';
 import { prefs, type ExplorerPrefs } from '@/lib/store/preferences';
+import {
+  saveLastFolder, loadLastFolder, clearLastFolder,
+  checkHandlePermission, requestHandlePermission,
+  type AccessMode,
+} from '@/lib/store/last-folder';
 
 interface ExplorerEntry {
   id: string;                 // uuid
@@ -82,16 +87,60 @@ export function ExplorerPage() {
   const [dragging, setDragging] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanRoot, setScanRoot] = useState<string | null>(null);
+  const [savedHandle, setSavedHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [lastScanAt, setLastScanAt] = useState<number | null>(null);
+  const [accessMode, setAccessMode] = useState<AccessMode | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
 
-  // 단일 파일 / 단일 파일 리스트 처리 — PKI 만 헤더 파싱, 그 외도 표시
-  const ingest = useCallback(async (walked: WalkedFile[]) => {
-    const additions: ExplorerEntry[] = [];
+  // ─── 마운트 시 마지막 디렉토리 캐시 복원 ──────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cached = await loadLastFolder();
+      if (cancelled || !cached) return;
+      setEntries(cached.entries);
+      setScanRoot(cached.rootName);
+      setLastScanAt(cached.scannedAt);
+      setAccessMode(cached.accessMode);
+      if (cached.dirHandle) setSavedHandle(cached.dirHandle);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 디렉토리 walk 결과를 저장 — 재방문 시 복원용
+  const persistFolder = useCallback(async (
+    rootName: string,
+    entriesList: ExplorerEntry[],
+    handle: FileSystemDirectoryHandle | undefined,
+    mode: AccessMode,
+  ) => {
+    const scannedAt = Date.now();
+    setLastScanAt(scannedAt);
+    setAccessMode(mode);
+    if (handle) setSavedHandle(handle);
+    try {
+      await saveLastFolder({
+        rootName,
+        entries: entriesList.map(e => ({
+          id: e.id, name: e.name, relPath: e.relPath, size: e.size,
+          addedAt: e.addedAt, kind: e.kind, mime: e.mime, header: e.header,
+        })),
+        dirHandle: handle,
+        scannedAt,
+        accessMode: mode,
+      });
+    } catch (err) {
+      console.warn('[explorer] 캐시 저장 실패:', err);
+    }
+  }, []);
+
+  // walked 파일 리스트 → ExplorerEntry[] 변환 (PKI 헤더 파싱 포함)
+  const buildEntries = useCallback(async (walked: WalkedFile[]): Promise<ExplorerEntry[]> => {
+    const out: ExplorerEntry[] = [];
     for (const { path, file } of walked) {
       let header: PkiHeader | null = null;
       let kind: 'pki' | 'other' = 'other';
-      // 빠른 거름: 확장자 매치된 것만 매직 바이트 검사
       if (isPkiByName(file.name)) {
         try {
           const buf = new Uint8Array(await file.arrayBuffer());
@@ -103,7 +152,7 @@ export function ExplorerPage() {
           console.warn(`PKI 파싱 실패 (${path}):`, e);
         }
       }
-      additions.push({
+      out.push({
         id: crypto.randomUUID(),
         name: file.name,
         relPath: path,
@@ -114,13 +163,28 @@ export function ExplorerPage() {
         header,
       });
     }
-    setEntries(prev => [...additions, ...prev]);
+    return out;
   }, []);
 
+  // "파일 추가" — 기존 엔트리 앞에 prepend
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const list = Array.from(files);
-    await ingest(list.map(f => ({ path: f.name, file: f })));
-  }, [ingest]);
+    const additions = await buildEntries(list.map(f => ({ path: f.name, file: f })));
+    setEntries(prev => [...additions, ...prev]);
+  }, [buildEntries]);
+
+  // "디렉토리 선택" — 기존 엔트리 전체 교체 + 캐시 저장
+  const ingestDirectory = useCallback(async (
+    rootName: string,
+    walked: WalkedFile[],
+    handle: FileSystemDirectoryHandle | undefined,
+    mode: AccessMode,
+  ) => {
+    const built = await buildEntries(walked);
+    setEntries(built);
+    setScanRoot(rootName);
+    await persistFolder(rootName, built, handle, mode);
+  }, [buildEntries, persistFolder]);
 
   // 디렉토리 선택 — File System Access API 우선, webkitdirectory 폴백.
   // 다운로드/바탕화면/문서 등 well-known 시스템 폴더는 Chrome 이 직접 차단하므로
@@ -140,9 +204,8 @@ export function ExplorerPage() {
     try {
       setScanning(true);
       const handle = await w.showDirectoryPicker({ id: 'pkizip-explorer', mode: 'read' });
-      setScanRoot(handle.name);
       const walked = await walkDirHandle(handle);
-      await ingest(walked);
+      await ingestDirectory(handle.name, walked, handle, 'fs-access');
     } catch (e) {
       const err = e as Error;
       const blocked = err.name === 'SecurityError'
@@ -166,22 +229,54 @@ export function ExplorerPage() {
     } finally {
       setScanning(false);
     }
-  }, [ingest, pickDirectoryViaInput]);
+  }, [ingestDirectory, pickDirectoryViaInput]);
 
   const onDirInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setScanning(true);
-    // 루트 이름 추출 (첫 파일의 webkitRelativePath 첫 segment)
     const first = files[0] as File & { webkitRelativePath?: string };
-    setScanRoot(first.webkitRelativePath?.split('/')[0] ?? null);
+    const root = first.webkitRelativePath?.split('/')[0] ?? '선택한 폴더';
     try {
-      await ingest(walkFromInput(files));
+      await ingestDirectory(root, walkFromInput(files), undefined, 'webkit');
     } finally {
       setScanning(false);
       e.target.value = '';
     }
-  }, [ingest]);
+  }, [ingestDirectory]);
+
+  // ─── 캐시된 핸들로 자동 재스캔 (FS Access API 만 가능) ───────────
+  const refreshFromHandle = useCallback(async () => {
+    if (!savedHandle) return;
+    setScanning(true);
+    try {
+      const perm = await checkHandlePermission(savedHandle);
+      if (perm !== 'granted') {
+        const req = await requestHandlePermission(savedHandle);
+        if (req !== 'granted') {
+          alert('읽기 권한이 거부되었습니다. 디렉토리를 다시 선택해주세요.');
+          return;
+        }
+      }
+      const walked = await walkDirHandle(savedHandle);
+      await ingestDirectory(savedHandle.name, walked, savedHandle, 'fs-access');
+    } catch (e) {
+      console.error('재스캔 실패:', e);
+      alert('재스캔 실패: ' + String(e));
+    } finally {
+      setScanning(false);
+    }
+  }, [savedHandle, ingestDirectory]);
+
+  const clearCache = useCallback(async () => {
+    if (!confirm('마지막 디렉토리 기억을 삭제하시겠습니까?')) return;
+    await clearLastFolder();
+    setEntries([]);
+    setScanRoot(null);
+    setSavedHandle(null);
+    setLastScanAt(null);
+    setAccessMode(null);
+  }, []);
 
   // 드래그앤드롭
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -301,14 +396,40 @@ export function ExplorerPage() {
           </div>
         </div>
         {(scanRoot || scanning) ? (
-          <div className="mt-2 text-[11px] text-zinc-500 flex items-center gap-2">
-            <Folder className="w-3 h-3" />
+          <div className="mt-2 text-[11px] text-zinc-500 flex items-center gap-2 flex-wrap">
+            <Folder className="w-3 h-3 flex-shrink-0" />
             {scanning ? (
               <span className="text-emerald-600">디렉토리 스캔 중… (파일 시스템 walk)</span>
             ) : (
               <>
-                기준 디렉토리: <code className="font-mono text-zinc-700">{scanRoot}</code>
-                · {entries.length}개 파일 ({entries.filter(e => e.kind === 'pki').length} PKI · {entries.filter(e => e.kind === 'other').length} 기타)
+                <span>
+                  기준 디렉토리: <code className="font-mono text-zinc-700">{scanRoot}</code>
+                  · {entries.length}개 파일 ({entries.filter(e => e.kind === 'pki').length} PKI · {entries.filter(e => e.kind === 'other').length} 기타)
+                </span>
+                {lastScanAt && (
+                  <span className="text-zinc-400">· 마지막 스캔 {new Date(lastScanAt).toLocaleString()}</span>
+                )}
+                {savedHandle && (
+                  <button
+                    onClick={refreshFromHandle}
+                    title="저장된 핸들로 재스캔 (권한 재요청 가능)"
+                    className="ml-1 inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 px-1.5 py-0.5 rounded"
+                  >
+                    <RefreshCw className="w-3 h-3" /> 재스캔
+                  </button>
+                )}
+                {accessMode === 'webkit' && !savedHandle && (
+                  <span className="text-amber-600 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200">
+                    💾 메타 캐시 (재스캔하려면 디렉토리 다시 선택)
+                  </span>
+                )}
+                <button
+                  onClick={clearCache}
+                  title="마지막 디렉토리 기억 삭제"
+                  className="ml-auto inline-flex items-center gap-1 text-red-600 hover:text-red-800 hover:bg-red-50 px-1.5 py-0.5 rounded"
+                >
+                  <Trash2 className="w-3 h-3" /> 비우기
+                </button>
               </>
             )}
           </div>
@@ -316,6 +437,7 @@ export function ExplorerPage() {
           <div className="mt-2 text-[10px] text-zinc-400">
             💡 Chrome 은 다운로드 / 바탕화면 / 문서 폴더를 직접 차단합니다 — 차단되면
             <b className="text-emerald-700"> 호환</b> 버튼 또는 자동 폴백을 사용하세요.
+            마지막에 본 폴더는 자동 기억됩니다.
           </div>
         )}
       </div>
