@@ -11,7 +11,7 @@
  *
  * 결과 → 부모 컴포넌트가 PkiHeader 에 매핑.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Shield, AlertTriangle, CheckCircle2, FileSearch, Sparkles, Eye, Highlighter, ListTree, BookOpen, UserCheck, Save, Table, Cpu, Zap } from 'lucide-react';
 import type { AnalysisResult, Grade } from '@/lib/analysis/types';
@@ -81,10 +81,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   const [decisionSaved, setDecisionSaved] = useState(false);
   const [savingDecision, setSavingDecision] = useState(false);
 
-  // 정책 적용 등급 선택 — 가명/익명화로 등급이 강등됐을 때만 의미 있음
-  //   'processed' = 강등된 등급 + 가명화된 본문 + 완화된 정책 (default)
-  //   'original'  = 원본 등급 + 원본 본문 + 엄격한 정책
-  const [policyGrade, setPolicyGrade] = useState<'original' | 'processed'>('processed');
+  // 위자드 진행 단계 (1: 원본 분석 / 2: 처리 방식 / 3: 최종 결정)
+  type WizardStep = 1 | 2 | 3;
+  type ProcessingChoice = 'pseudonymize' | 'anonymize' | 'skip' | null;
+  const [step, setStep] = useState<WizardStep>(1);
+  const [processingChoice, setProcessingChoice] = useState<ProcessingChoice>(null);
+  // step 3 — AI 판정 수락 (false) vs 임의 등급 + 사유 (true)
+  const [useManualGrade, setUseManualGrade] = useState(false);
 
   // 모델 헤더 — 학습 기준 N건 + 적용시각 (decision-store 에서 읽음)
   const [modelStats, setModelStats] = useState<{ count: number; lastTs?: number }>({ count: 0 });
@@ -110,24 +113,19 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   // 분석 결과 (가명/익명화 후 갱신될 수 있음)
   const [current, setCurrent] = useState<AnalysisResult>(initialResult);
 
-  // 가명/익명화가 적용되어 등급이 다른 경우 사용자가 정책 등급을 선택
-  const gradesDiffer = initialResult.classification.grade !== current.classification.grade;
-  const anonApplied = !!current.anonymization;
+  // step 2 결과 — 처리 안 함이면 원본, 처리 했으면 current
+  const baseEffective: AnalysisResult =
+    (processingChoice === 'skip' || !current.anonymization) ? initialResult : current;
 
-  // 가명화 적용 시 → 'processed' 자동 선택. 미적용 시 → 'original'.
+  // step 3 결과 — 사용자가 임의 등급 지정하면 그 등급으로 override
+  const effective: AnalysisResult = useManualGrade
+    ? { ...baseEffective, classification: { ...baseEffective.classification, grade: userGrade } }
+    : baseEffective;
+
+  // baseEffective 등급 변화 시 (사용자 picker 손 안 댔으면) userGrade 동기화
   useEffect(() => {
-    setPolicyGrade(anonApplied ? 'processed' : 'original');
-  }, [anonApplied]);
-
-  // 사용자가 봉투에 들어갈 실제 결과 — text/classification/findings 모두 일관
-  const effective: AnalysisResult = (policyGrade === 'original' && anonApplied)
-    ? initialResult
-    : current;
-
-  // effective 등급 변화 시 (사용자 picker 손 안 댔으면) userGrade 동기화
-  useEffect(() => {
-    if (!userManuallyPicked) setUserGrade(effective.classification.grade);
-  }, [effective.classification.grade, userManuallyPicked]);
+    if (!userManuallyPicked) setUserGrade(baseEffective.classification.grade);
+  }, [baseEffective.classification.grade, userManuallyPicked]);
 
   // SHAP 토큰 기여도 — 사용자가 명시적으로 실행
   const [shapResult, setShapResult] = useState<AttributionResult | null>(null);
@@ -155,26 +153,16 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     }, 30);
   }
 
-  const autoAppliedRef = useRef(false);
+  // 새 파일 진입 시 위자드 + 모든 사용자 결정 리셋
   useEffect(() => {
     setCurrent(initialResult);
-    autoAppliedRef.current = false;
+    setStep(1);
+    setProcessingChoice(null);
+    setUseManualGrade(false);
     setUserGrade(initialResult.classification.grade);
     setUserManuallyPicked(false);
     setUserMemo('');
     setDecisionSaved(false);
-  }, [initialResult]);
-
-  // 디폴트 액션 자동 적용 — O 등급 아니고 디폴트가 'skip' 이 아니면 즉시 실행
-  // 사용자는 클릭 없이 다이얼로그 진입만으로 권장 처리가 끝남
-  useEffect(() => {
-    if (autoAppliedRef.current) return;
-    if (!initialResult) return;
-    if (initialResult.classification.grade === 'O') return;
-    if (anonAction === 'skip') return;
-    autoAppliedRef.current = true;
-    runAnonymization(anonAction);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialResult]);
 
   // 정책 평가
@@ -208,13 +196,25 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     // 가명 = consistent replace 위주, 익명 = generalize/shift 위주
     // 현재는 정책 그대로 적용. 차후 entity 별 method 자동 분기 추가 가능.
     if (anonPrefs.targetGrade === 'O') {
-      const next = downgradeToTarget(current, { policy });
+      const next = downgradeToTarget(initialResult, { policy });
       setCurrent(next);
     } else {
-      const next = anonymizeOnce(current, { policy });
+      const next = anonymizeOnce(initialResult, { policy });
       setCurrent(next);
     }
     void kind;
+  }
+
+  // 위자드 step 2 — 사용자가 처리 방식 선택
+  function onChooseProcessing(choice: ProcessingChoice) {
+    setProcessingChoice(choice);
+    setAnonAction(choice ?? 'skip');
+    if (choice === 'pseudonymize' || choice === 'anonymize') {
+      runAnonymization(choice);
+    } else if (choice === 'skip') {
+      // 처리 안 함 — current 를 원본으로 reset
+      setCurrent(initialResult);
+    }
   }
 
   function handleAccept() {
@@ -328,6 +328,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
           {/* 본문 */}
           <div className="flex-1 overflow-y-auto p-5 space-y-4 text-sm">
 
+            {/* 위자드 진행 표시 */}
+            <WizardProgress step={step} onStepClick={(s) => {
+              if (s < step) setStep(s);
+            }} />
+
+            {/* ────────── STEP 1: 원본 분석 ────────── */}
+            {step === 1 && <>
             {/* 1. 사용 의도 */}
             <section className="border rounded-lg p-3">
               <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">1. 사용 의도</div>
@@ -382,116 +389,23 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               )}
             </section>
 
-            {/* 2-B. 가명/익명화 처리 결과 카드 — 적용 + 등급 변경 시만 노출 */}
-            {gradesDiffer && anonApplied && (
-              <section className={`border-2 rounded-lg p-3 ${GRADE_COLOR[current.classification.grade]}`}>
-                <div className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
-                  ✨ 2단계 — 가명/익명화 처리 후 결과
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-2xl font-bold w-10 text-center">{current.classification.grade}</div>
-                  <div className="flex-1">
-                    <div className="font-semibold">{GRADE_LABEL[current.classification.grade]}</div>
-                    <div className="text-xs opacity-80 mt-0.5">
-                      처리 후 score <b>{current.classification.score}</b> · 신뢰도{' '}
-                      {(current.classification.confidence * 100).toFixed(0)}%
-                      {current.anonymization && (
-                        <> · 변경 {current.anonymization.result.replacements.length}건 ·{' '}
-                        {current.anonymization.result.isReversible ? '가명처리 (복원 가능)' : '익명화 (비가역)'}</>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            )}
+            {/* Score bar — 원본 등급 + 임계값 시각화 */}
+            <ScoreBar
+              score={initialResult.classification.score}
+              sThreshold={initialResult.classification.thresholds.S}
+              cThreshold={initialResult.classification.thresholds.C}
+            />
 
-            {/* 2-C. 정책 적용 등급 선택 — 가명화로 등급이 바뀐 경우만 의미 있음 */}
-            {gradesDiffer && anonApplied && (
-              <section className="border rounded-lg p-3 bg-blue-50/50 border-blue-200">
-                <div className="text-xs font-semibold text-blue-900 uppercase mb-2 flex items-center gap-2">
-                  ⚖️ 3단계 — 정책 적용 등급 선택 (어느 결과로 봉투를 만들까요?)
-                </div>
-                <div className="space-y-2">
-                  <label className={`block p-2.5 rounded-lg border-2 cursor-pointer transition ${
-                    policyGrade === 'processed'
-                      ? `${GRADE_COLOR[current.classification.grade]} border-current ring-2 ring-current/30`
-                      : 'border-zinc-200 bg-white hover:border-blue-400'
-                  }`}>
-                    <input
-                      type="radio"
-                      name="policy-grade"
-                      checked={policyGrade === 'processed'}
-                      onChange={() => setPolicyGrade('processed')}
-                      className="mr-2"
-                    />
-                    <span className="font-semibold text-sm">
-                      ✅ 강등 수락 — {current.classification.grade} 등급으로 진행
-                    </span>
-                    <div className="text-[11px] mt-1 ml-5 opacity-90">
-                      가명/익명화된 본문이 봉투에 들어가며, {current.classification.grade} 등급에 맞는 완화된 정책이 적용됩니다.
-                    </div>
-                  </label>
-                  <label className={`block p-2.5 rounded-lg border-2 cursor-pointer transition ${
-                    policyGrade === 'original'
-                      ? `${GRADE_COLOR[initialResult.classification.grade]} border-current ring-2 ring-current/30`
-                      : 'border-zinc-200 bg-white hover:border-blue-400'
-                  }`}>
-                    <input
-                      type="radio"
-                      name="policy-grade"
-                      checked={policyGrade === 'original'}
-                      onChange={() => setPolicyGrade('original')}
-                      className="mr-2"
-                    />
-                    <span className="font-semibold text-sm">
-                      ⛔ 강등 거부 — 원본 {initialResult.classification.grade} 등급 유지
-                    </span>
-                    <div className="text-[11px] mt-1 ml-5 opacity-90">
-                      <b>원본 본문</b>이 그대로 봉투에 들어가고 (가명화 무효),
-                      {' '}{initialResult.classification.grade} 등급에 맞는 엄격한 정책 (PQC / 워터마크 등) 이 적용됩니다.
-                    </div>
-                  </label>
-                </div>
-              </section>
-            )}
-
-            {/* 2-D. 적용 중인 결과 카드 (effective 기반 — 정책/봉투 결정 등급) */}
-            <section className={`border rounded-lg p-3 ${GRADE_COLOR[c.grade]}`}>
-              <div className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
-                {gradesDiffer && anonApplied
-                  ? `🎯 ${policyGrade === 'original' ? '원본' : '처리 후'} 등급으로 진행 (정책/봉투 결정)`
-                  : '🎯 분석 결과 (정책/봉투 결정 등급)'}
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="text-2xl font-bold w-10 text-center">{c.grade}</div>
-                <div className="flex-1">
-                  <div className="font-semibold">{GRADE_LABEL[c.grade]}</div>
-                  <div className="text-xs opacity-80 mt-0.5">
-                    score <b>{c.score}</b> · 신뢰도 {(c.confidence * 100).toFixed(0)}%
-                    {' '}· 임계값 S=<b>{c.thresholds.S}</b> C=<b>{c.thresholds.C}</b>
-                    {effective.language.detected && effective.language.detected !== 'und' && (
-                      <> · 언어 {effective.language.detected}</>
-                    )}
-                    {effective.ocr?.applied && <> · OCR 적용</>}
-                  </div>
-                </div>
-              </div>
-
-              {/* Score bar — O/S/C 임계값 + 현재 score 위치 */}
-              <ScoreBar score={c.score} sThreshold={c.thresholds.S} cThreshold={c.thresholds.C} />
-
-              {showExplain && expl && (
-                <div className="mt-3 pt-3 border-t border-current/20 text-xs leading-relaxed opacity-90">
-                  {renderMarkdownBold(expl.narrative)}
-                </div>
-              )}
-              <button
-                onClick={() => setShowExplain(s => !s)}
-                className="mt-2 text-xs opacity-70 hover:opacity-100 flex items-center gap-1"
-              >
-                <Eye className="w-3 h-3" /> {showExplain ? '간단히 보기' : '자세한 설명 보기'}
-              </button>
-            </section>
+            {/* 자세한 분석 — 접이식. 사용자가 원할 때 열어봄 */}
+            <details className="border rounded-lg bg-zinc-50/50">
+              <summary className="cursor-pointer select-none p-3 text-xs font-semibold text-zinc-700 uppercase flex items-center gap-2 hover:bg-zinc-100">
+                <Eye className="w-3 h-3" />
+                자세한 분석 보기 (탐지 신호 / 판정 근거 / 모델 / SHAP)
+                <span className="ml-auto text-[10px] font-normal text-zinc-400 normal-case">
+                  ▼ 펼치기
+                </span>
+              </summary>
+              <div className="px-3 pb-3 space-y-3">
 
             {/* 3. Findings 요약 + 본문 하이라이트 */}
             <section className="border rounded-lg p-3">
@@ -639,7 +553,8 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               </div>
             </details>
 
-            {/* 3-C. 사용자 최종 분류 picker */}
+            {/* 3-C. 사용자 최종 분류 picker (위자드 step 3 으로 이동) */}
+            {false && (
             <section className="border rounded-lg p-3 bg-blue-50/30 border-blue-200">
               <div className="text-xs font-semibold text-zinc-600 uppercase mb-2 flex items-center gap-2">
                 <UserCheck className="w-3 h-3 text-blue-600" />
@@ -708,6 +623,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 IndexedDB 에 저장됩니다. 학습 사이클이 이 데이터를 사용해 가중치를 보정합니다.
               </div>
             </section>
+            )}
 
             {/* 3-D. 전체 findings 표 */}
             <details className="border rounded-lg bg-white">
@@ -975,104 +891,267 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 )}
               </div>
             </details>
+              </div>
+            </details>
+            </>}
+            {/* ────────── /STEP 1 ────────── */}
 
-            {/* 4. 가명/익명화 */}
-            <section className="border rounded-lg p-3">
-              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2 flex items-center gap-2">
-                <Sparkles className="w-3 h-3" /> 가명/익명화
-              </div>
-              <div className="text-xs text-zinc-600 mb-2">
-                {c.grade === 'O'
-                  ? 'O 등급 — 가명처리 불필요. 그대로 송신 가능.'
-                  : `${c.grade} 등급 — 가명처리하면 등급이 ${anonPrefs.targetGrade} 등급까지 낮아질 수 있습니다.`}
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <ActionButton active={anonAction === 'pseudonymize'}
-                  onClick={() => { setAnonAction('pseudonymize'); runAnonymization('pseudonymize'); }}>
-                  🎭 가명처리 (복원 가능)
-                </ActionButton>
-                <ActionButton active={anonAction === 'anonymize'}
-                  onClick={() => { setAnonAction('anonymize'); runAnonymization('anonymize'); }}>
-                  🔒 익명화 (비가역)
-                </ActionButton>
-                <ActionButton active={anonAction === 'skip'}
-                  onClick={() => setAnonAction('skip')}>
-                  ⏭ 적용 안 함
-                </ActionButton>
-              </div>
-
-              {current.anonymization && (
-                <div className="mt-3 text-xs space-y-1 bg-zinc-50 rounded p-2">
-                  <div>
-                    적용 전 → 후 등급:
-                    <b className="ml-1">{current.anonymization.iterations[0]?.grade}</b>
-                    {' → '}
-                    <b className={c.grade === 'O' ? 'text-emerald-600' : 'text-amber-600'}>
-                      {current.anonymization.finalGrade}
-                    </b>
-                    {' '}(반복 {current.anonymization.iterations.length - 1}회)
-                  </div>
-                  <div>
-                    변경 {current.anonymization.result.replacements.length}건
-                    · 가역성:{' '}
-                    <b>{current.anonymization.result.isReversible ? '가명처리' : '익명화'}</b>
-                    {' '}(매핑 {Object.keys(current.anonymization.result.mapping).length}개)
+            {/* ────────── STEP 2: 처리 방식 선택 ────────── */}
+            {step === 2 && (
+              <section className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50/30 space-y-3">
+                <div>
+                  <div className="text-xs text-zinc-500 uppercase">원본 등급 (분석 결과)</div>
+                  <div className={`mt-1 inline-flex items-center gap-2 px-2 py-1 rounded font-bold ${GRADE_COLOR[initialResult.classification.grade]}`}>
+                    {initialResult.classification.grade} — {GRADE_LABEL[initialResult.classification.grade]}
+                    <span className="text-xs font-normal opacity-80">score {initialResult.classification.score}</span>
                   </div>
                 </div>
-              )}
-            </section>
-
-            {/* 5. 정책 결정 */}
-            {policy && (
-              <section className={`border rounded-lg p-3 ${policy.allow ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
-                <div className="text-xs font-semibold uppercase mb-2 flex items-center gap-2">
-                  {policy.allow ? (
-                    <><CheckCircle2 className="w-3 h-3 text-emerald-600" /> <span className="text-emerald-700">정책 통과</span></>
-                  ) : (
-                    <><AlertTriangle className="w-3 h-3 text-red-600" /> <span className="text-red-700">정책 위반 — 송신 불가</span></>
-                  )}
-                  <span className="ml-auto text-zinc-400 font-normal text-[10px]">{policy.engine}</span>
+                <div className="text-sm font-semibold text-zinc-700">
+                  이 문서의 처리 방식을 선택하세요:
                 </div>
-                {policy.denyReasons.length > 0 && (
-                  <ul className="text-xs space-y-1 mb-2">
-                    {policy.denyReasons.map(r => (
-                      <li key={r} className="text-red-700">• {REASON_MESSAGES[r] || r}</li>
-                    ))}
-                  </ul>
+                <div className="grid gap-2">
+                  <ProcessingChoiceCard
+                    selected={processingChoice === 'skip'}
+                    title="🛡 등급 유지 — 처리 안 함"
+                    desc="원본 그대로 봉투에 들어갑니다. 가명/익명화 적용 X. 원본 등급 정책 (엄격할 수 있음) 으로 암호화 + 서명만 진행."
+                    onClick={() => onChooseProcessing('skip')}
+                  />
+                  <ProcessingChoiceCard
+                    selected={processingChoice === 'pseudonymize'}
+                    title="🎭 가명처리 (복원 가능)"
+                    desc="민감 정보를 토큰으로 치환하되 매핑을 보존하여 복원 가능. 등급이 강등되어 정책이 완화될 수 있습니다."
+                    onClick={() => onChooseProcessing('pseudonymize')}
+                  />
+                  <ProcessingChoiceCard
+                    selected={processingChoice === 'anonymize'}
+                    title="🔒 익명화 (비가역)"
+                    desc="민감 정보를 영구 마스킹/제거. 복원 불가능. 등급이 가장 많이 강등됩니다."
+                    onClick={() => onChooseProcessing('anonymize')}
+                  />
+                </div>
+                {processingChoice && processingChoice !== 'skip' && current.anonymization && (
+                  <div className="text-xs bg-white border border-zinc-200 rounded p-2 space-y-1">
+                    <div>
+                      적용 결과 — 등급:
+                      <b className="ml-1">{initialResult.classification.grade}</b>
+                      {' → '}
+                      <b className={current.classification.grade === 'O' ? 'text-emerald-600' : 'text-amber-600'}>
+                        {current.classification.grade}
+                      </b>
+                      {' '}(반복 {current.anonymization.iterations.length - 1}회)
+                    </div>
+                    <div>
+                      변경 {current.anonymization.result.replacements.length}건 · 가역성:{' '}
+                      <b>{current.anonymization.result.isReversible ? '가명처리' : '익명화'}</b>
+                    </div>
+                  </div>
                 )}
-                {policy.recommendedActions.length > 0 && (
-                  <ul className="text-xs space-y-1">
-                    {policy.recommendedActions.map(a => (
-                      <li key={a} className="text-zinc-700">💡 {ACTION_MESSAGES[a] || a}</li>
-                    ))}
-                  </ul>
-                )}
-                {policy.requireWatermark && <div className="text-xs text-amber-700 mt-1">⚠ 워터마크 강제</div>}
-                {policy.requirePqc && <div className="text-xs text-amber-700">⚠ PQC 암호화 필요</div>}
               </section>
             )}
 
-            {/* 6. 디폴트 저장 */}
-            <section className="text-xs">
-              <label className="flex items-center gap-2 text-zinc-600">
-                <input type="checkbox" checked={rememberDefaults}
-                  onChange={e => setRememberDefaults(e.target.checked)} />
-                다음에도 같은 옵션 사용 (사용 의도 + 가명처리 디폴트 저장)
-              </label>
-            </section>
+            {/* ────────── STEP 3: 최종 결정 ────────── */}
+            {step === 3 && <>
+              {/* 처리 결과 카드 */}
+              <section className={`border-2 rounded-lg p-3 ${GRADE_COLOR[c.grade]}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">
+                  🎯 봉투에 적용될 최종 등급
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl font-bold w-10 text-center">{c.grade}</div>
+                  <div className="flex-1">
+                    <div className="font-semibold">{GRADE_LABEL[c.grade]}</div>
+                    <div className="text-xs opacity-80 mt-0.5">
+                      {useManualGrade ? (
+                        <>사용자 임의 지정 · 원본 AI 판정 <b>{baseEffective.classification.grade}</b></>
+                      ) : (
+                        <>AI 판정 score <b>{c.score}</b> · 신뢰도 {(c.confidence * 100).toFixed(0)}%</>
+                      )}
+                      {processingChoice && processingChoice !== 'skip' && current.anonymization && (
+                        <> · 가명/익명화 적용 ({current.anonymization.result.replacements.length}건 변경)</>
+                      )}
+                      {processingChoice === 'skip' && (
+                        <> · 가명/익명화 미적용 (원본 본문)</>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <ScoreBar score={c.score} sThreshold={c.thresholds.S} cThreshold={c.thresholds.C} />
+              </section>
+
+              {/* 등급 결정 — AI 수락 vs 임의 지정 */}
+              <section className="border rounded-lg p-3 bg-blue-50/30 border-blue-200">
+                <div className="text-xs font-semibold text-zinc-700 uppercase mb-2 flex items-center gap-2">
+                  <UserCheck className="w-3 h-3 text-blue-600" />
+                  최종 등급 결정
+                </div>
+                <div className="space-y-2">
+                  <label className={`block p-2.5 rounded-lg border-2 cursor-pointer transition ${
+                    !useManualGrade
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-zinc-200 bg-white hover:border-blue-300'
+                  }`}>
+                    <input type="radio" name="grade-decision"
+                      checked={!useManualGrade}
+                      onChange={() => { setUseManualGrade(false); setUserManuallyPicked(false); }}
+                      className="mr-2" />
+                    <span className="font-semibold text-sm">
+                      ✅ AI 판정 수락 — {baseEffective.classification.grade} 등급
+                    </span>
+                    <div className="text-[11px] mt-1 ml-5 text-zinc-600">
+                      AI 가 산출한 등급을 그대로 사용합니다.
+                    </div>
+                  </label>
+                  <label className={`block p-2.5 rounded-lg border-2 cursor-pointer transition ${
+                    useManualGrade
+                      ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-200'
+                      : 'border-zinc-200 bg-white hover:border-amber-300'
+                  }`}>
+                    <input type="radio" name="grade-decision"
+                      checked={useManualGrade}
+                      onChange={() => { setUseManualGrade(true); setUserManuallyPicked(true); }}
+                      className="mr-2" />
+                    <span className="font-semibold text-sm">
+                      ✏️ 임의 등급 지정 (사유 필수)
+                    </span>
+                    <div className="text-[11px] mt-1 ml-5 text-zinc-600">
+                      AI 결과를 무시하고 직접 등급을 부여합니다. 사유는 학습 데이터에 저장됩니다.
+                    </div>
+                  </label>
+                </div>
+
+                {useManualGrade && (
+                  <div className="mt-3 space-y-2 pl-3 border-l-2 border-amber-300">
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['C', 'S', 'O'] as Grade[]).map(g => {
+                        const active = userGrade === g;
+                        return (
+                          <button
+                            key={g}
+                            onClick={() => setUserGrade(g)}
+                            className={`px-2 py-2 text-xs rounded border transition text-left ${
+                              active
+                                ? g === 'C' ? 'bg-red-600 text-white border-red-600'
+                                : g === 'S' ? 'bg-amber-500 text-white border-amber-500'
+                                            : 'bg-emerald-600 text-white border-emerald-600'
+                                : 'bg-white border-zinc-200 hover:border-blue-400'
+                            }`}
+                          >
+                            <div className="font-bold text-base leading-tight">
+                              {g} <span className="text-xs font-normal opacity-80">— {
+                                g === 'C' ? '위험' : g === 'S' ? '민감' : '공개'
+                              }</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <textarea
+                      value={userMemo}
+                      onChange={e => { setUserMemo(e.target.value); setDecisionSaved(false); }}
+                      placeholder="등급 부여 사유 (필수) — 예: 회사 외부 자료라 공개로 분류"
+                      rows={2}
+                      className={`w-full px-2 py-1.5 text-xs border rounded resize-none focus:outline-none ${
+                        userMemo.trim().length === 0 ? 'border-amber-400' : 'border-zinc-300 focus:border-blue-400'
+                      }`}
+                    />
+                    <button
+                      onClick={handleSaveDecision}
+                      disabled={savingDecision || decisionSaved || userMemo.trim().length === 0}
+                      className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                    >
+                      <Save className="w-3 h-3" />
+                      {decisionSaved ? '학습 데이터 저장됨 ✓' : savingDecision ? '저장 중…' : '학습 데이터 저장'}
+                    </button>
+                  </div>
+                )}
+              </section>
+
+              {/* 정책 결정 */}
+              {policy && (
+                <section className={`border rounded-lg p-3 ${policy.allow ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                  <div className="text-xs font-semibold uppercase mb-2 flex items-center gap-2">
+                    {policy.allow ? (
+                      <><CheckCircle2 className="w-3 h-3 text-emerald-600" /> <span className="text-emerald-700">정책 통과</span></>
+                    ) : (
+                      <><AlertTriangle className="w-3 h-3 text-red-600" /> <span className="text-red-700">정책 위반 — 송신 불가</span></>
+                    )}
+                    <span className="ml-auto text-zinc-400 font-normal text-[10px]">{policy.engine}</span>
+                  </div>
+                  {policy.denyReasons.length > 0 && (
+                    <ul className="text-xs space-y-1 mb-2">
+                      {policy.denyReasons.map(r => (
+                        <li key={r} className="text-red-700">• {REASON_MESSAGES[r] || r}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {policy.recommendedActions.length > 0 && (
+                    <ul className="text-xs space-y-1">
+                      {policy.recommendedActions.map(a => (
+                        <li key={a} className="text-zinc-700">💡 {ACTION_MESSAGES[a] || a}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {policy.requireWatermark && <div className="text-xs text-amber-700 mt-1">⚠ 워터마크 강제</div>}
+                  {policy.requirePqc && <div className="text-xs text-amber-700">⚠ PQC 암호화 필요</div>}
+                </section>
+              )}
+
+              {/* 디폴트 저장 */}
+              <section className="text-xs">
+                <label className="flex items-center gap-2 text-zinc-600">
+                  <input type="checkbox" checked={rememberDefaults}
+                    onChange={e => setRememberDefaults(e.target.checked)} />
+                  다음에도 같은 옵션 사용 (사용 의도 + 가명처리 디폴트 저장)
+                </label>
+              </section>
+            </>}
+            {/* ────────── /STEP 3 ────────── */}
           </div>
 
-          {/* 푸터 */}
-          <div className="flex justify-end gap-2 p-4 border-t bg-zinc-50">
-            <button onClick={onClose} className="px-3 py-2 text-sm hover:bg-zinc-100 rounded">취소</button>
-            <button
-              onClick={handleAccept}
-              disabled={!policy?.allow}
-              className="px-4 py-2 text-sm bg-blue-600 text-white rounded disabled:bg-zinc-300 disabled:cursor-not-allowed flex items-center gap-1.5"
-            >
-              <Shield className="w-4 h-4" />
-              {policy?.allow ? '이 결과로 봉투 만들기' : '정책 위반으로 차단됨'}
+          {/* 푸터 — 위자드 단계별 버튼 */}
+          <div className="flex justify-between items-center gap-2 p-4 border-t bg-zinc-50">
+            <button onClick={onClose} className="px-3 py-2 text-sm hover:bg-zinc-100 rounded">
+              취소
             </button>
+            <div className="flex gap-2">
+              {step > 1 && (
+                <button
+                  onClick={() => setStep((step - 1) as WizardStep)}
+                  className="px-3 py-2 text-sm hover:bg-zinc-200 rounded text-zinc-700"
+                >
+                  ← 이전
+                </button>
+              )}
+              {step === 1 && (
+                <button
+                  onClick={() => setStep(2)}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1.5"
+                >
+                  다음: 처리 방식 선택 →
+                </button>
+              )}
+              {step === 2 && (
+                <button
+                  onClick={() => setStep(3)}
+                  disabled={!processingChoice}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded disabled:bg-zinc-300 disabled:cursor-not-allowed hover:bg-blue-700 flex items-center gap-1.5"
+                >
+                  다음: 최종 결정 →
+                </button>
+              )}
+              {step === 3 && (
+                <button
+                  onClick={handleAccept}
+                  disabled={!policy?.allow || (useManualGrade && userMemo.trim().length === 0)}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded disabled:bg-zinc-300 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <Shield className="w-4 h-4" />
+                  {!policy?.allow ? '정책 위반으로 차단됨'
+                    : useManualGrade && userMemo.trim().length === 0 ? '임의 등급 사유를 입력하세요'
+                    : '이 결과로 봉투 만들기'}
+                </button>
+              )}
+            </div>
           </div>
         </motion.div>
       </motion.div>
@@ -1149,6 +1228,66 @@ function ActionButton({ active, onClick, children }: {
       }`}
     >
       {children}
+    </button>
+  );
+}
+
+/** 위자드 진행 표시 — 1 / 2 / 3 단계 인디케이터 */
+function WizardProgress({ step, onStepClick }: {
+  step: 1 | 2 | 3; onStepClick: (s: 1 | 2 | 3) => void;
+}) {
+  const labels = ['원본 분석', '처리 방식', '최종 결정'];
+  return (
+    <div className="flex items-center gap-1 mb-2">
+      {labels.map((label, i) => {
+        const n = (i + 1) as 1 | 2 | 3;
+        const isActive = step === n;
+        const isPast = step > n;
+        const isFuture = step < n;
+        return (
+          <div key={n} className="flex-1 flex items-center gap-1 min-w-0">
+            <button
+              onClick={() => isPast && onStepClick(n)}
+              disabled={!isPast}
+              className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition min-w-0 ${
+                isActive ? 'bg-blue-600 text-white'
+                : isPast ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
+                : 'bg-zinc-100 text-zinc-400'
+              }`}
+              title={isPast ? '이 단계로 돌아가기' : undefined}
+            >
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                isActive ? 'bg-white text-blue-600'
+                : isPast ? 'bg-blue-600 text-white'
+                : 'bg-zinc-300 text-zinc-500'
+              }`}>
+                {isPast ? '✓' : n}
+              </span>
+              <span className="truncate">{label}</span>
+            </button>
+            {i < 2 && <span className={`text-xs ${isFuture ? 'text-zinc-300' : 'text-blue-400'}`}>→</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Step 2 처리 방식 카드 */
+function ProcessingChoiceCard({ selected, title, desc, onClick }: {
+  selected: boolean; title: string; desc: string; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`text-left p-3 rounded-lg border-2 transition ${
+        selected
+          ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+          : 'border-zinc-200 bg-white hover:border-blue-300'
+      }`}
+    >
+      <div className="font-semibold text-sm">{title}</div>
+      <div className="text-[11px] mt-1 text-zinc-600 leading-relaxed">{desc}</div>
     </button>
   );
 }
