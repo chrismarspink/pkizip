@@ -13,13 +13,14 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Shield, AlertTriangle, CheckCircle2, FileSearch, Sparkles, Eye, Highlighter, ListTree, BookOpen, UserCheck, Save, Table, Cpu } from 'lucide-react';
+import { X, Shield, AlertTriangle, CheckCircle2, FileSearch, Sparkles, Eye, Highlighter, ListTree, BookOpen, UserCheck, Save, Table, Cpu, Zap } from 'lucide-react';
 import type { AnalysisResult, Grade } from '@/lib/analysis/types';
 import { downgradeToTarget, anonymizeOnce } from '@/lib/analysis/pipeline';
 import { loadPolicy } from '@/lib/analysis/anonymization-policy';
 import { findKeywordOccurrences } from '@/lib/analysis/classifier';
 import { listRecognizers, type RecognizerInfo } from '@/lib/analysis/pii-detector';
 import * as neuralNer from '@/lib/analysis/neural-ner';
+import { computeAttributions, buildAttributionHtml, type AttributionResult } from '@/lib/analysis/shap-attribution';
 import { saveDecision, textHash, listDecisions } from '@/lib/learning/decision-store';
 import { evaluate, REASON_MESSAGES, ACTION_MESSAGES, type PolicyDecision } from '@/lib/policy/opa-engine';
 import { prefs, type CryptoKind, type Purpose } from '@/lib/store/preferences';
@@ -98,6 +99,32 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   const recognizers = useMemo<RecognizerInfo[]>(() => listRecognizers(), []);
   const nerStatus = useMemo(() => neuralNer.status(), [decisionSaved]);
   const neuralPrefs = useMemo(() => prefs.neural?.get?.() ?? { nerEnabled: false, nerAutoLoad: false, nerMinScore: 0.5 }, []);
+
+  // SHAP 토큰 기여도 — 사용자가 명시적으로 실행
+  const [shapResult, setShapResult] = useState<AttributionResult | null>(null);
+  const [shapRunning, setShapRunning] = useState(false);
+  // current 가 바뀌면 (가명/익명화 적용) 기존 결과 무효화
+  useEffect(() => { setShapResult(null); }, [current.text]);
+
+  function runShap() {
+    if (shapRunning) return;
+    setShapRunning(true);
+    // setTimeout 으로 yield → "분석 중…" UI 가 먼저 렌더되도록
+    setTimeout(() => {
+      try {
+        const r = computeAttributions(current.text, current.classification, {
+          maxTokens: 200,
+          minDelta: 0.05,
+        });
+        setShapResult(r);
+      } catch (e) {
+        console.error('[SHAP] failed', e);
+        alert('SHAP 분석 실패: ' + String(e));
+      } finally {
+        setShapRunning(false);
+      }
+    }, 30);
+  }
 
   // 분석 결과 (가명/익명화 후 갱신될 수 있음)
   const [current, setCurrent] = useState<AnalysisResult>(initialResult);
@@ -692,6 +719,130 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                     </div>
                   )}
                 </div>
+              </div>
+            </details>
+
+            {/* 3-F. SHAP 토큰 기여도 */}
+            <details className="border rounded-lg bg-white">
+              <summary className="cursor-pointer select-none p-3 text-xs font-semibold text-zinc-600 uppercase flex items-center gap-2 hover:bg-zinc-50">
+                <Zap className="w-3 h-3 text-purple-600" />
+                SHAP 토큰 기여도
+                <span className="ml-auto text-[10px] font-normal text-zinc-400 normal-case">
+                  {shapResult
+                    ? `${shapResult.evaluated} 토큰 · ${shapResult.elapsedMs}ms · maxΔ ${shapResult.maxAbsDelta}`
+                    : 'occlusion 기반 (Python SHAP 5-30s → ~수백 ms)'}
+                </span>
+              </summary>
+              <div className="px-3 pb-3 space-y-3">
+                {!shapResult && !shapRunning && (
+                  <div className="bg-purple-50 border border-purple-200 rounded p-3 text-xs space-y-1.5">
+                    <div className="text-purple-900 font-semibold">토큰별 기여도 분석</div>
+                    <div className="text-purple-700 leading-relaxed">
+                      본문의 각 토큰을 같은 길이 공백으로 마스킹 후 재분류 →
+                      score 변화를 측정합니다. 룰 기반 분류기에서는 SHAP 와 거의
+                      동일한 결과를 ~200토큰 기준 수백 ms 안에 얻을 수 있습니다.
+                    </div>
+                    <button
+                      onClick={runShap}
+                      className="mt-1 px-3 py-1.5 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3 h-3" /> 분석 실행
+                    </button>
+                  </div>
+                )}
+
+                {shapRunning && (
+                  <div className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded px-3 py-2 flex items-center gap-2">
+                    <span className="inline-block w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+                    토큰 마스킹 + 재분류 진행 중…
+                  </div>
+                )}
+
+                {shapResult && (
+                  <>
+                    {/* 통계 헤더 */}
+                    <div className="flex items-center gap-2 text-[11px] text-zinc-600">
+                      <span className="font-mono">{shapResult.method}</span>
+                      <span>·</span>
+                      <span>총 {shapResult.totalTokens} 토큰 중 {shapResult.evaluated} 평가</span>
+                      <span>·</span>
+                      <span>유효 기여 {shapResult.tokens.length}개</span>
+                      <button
+                        onClick={runShap}
+                        className="ml-auto text-[10px] text-purple-600 hover:text-purple-800 underline"
+                      >
+                        다시 실행
+                      </button>
+                    </div>
+
+                    {/* 범례 */}
+                    <div className="flex items-center gap-3 text-[10px]">
+                      <span className="px-1.5 py-0.5 rounded font-semibold"
+                        style={{ background: 'rgba(239,68,68,0.4)', color: '#7f1d1d' }}>
+                        + 등급 상승 기여
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded font-semibold"
+                        style={{ background: 'rgba(16,185,129,0.4)', color: '#064e3b' }}>
+                        − 등급 하락 기여
+                      </span>
+                      <span className="text-zinc-400 ml-auto">색상 농도 = |기여도|</span>
+                    </div>
+
+                    {/* 본문 + 기여도 색칠 */}
+                    <pre
+                      className="bg-zinc-50 border rounded p-3 max-h-72 overflow-auto text-xs whitespace-pre-wrap break-words font-mono leading-relaxed"
+                      dangerouslySetInnerHTML={{
+                        __html: buildAttributionHtml(current.text, shapResult, 4000),
+                      }}
+                    />
+
+                    {/* Top-10 토큰 표 */}
+                    {shapResult.tokens.length > 0 && (
+                      <details>
+                        <summary className="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-900">
+                          ▸ Top {Math.min(10, shapResult.tokens.length)} 토큰 (|기여도| 큰 순)
+                        </summary>
+                        <table className="w-full text-xs mt-2">
+                          <thead>
+                            <tr className="text-left text-zinc-500 border-b">
+                              <th className="py-1 pr-2 font-medium">토큰</th>
+                              <th className="py-1 pr-2 font-medium text-right">scoreΔ</th>
+                              <th className="py-1 pr-2 font-medium text-right">정규화</th>
+                              <th className="py-1 pr-2 font-medium">등급 변화</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...shapResult.tokens]
+                              .sort((a, b) => Math.abs(b.scoreDelta) - Math.abs(a.scoreDelta))
+                              .slice(0, 10)
+                              .map((t, i) => (
+                                <tr key={i} className="border-b last:border-b-0">
+                                  <td className="py-1 pr-2 font-mono text-[11px] max-w-[180px] truncate" title={t.token}>
+                                    {t.token}
+                                  </td>
+                                  <td className={`py-1 pr-2 text-right tabular-nums font-semibold ${
+                                    t.scoreDelta > 0 ? 'text-red-600' : 'text-emerald-600'
+                                  }`}>
+                                    {t.scoreDelta > 0 ? '+' : ''}{t.scoreDelta.toFixed(2)}
+                                  </td>
+                                  <td className="py-1 pr-2 text-right tabular-nums text-zinc-500">
+                                    {t.fraction.toFixed(2)}
+                                  </td>
+                                  <td className="py-1 pr-2 text-[11px]">
+                                    {t.flipsGrade ? (
+                                      <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                        마스킹 시 {t.flipsGrade} 로 변경
+                                      </span>
+                                    ) : <span className="text-zinc-400">—</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </details>
+                    )}
+                  </>
+                )}
               </div>
             </details>
 
