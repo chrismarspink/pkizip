@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { HomePage } from '@/pages/HomePage';
@@ -48,6 +48,8 @@ export function App() {
             <Route path="settings" element={<TeamSettingsPage />} />
             <Route path="billing" element={<TeamBillingPage />} />
           </Route>
+          {/* 매칭 안 되는 경로는 홈으로 — 옛 SW 캐시 + 새 라우트 충돌 시 빈 화면 방지 */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>
