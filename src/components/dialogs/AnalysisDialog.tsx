@@ -114,13 +114,22 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   const [current, setCurrent] = useState<AnalysisResult>(initialResult);
 
   // step 2 결과 — 처리 안 함이면 원본, 처리 했으면 current
-  const baseEffective: AnalysisResult =
-    (processingChoice === 'skip' || !current.anonymization) ? initialResult : current;
+  // useMemo 로 ref 안정화 — 안 하면 spread 로 새 객체 → effect 무한 루프
+  const baseEffective = useMemo<AnalysisResult>(
+    () => (processingChoice === 'skip' || !current.anonymization) ? initialResult : current,
+    [processingChoice, current, initialResult],
+  );
 
   // step 3 결과 — 사용자가 임의 등급 지정하면 그 등급으로 override
-  const effective: AnalysisResult = useManualGrade
-    ? { ...baseEffective, classification: { ...baseEffective.classification, grade: userGrade } }
-    : baseEffective;
+  // useMemo 필수 — 안 하면 useManualGrade=true 일 때 spread 로 매 렌더 새 객체 →
+  //   OPA useEffect 의 deps [effective] 가 매 렌더 fire → setPolicy 무한 루프 →
+  //   "임의 사유 지정 모드 동작 안 함" 증상 발생.
+  const effective = useMemo<AnalysisResult>(
+    () => useManualGrade
+      ? { ...baseEffective, classification: { ...baseEffective.classification, grade: userGrade } }
+      : baseEffective,
+    [useManualGrade, userGrade, baseEffective],
+  );
 
   // baseEffective 등급 변화 시 (사용자 picker 손 안 댔으면) userGrade 동기화
   useEffect(() => {
