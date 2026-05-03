@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CertWallet } from '@/components/cert/CertWallet';
 import { Identicon } from '@/components/cert/Identicon';
-import { Shield, Clock, Plus, Import, QrCode } from 'lucide-react';
+import { Shield, Clock, Plus, Import, QrCode, Star, User, Building2, Download, Hourglass } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { QrDisplayModal } from '@/components/qr/QrDisplayModal';
 import { MnemonicDialog } from '@/components/dialogs/MnemonicDialog';
@@ -18,7 +18,9 @@ import {
   getAllIdentityMetas, getAllCertificates, getActiveIdentityId,
   getAllKeyRingEntries, loadIdentitySeed, deleteIdentity,
   setActiveIdentityId, saveCertificate,
+  setIdentityCategory, setDefaultIdentity,
   type StoredCertificate, type EncryptedIdentity, type PublicKeyEntry,
+  type IdentityCategory,
 } from '@/lib/crypto/key-manager';
 import { deriveKeyIdentity } from '@/lib/crypto/hd-key';
 import {
@@ -83,6 +85,7 @@ export function CertsPage() {
       id: m.id, name: m.name, commonName: m.commonName, email: m.email,
       signingFingerprint: m.signingFingerprint, encryptionFingerprint: m.encryptionFingerprint,
       createdAt: m.createdAt,
+      category: m.category, isDefault: m.isDefault,
     })));
 
     const entries = await getAllKeyRingEntries();
@@ -183,8 +186,24 @@ export function CertsPage() {
     }
   }, []);
 
-  // ── CertCardProps 목록 조립 ──
-  const cardProps: Omit<CertCardProps, 'initialFace'>[] = metas
+  // ── 카테고리 / 기본 핸들러 ──
+  const handleSetDefault = useCallback(async (id: string) => {
+    await setDefaultIdentity(id);
+    await loadData();
+    toast.success('기본 인증서로 지정됨');
+  }, []);
+
+  const handleChangeCategory = useCallback(async (id: string, category: IdentityCategory) => {
+    await setIdentityCategory(id, category);
+    await loadData();
+  }, []);
+
+  // ── CertCardProps + 메타 (카테고리/기본) 목록 조립 ──
+  type CardWithMeta = Omit<CertCardProps, 'initialFace'> & {
+    category?: IdentityCategory;
+    isDefault?: boolean;
+  };
+  const cardProps: CardWithMeta[] = metas
     .map(m => {
       const cert = certs.get(m.signingFingerprint);
       if (!cert) return null;
@@ -208,10 +227,11 @@ export function CertsPage() {
         onCardColorChange: async (color: string) => {
           const updated = { ...cert, cardColor: color };
           await saveCertificate(updated);
-          // 로컬 상태 갱신
           setCerts(prev => { const next = new Map(prev); next.set(cert.fingerprint, updated); return next; });
         },
-      } satisfies Omit<CertCardProps, 'initialFace'>;
+        category: m.category,
+        isDefault: m.isDefault,
+      } as CardWithMeta;
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
@@ -227,7 +247,31 @@ export function CertsPage() {
           <p className="text-xs text-zinc-400 mb-6">아래에서 새 니모닉을 생성하거나 기존 니모닉을 복구하세요.</p>
         </div>
       ) : (
-        <CertWallet cards={cardProps} />
+        <div className="space-y-6">
+          {(['personal', 'institution', 'imported', 'ephemeral'] as const).map(cat => {
+            const inCat = cardProps.filter(p => (p.category ?? 'personal') === cat);
+            if (inCat.length === 0) return null;
+            const meta = CATEGORY_META[cat];
+            const Icon = meta.icon;
+            return (
+              <section key={cat}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon className={`w-4 h-4 ${meta.iconColor}`} />
+                  <h2 className="text-sm font-semibold text-zinc-700">{meta.label}</h2>
+                  <span className="text-[11px] text-zinc-400">({inCat.length})</span>
+                </div>
+                <CertWallet cards={inCat} />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {inCat.map(p => (
+                    <IdentityActionRow key={p.identityId} cardProp={p}
+                      onSetDefault={() => handleSetDefault(p.identityId)}
+                      onChangeCategory={(c) => handleChangeCategory(p.identityId, c)} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       )}
 
       {/* 활성 인증서 QR 공유 */}
@@ -312,6 +356,56 @@ export function CertsPage() {
         onOpenChange={open => { if (!open) { setMnemonicDialog(null); loadData(); } }}
         mode="recover"
       />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 카테고리 메타 + 인라인 액션 행
+// ─────────────────────────────────────────────
+
+const CATEGORY_META: Record<IdentityCategory, { label: string; icon: typeof User; iconColor: string }> = {
+  personal:    { label: '개인',         icon: User,      iconColor: 'text-blue-600' },
+  institution: { label: '기관 / 회사',  icon: Building2, iconColor: 'text-violet-600' },
+  imported:    { label: '가져온 인증서', icon: Download,  iconColor: 'text-emerald-600' },
+  ephemeral:   { label: '임시',         icon: Hourglass, iconColor: 'text-zinc-500' },
+};
+
+interface IdentityActionRowProps {
+  cardProp: { identityId: string; identityName: string; category?: IdentityCategory; isDefault?: boolean };
+  onSetDefault: () => void;
+  onChangeCategory: (c: IdentityCategory) => void;
+}
+
+function IdentityActionRow({ cardProp, onSetDefault, onChangeCategory }: IdentityActionRowProps) {
+  const cat = cardProp.category ?? 'personal';
+  return (
+    <div className="flex items-center gap-2 text-[11px] bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1">
+      <span className="font-medium text-zinc-700 truncate max-w-[120px]" title={cardProp.identityName}>
+        {cardProp.identityName}
+      </span>
+      <select
+        value={cat}
+        onChange={e => onChangeCategory(e.target.value as IdentityCategory)}
+        className="text-[11px] bg-white border border-zinc-200 rounded px-1 py-0.5"
+      >
+        {(Object.keys(CATEGORY_META) as IdentityCategory[]).map(c => (
+          <option key={c} value={c}>{CATEGORY_META[c].label}</option>
+        ))}
+      </select>
+      {cardProp.isDefault ? (
+        <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+          <Star className="w-3 h-3 fill-amber-500 text-amber-500" /> 기본
+        </span>
+      ) : (
+        <button
+          onClick={onSetDefault}
+          className="inline-flex items-center gap-1 text-zinc-500 hover:text-amber-700 hover:bg-amber-50 rounded px-1.5 py-0.5"
+          title="기본 인증서로 지정"
+        >
+          <Star className="w-3 h-3" /> 기본 지정
+        </button>
+      )}
     </div>
   );
 }

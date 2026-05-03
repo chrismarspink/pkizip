@@ -7,6 +7,7 @@ import type { PkiHeader } from '../container/pki-format';
 import type { KeyIdentity } from '../crypto/hd-key';
 import type { VerificationResult } from '../crypto/signing';
 import type { CertificateInfo } from '../crypto/certificate';
+import type { IdentityCategory } from '../crypto/key-manager';
 
 export interface ArchiveFile extends FileEntry {
   isEncrypted: boolean;
@@ -23,6 +24,8 @@ export interface IdentitySummary {
   signingFingerprint: string;
   encryptionFingerprint: string;
   createdAt: number;
+  category?: IdentityCategory;
+  isDefault?: boolean;
 }
 
 interface AppState {

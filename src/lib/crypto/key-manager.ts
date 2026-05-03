@@ -32,6 +32,9 @@ export interface PublicKeyEntry {
   certDsaPem?: string;
 }
 
+/** 인증서 카테고리 — UX 분류용 (코어 모델은 무제한 다중 인증서 그대로) */
+export type IdentityCategory = 'personal' | 'institution' | 'imported' | 'ephemeral';
+
 export interface EncryptedIdentity {
   id: string;                    // UUID (기존 'primary' → 마이그레이션)
   name: string;                  // 사용자 지정 이름 (예: "개인 키", "회사 키")
@@ -44,6 +47,10 @@ export interface EncryptedIdentity {
   commonName: string;
   email: string;
   createdAt: number;
+  /** 카테고리 — 미지정 시 'personal' 로 표시 */
+  category?: IdentityCategory;
+  /** 기본 인증서 — 빠른 작업 시 자동 선택. 한 시점에 1개만 true */
+  isDefault?: boolean;
 }
 
 export interface StoredCertificate {
@@ -210,6 +217,48 @@ export async function getIdentityMeta(id: string): Promise<EncryptedIdentity | n
   const db = await getDB();
   const identity: EncryptedIdentity | undefined = await db.get(STORE_IDENTITY, id);
   return identity ?? null;
+}
+
+/**
+ * 카테고리 변경 — UX 분류만, 키/암호화에 영향 없음.
+ */
+export async function setIdentityCategory(id: string, category: IdentityCategory): Promise<void> {
+  const db = await getDB();
+  const identity: EncryptedIdentity | undefined = await db.get(STORE_IDENTITY, id);
+  if (!identity) return;
+  identity.category = category;
+  await db.put(STORE_IDENTITY, identity);
+}
+
+/**
+ * 기본 인증서 지정 (배타적) — 다른 모든 아이덴티티의 isDefault 는 자동으로 false 처리.
+ * id === null 이면 모든 isDefault 해제.
+ */
+export async function setDefaultIdentity(id: string | null): Promise<void> {
+  const db = await getDB();
+  const all: EncryptedIdentity[] = await db.getAll(STORE_IDENTITY);
+  const tx = db.transaction(STORE_IDENTITY, 'readwrite');
+  for (const it of all) {
+    const wantDefault = it.id === id;
+    if (!!it.isDefault === wantDefault) continue;       // 변경 없으면 skip
+    it.isDefault = wantDefault;
+    await tx.store.put(it);
+  }
+  await tx.done;
+}
+
+/**
+ * 기본 아이덴티티 ID 조회.
+ * 우선순위: 명시적 isDefault → 마지막 활성 ID → 첫 아이덴티티 → null.
+ */
+export async function getDefaultIdentityId(): Promise<string | null> {
+  const db = await getDB();
+  const all: EncryptedIdentity[] = await db.getAll(STORE_IDENTITY);
+  const explicit = all.find(i => i.isDefault);
+  if (explicit) return explicit.id;
+  const active = await getActiveIdentityId();
+  if (active && all.some(i => i.id === active)) return active;
+  return all[0]?.id ?? null;
 }
 
 /**

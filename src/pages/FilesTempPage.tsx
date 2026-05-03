@@ -29,7 +29,7 @@ function sleep(ms: number) {
 }
 
 export function FilesTempPage() {
-  const { keyIdentity } = useAppStore();
+  const { keyIdentity, activeIdentityId, setActiveIdentityId } = useAppStore();
   const { items, push, update, reset } = useTaskStream();
   const [fileName, setFileName] = useState<string | null>(null);
   const [isPqcFile, setIsPqcFile] = useState(false);
@@ -53,6 +53,17 @@ export function FilesTempPage() {
   useEffect(() => {
     const pending = takePendingFile();
     if (pending) handleOpen(pending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 활성 ID 가 없으면 기본 인증서로 자동 선택 (CertsPage 와 일관성 유지)
+  useEffect(() => {
+    if (activeIdentityId) return;
+    (async () => {
+      const { getDefaultIdentityId } = await import('@/lib/crypto/key-manager');
+      const def = await getDefaultIdentityId();
+      if (def) setActiveIdentityId(def);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

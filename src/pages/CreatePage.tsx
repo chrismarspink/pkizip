@@ -98,15 +98,17 @@ export function CreatePage() {
   // IndexedDB에서 아이덴티티 로드
   useEffect(() => {
     (async () => {
-      const { getAllIdentityMetas, getActiveIdentityId } = await import('@/lib/crypto/key-manager');
+      const { getAllIdentityMetas, getActiveIdentityId, getDefaultIdentityId } = await import('@/lib/crypto/key-manager');
       const metas = await getAllIdentityMetas();
       setIdentities(metas.map(m => ({
         id: m.id, name: m.name, commonName: m.commonName, email: m.email,
         signingFingerprint: m.signingFingerprint, encryptionFingerprint: m.encryptionFingerprint,
         createdAt: m.createdAt,
+        category: m.category, isDefault: m.isDefault,
       })));
       const activeId = await getActiveIdentityId();
-      setActiveIdentityId(activeId);
+      // 활성 ID 가 없으면 기본 인증서로 자동 선택
+      setActiveIdentityId(activeId ?? await getDefaultIdentityId());
     })();
   }, [setIdentities, setActiveIdentityId]);
 

@@ -209,6 +209,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         id: m.id, name: m.name, commonName: m.commonName, email: m.email,
         signingFingerprint: m.signingFingerprint, encryptionFingerprint: m.encryptionFingerprint,
         createdAt: m.createdAt,
+        category: m.category, isDefault: m.isDefault,
       })));
       console.log('[PKIZIP] 아이덴티티 갱신 완료');
 
