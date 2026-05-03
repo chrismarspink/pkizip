@@ -79,6 +79,37 @@ function isPkiByName(name: string): boolean {
   return PKI_EXTS.some(ext => lower.endsWith(ext));
 }
 
+/** 순수 함수 — useEffect 안에서 React 의존성 없이 호출 */
+async function buildEntriesPure(walked: WalkedFile[]): Promise<ExplorerEntry[]> {
+  const out: ExplorerEntry[] = [];
+  for (const { path, file } of walked) {
+    let header: PkiHeader | null = null;
+    let kind: 'pki' | 'other' = 'other';
+    if (isPkiByName(file.name)) {
+      try {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        if (isPkiFile(buf)) {
+          header = readPkiHeader(buf);
+          kind = 'pki';
+        }
+      } catch (e) {
+        console.warn(`PKI 파싱 실패 (${path}):`, e);
+      }
+    }
+    out.push({
+      id: crypto.randomUUID(),
+      name: file.name,
+      relPath: path,
+      size: file.size,
+      addedAt: Date.now(),
+      kind,
+      mime: file.type || undefined,
+      header,
+    });
+  }
+  return out;
+}
+
 export function ExplorerPage() {
   const [entries, setEntries] = useState<ExplorerEntry[]>([]);
   const [filter, setFilter] = useState('');
@@ -93,20 +124,82 @@ export function ExplorerPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
 
-  // ─── 마운트 시 마지막 디렉토리 캐시 복원 ──────────────────────────
+  // 권한 재요청 필요 여부 — 핸들은 있는데 queryPermission 이 'prompt' 인 경우
+  const [needsReauth, setNeedsReauth] = useState(false);
+
+  // ─── 마운트 시 마지막 디렉토리 캐시 복원 + 자동 재스캔 ──────────────
+  // 1) 캐시된 entries 즉시 표시 (사용자 즉시 정보 확인)
+  // 2) 핸들이 있고 권한이 'granted' 면 백그라운드 재스캔 (디스크 변경 반영)
+  // 3) 권한이 'prompt' 면 needsReauth=true → 화면 상단에 "다시 열기" CTA 노출
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const cached = await loadLastFolder();
       if (cancelled || !cached) return;
+
+      // 즉시 캐시 표시
       setEntries(cached.entries);
       setScanRoot(cached.rootName);
       setLastScanAt(cached.scannedAt);
       setAccessMode(cached.accessMode);
       if (cached.dirHandle) setSavedHandle(cached.dirHandle);
+
+      // 핸들이 있으면 권한 확인 후 자동 재스캔 시도
+      if (cached.dirHandle && cached.accessMode === 'fs-access') {
+        const perm = await checkHandlePermission(cached.dirHandle);
+        if (cancelled) return;
+        if (perm === 'granted') {
+          // 무음 재스캔 — 사용자 클릭 없이 백그라운드로
+          try {
+            const walked = await walkDirHandle(cached.dirHandle);
+            if (cancelled) return;
+            const fresh = await buildEntriesPure(walked);
+            if (cancelled) return;
+            setEntries(fresh);
+            setLastScanAt(Date.now());
+            await saveLastFolder({
+              rootName: cached.rootName,
+              entries: fresh.map(e => ({
+                id: e.id, name: e.name, relPath: e.relPath, size: e.size,
+                addedAt: e.addedAt, kind: e.kind, mime: e.mime, header: e.header,
+              })),
+              dirHandle: cached.dirHandle,
+              scannedAt: Date.now(),
+              accessMode: 'fs-access',
+            });
+          } catch (e) {
+            console.warn('[explorer] 자동 재스캔 실패 — 캐시 유지:', e);
+          }
+        } else if (perm === 'prompt') {
+          // 사용자 제스처 필요 — CTA 노출
+          setNeedsReauth(true);
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // 사용자 제스처 (버튼 클릭) 안에서 권한 재요청 → 통과 시 walk
+  const reauthorizeAndScan = useCallback(async () => {
+    if (!savedHandle) return;
+    setScanning(true);
+    setNeedsReauth(false);
+    try {
+      const req = await requestHandlePermission(savedHandle);
+      if (req !== 'granted') {
+        alert('읽기 권한이 거부되었습니다. 디렉토리를 다시 선택해주세요.');
+        setNeedsReauth(true);
+        return;
+      }
+      const walked = await walkDirHandle(savedHandle);
+      await ingestDirectory(savedHandle.name, walked, savedHandle, 'fs-access');
+    } catch (e) {
+      console.error('재인증 후 스캔 실패:', e);
+      alert('스캔 실패: ' + String(e));
+    } finally {
+      setScanning(false);
+    }
+  }, [savedHandle, ingestDirectory]);
 
   // 디렉토리 walk 결과를 저장 — 재방문 시 복원용
   const persistFolder = useCallback(async (
@@ -441,6 +534,36 @@ export function ExplorerPage() {
           </div>
         )}
       </div>
+
+      {/* 권한 재요청 CTA — 캐시된 핸들 있는데 브라우저 재시작으로 권한 만료 */}
+      {needsReauth && savedHandle && (
+        <div className="mx-6 mt-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-3">
+          <FolderOpen className="w-5 h-5 text-amber-700 flex-shrink-0" />
+          <div className="flex-1 text-sm">
+            <div className="font-semibold text-amber-900">
+              마지막 폴더 <code className="font-mono">{scanRoot}</code> 의 캐시된 정보를 표시 중
+            </div>
+            <div className="text-xs text-amber-700 mt-0.5">
+              실시간 정보로 갱신하려면 브라우저 권한을 다시 허용해주세요. (브라우저 재시작 시 권한이 만료됩니다)
+            </div>
+          </div>
+          <button
+            onClick={reauthorizeAndScan}
+            disabled={scanning}
+            className="px-3 py-1.5 bg-amber-600 text-white rounded text-sm hover:bg-amber-700 disabled:bg-zinc-300 flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3 h-3" />
+            폴더 다시 열기
+          </button>
+          <button
+            onClick={() => setNeedsReauth(false)}
+            className="text-amber-700 hover:bg-amber-100 rounded p-1"
+            title="이 알림 숨기기 (캐시는 유지)"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* 본문 — 카드 그리드 */}
       <div className={`flex-1 p-6 ${dragging ? 'bg-blue-50' : ''}`}>
