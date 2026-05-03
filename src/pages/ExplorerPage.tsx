@@ -16,6 +16,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Upload, FileLock2, FileCheck2, Search, X, FileText, ShieldCheck,
+  FolderOpen, File as FileIcon, Folder,
 } from 'lucide-react';
 import { isPkiFile, readPkiHeader, deriveBadge, type PkiHeader } from '@/lib/container/pki-format';
 import { prefs, type ExplorerPrefs } from '@/lib/store/preferences';
@@ -23,10 +24,54 @@ import { prefs, type ExplorerPrefs } from '@/lib/store/preferences';
 interface ExplorerEntry {
   id: string;                 // uuid
   name: string;
+  /** 디렉토리 기준 상대 경로 (디렉토리 walk 의 경우) — 없으면 파일명과 동일 */
+  relPath: string;
   size: number;
   addedAt: number;
+  /** PKI 봉투 = 헤더 파싱됨 / other = 그 외 일반 파일 */
+  kind: 'pki' | 'other';
+  /** 일반 파일의 MIME (있으면) */
+  mime?: string;
   header: PkiHeader | null;
   // 본문(Uint8Array) 은 IndexedDB. 여기선 헤더만.
+}
+
+interface WalkedFile { path: string; file: File }
+
+/** File System Access API — 재귀 walk */
+async function walkDirHandle(
+  handle: FileSystemDirectoryHandle, base = '',
+): Promise<WalkedFile[]> {
+  const out: WalkedFile[] = [];
+  // @ts-expect-error - entries() is on async iterator
+  for await (const [name, entry] of handle.entries()) {
+    const path = base ? `${base}/${name}` : name;
+    if (entry.kind === 'file') {
+      const file = await (entry as FileSystemFileHandle).getFile();
+      out.push({ path, file });
+    } else if (entry.kind === 'directory') {
+      const nested = await walkDirHandle(entry as FileSystemDirectoryHandle, path);
+      out.push(...nested);
+    }
+  }
+  return out;
+}
+
+/** webkitdirectory fallback — File.webkitRelativePath 사용 */
+function walkFromInput(files: FileList): WalkedFile[] {
+  return Array.from(files).map(file => ({
+    // Chrome/Edge: webkitRelativePath = "RootDir/sub/file.ext"
+    // 첫 디렉토리명을 떼고 base 기준 상대 경로로
+    path: (file as File & { webkitRelativePath?: string }).webkitRelativePath
+            ?.split('/').slice(1).join('/') || file.name,
+    file,
+  }));
+}
+
+const PKI_EXTS = ['.pki', '.pkizip', '.pqcz'];
+function isPkiByName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return PKI_EXTS.some(ext => lower.endsWith(ext));
 }
 
 export function ExplorerPage() {
@@ -35,27 +80,88 @@ export function ExplorerPage() {
   const [explorerPrefs, setExplorerPrefs] = useState<ExplorerPrefs>(() => prefs.explorer.get());
   const [selected, setSelected] = useState<ExplorerEntry | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanRoot, setScanRoot] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dirInputRef = useRef<HTMLInputElement>(null);
 
-  // 파일 추가 — 헤더만 파싱 (복호화 X)
-  const handleFiles = useCallback(async (files: FileList | File[]) => {
-    const list = Array.from(files);
+  // 단일 파일 / 단일 파일 리스트 처리 — PKI 만 헤더 파싱, 그 외도 표시
+  const ingest = useCallback(async (walked: WalkedFile[]) => {
     const additions: ExplorerEntry[] = [];
-    for (const f of list) {
-      const buf = new Uint8Array(await f.arrayBuffer());
-      if (!isPkiFile(buf)) {
-        // PKIZIP 봉투 아님 — 사용자에게 알림
-        console.warn(`Not a PKIZIP file: ${f.name}`);
-        continue;
+    for (const { path, file } of walked) {
+      let header: PkiHeader | null = null;
+      let kind: 'pki' | 'other' = 'other';
+      // 빠른 거름: 확장자 매치된 것만 매직 바이트 검사
+      if (isPkiByName(file.name)) {
+        try {
+          const buf = new Uint8Array(await file.arrayBuffer());
+          if (isPkiFile(buf)) {
+            header = readPkiHeader(buf);
+            kind = 'pki';
+          }
+        } catch (e) {
+          console.warn(`PKI 파싱 실패 (${path}):`, e);
+        }
       }
-      const header = readPkiHeader(buf);
       additions.push({
         id: crypto.randomUUID(),
-        name: f.name, size: f.size, addedAt: Date.now(), header,
+        name: file.name,
+        relPath: path,
+        size: file.size,
+        addedAt: Date.now(),
+        kind,
+        mime: file.type || undefined,
+        header,
       });
     }
     setEntries(prev => [...additions, ...prev]);
   }, []);
+
+  const handleFiles = useCallback(async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    await ingest(list.map(f => ({ path: f.name, file: f })));
+  }, [ingest]);
+
+  // 디렉토리 선택 — File System Access API 우선, webkitdirectory 폴백
+  const pickDirectory = useCallback(async () => {
+    const w = window as typeof window & {
+      showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+    };
+    if (typeof w.showDirectoryPicker === 'function') {
+      try {
+        setScanning(true);
+        const handle = await w.showDirectoryPicker();
+        setScanRoot(handle.name);
+        const walked = await walkDirHandle(handle);
+        await ingest(walked);
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') {
+          console.error('디렉토리 walk 실패:', e);
+          alert('디렉토리 읽기 실패: ' + String(e));
+        }
+      } finally {
+        setScanning(false);
+      }
+    } else {
+      // 폴백: input[webkitdirectory] 클릭
+      dirInputRef.current?.click();
+    }
+  }, [ingest]);
+
+  const onDirInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setScanning(true);
+    // 루트 이름 추출 (첫 파일의 webkitRelativePath 첫 segment)
+    const first = files[0] as File & { webkitRelativePath?: string };
+    setScanRoot(first.webkitRelativePath?.split('/')[0] ?? null);
+    try {
+      await ingest(walkFromInput(files));
+    } finally {
+      setScanning(false);
+      e.target.value = '';
+    }
+  }, [ingest]);
 
   // 드래그앤드롭
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -71,11 +177,13 @@ export function ExplorerPage() {
       const f = filter.toLowerCase();
       xs = xs.filter(e =>
         e.name.toLowerCase().includes(f) ||
+        e.relPath.toLowerCase().includes(f) ||
         e.header?.classification?.grade?.toLowerCase().includes(f)
       );
     }
     if (explorerPrefs.filterGrade && explorerPrefs.filterGrade !== 'all') {
-      xs = xs.filter(e => e.header?.classification?.grade === explorerPrefs.filterGrade);
+      xs = xs.filter(e =>
+        e.kind === 'pki' && e.header?.classification?.grade === explorerPrefs.filterGrade);
     }
     const sortBy = explorerPrefs.sortBy;
     const dir = explorerPrefs.sortDir === 'asc' ? 1 : -1;
@@ -138,6 +246,11 @@ export function ExplorerPage() {
               <option value="grade">등급</option>
               <option value="size">크기</option>
             </select>
+            <button onClick={pickDirectory} disabled={scanning}
+              className="px-3 py-1.5 bg-emerald-600 text-white rounded text-sm flex items-center gap-1.5 hover:bg-emerald-700 disabled:bg-zinc-300">
+              <FolderOpen className="w-4 h-4" />
+              {scanning ? '스캔 중…' : '디렉토리 선택'}
+            </button>
             <button onClick={() => inputRef.current?.click()}
               className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm flex items-center gap-1.5 hover:bg-blue-700">
               <Upload className="w-4 h-4" /> 파일 추가
@@ -148,14 +261,40 @@ export function ExplorerPage() {
               className="hidden"
               onChange={e => e.target.files && handleFiles(e.target.files)}
             />
+            <input
+              ref={dirInputRef}
+              type="file"
+              // @ts-expect-error - webkitdirectory 는 비표준 속성
+              webkitdirectory=""
+              directory=""
+              multiple
+              className="hidden"
+              onChange={onDirInput}
+            />
           </div>
         </div>
+        {(scanRoot || scanning) && (
+          <div className="mt-2 text-[11px] text-zinc-500 flex items-center gap-2">
+            <Folder className="w-3 h-3" />
+            {scanning ? (
+              <span className="text-emerald-600">디렉토리 스캔 중… (파일 시스템 walk)</span>
+            ) : (
+              <>
+                기준 디렉토리: <code className="font-mono text-zinc-700">{scanRoot}</code>
+                · {entries.length}개 파일 ({entries.filter(e => e.kind === 'pki').length} PKI · {entries.filter(e => e.kind === 'other').length} 기타)
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 본문 — 카드 그리드 */}
       <div className={`flex-1 p-6 ${dragging ? 'bg-blue-50' : ''}`}>
         {entries.length === 0 ? (
-          <EmptyState onPick={() => inputRef.current?.click()} />
+          <EmptyState
+            onPickFile={() => inputRef.current?.click()}
+            onPickDir={pickDirectory}
+          />
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
             {visible.map(e => (
@@ -187,47 +326,91 @@ export function ExplorerPage() {
 function FileCard({ entry, onClick }: { entry: ExplorerEntry; onClick: () => void }) {
   const badge = deriveBadge(entry.header);
   const colors = gradeColors(badge.grade);
+  const isPki = entry.kind === 'pki';
+  const otherColors = {
+    border: 'border-zinc-200', icon: 'text-zinc-500', iconBg: 'bg-zinc-50',
+    pill: 'bg-zinc-100 text-zinc-600',
+  };
+  const palette = isPki ? colors : otherColors;
+  // 상대 경로의 디렉토리 부분만 — "sub/dir/file.txt" → "sub/dir"
+  const dirPart = entry.relPath.includes('/')
+    ? entry.relPath.slice(0, entry.relPath.lastIndexOf('/'))
+    : '';
+
   return (
     <motion.button
       onClick={onClick}
       whileHover={{ y: -2 }}
-      className={`text-left bg-white border rounded-xl p-4 hover:shadow-md transition ${colors.border}`}
+      className={`text-left bg-white border rounded-xl p-4 hover:shadow-md transition ${palette.border} ${
+        !isPki ? 'opacity-90' : ''
+      }`}
     >
       <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${colors.iconBg}`}>
-          {badge.encrypted
-            ? <FileLock2 className={`w-5 h-5 ${colors.icon}`} />
-            : badge.signed
-              ? <FileCheck2 className={`w-5 h-5 ${colors.icon}`} />
-              : <FileText className={`w-5 h-5 ${colors.icon}`} />}
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${palette.iconBg}`}>
+          {!isPki ? (
+            <FileIcon className={`w-5 h-5 ${palette.icon}`} />
+          ) : badge.encrypted ? (
+            <FileLock2 className={`w-5 h-5 ${palette.icon}`} />
+          ) : badge.signed ? (
+            <FileCheck2 className={`w-5 h-5 ${palette.icon}`} />
+          ) : (
+            <FileText className={`w-5 h-5 ${palette.icon}`} />
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm truncate" title={entry.name}>{entry.name}</div>
+          <div className="font-medium text-sm truncate" title={entry.relPath}>{entry.name}</div>
+          {dirPart && (
+            <div className="text-[10px] text-zinc-400 truncate font-mono" title={entry.relPath}>
+              📁 {dirPart}
+            </div>
+          )}
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${colors.pill}`}>
-              {badge.grade.toUpperCase()}
-            </span>
-            {badge.pqc && <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">PQC</span>}
-            {badge.he && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700">🔍 HE</span>}
-            {badge.signed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">✍</span>}
+            {isPki ? (
+              <>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${palette.pill}`}>
+                  {badge.grade.toUpperCase()}
+                </span>
+                {badge.pqc && <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">PQC</span>}
+                {badge.he && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700">🔍 HE</span>}
+                {badge.signed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">✍</span>}
+              </>
+            ) : (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${palette.pill}`}>
+                {fileExtLabel(entry.name, entry.mime)}
+              </span>
+            )}
           </div>
         </div>
       </div>
-      {entry.header?.classification?.findingsSummary && (
+      {isPki && entry.header?.classification?.findingsSummary && (
         <div className="mt-2 text-[10px] text-zinc-500 line-clamp-1">
           {Object.entries(entry.header.classification.findingsSummary).slice(0, 3)
             .map(([k, v]) => `${k}×${v}`).join(' · ')}
         </div>
       )}
       <div className="mt-2 text-[10px] text-zinc-400">
-        {(entry.size / 1024).toFixed(1)} KB
-        {entry.header?.language?.detected && entry.header.language.detected !== 'und' && (
+        {formatSize(entry.size)}
+        {isPki && entry.header?.language?.detected && entry.header.language.detected !== 'und' && (
           <> · {entry.header.language.detected}</>
         )}
-        {entry.header?.ocr?.applied && <> · OCR</>}
+        {isPki && entry.header?.ocr?.applied && <> · OCR</>}
       </div>
     </motion.button>
   );
+}
+
+function fileExtLabel(name: string, mime?: string): string {
+  const m = name.toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (m) return m[1]!.toUpperCase();
+  if (mime) return mime.split('/').pop() || 'FILE';
+  return 'FILE';
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 // ─────────────────────────────────────────────
@@ -238,6 +421,7 @@ function DetailPanel({ entry, onClose }: { entry: ExplorerEntry; onClose: () => 
   const h = entry.header;
   const c = h?.classification;
   const badge = deriveBadge(h);
+  const isPki = entry.kind === 'pki';
   return (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
@@ -247,88 +431,107 @@ function DetailPanel({ entry, onClose }: { entry: ExplorerEntry; onClose: () => 
         className="relative w-[420px] bg-white shadow-2xl h-full overflow-y-auto"
       >
         <div className="sticky top-0 bg-white border-b px-5 py-3 flex items-center justify-between">
-          <h2 className="font-semibold text-sm truncate" title={entry.name}>{entry.name}</h2>
+          <h2 className="font-semibold text-sm truncate" title={entry.relPath}>{entry.name}</h2>
           <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded"><X className="w-4 h-4" /></button>
         </div>
 
         <div className="p-5 space-y-4 text-sm">
-          <Row label="등급">
-            <span className={`inline-block px-2 py-0.5 rounded font-bold ${gradeColors(badge.grade).pill}`}>
-              {badge.grade.toUpperCase()}
-            </span>
-            {c && <span className="text-xs text-zinc-500 ml-2">신뢰도 {(c.confidence * 100).toFixed(0)}%</span>}
+          <Row label="경로">
+            <code className="text-xs font-mono break-all text-zinc-600">{entry.relPath}</code>
           </Row>
-          <Row label="암호화">
-            {badge.encrypted ? (
-              <>🔒 {h?.pqcKemRecipientInfo ? <b className="text-violet-700">PQC</b> : '단순'}
-                {h?.encryption?.algorithm && <span className="text-xs text-zinc-500 ml-2">{h.encryption.algorithm}</span>}
-              </>
-            ) : '없음 (서명만)'}
-          </Row>
-          <Row label="서명">
-            {badge.signed ? <ShieldCheck className="inline w-4 h-4 text-emerald-600 mr-1" /> : '—'}
-            {h?.pqcSignerInfo?.algorithm && <b>{h.pqcSignerInfo.algorithm}</b>}
-            {h?.signatures && h.signatures.length > 0 && <> · {h.signatures.length}개 서명</>}
-          </Row>
-          {c && (
-            <Row label="분류기 버전">
-              <code className="text-xs">{c.classifierVersion}</code>
-            </Row>
-          )}
-          {h?.language?.detected && (
-            <Row label="언어">
-              {h.language.detected.toUpperCase()}
-              <span className="text-xs text-zinc-500 ml-2">{(h.language.confidence * 100).toFixed(0)}%</span>
-            </Row>
-          )}
-          {h?.ocr?.applied && (
-            <Row label="OCR">
-              {h.ocr.engine} · {h.ocr.languages?.join(', ')}
-              {h.ocr.confidence && <span className="text-xs text-zinc-500 ml-2">{(h.ocr.confidence * 100).toFixed(0)}%</span>}
-            </Row>
-          )}
-          {h?.searchKey?.included && (
-            <Row label="HE 검색키">
-              <code className="text-xs">{h.searchKey.engine} · {h.searchKey.scheme}</code>
-              {h.searchKey.tokenCount && <span className="text-xs text-zinc-500 ml-2">{h.searchKey.tokenCount} tokens</span>}
-            </Row>
-          )}
-          {c?.findingsSummary && Object.keys(c.findingsSummary).length > 0 && (
-            <div>
-              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">탐지된 PII</div>
-              <div className="flex flex-wrap gap-1">
-                {Object.entries(c.findingsSummary).map(([k, v]) => (
-                  <span key={k} className="text-xs px-2 py-0.5 bg-zinc-100 rounded font-mono">
-                    {k} <b>×{v}</b>
-                  </span>
-                ))}
+          {!isPki && (
+            <>
+              <Row label="유형">
+                <span className="text-xs px-2 py-0.5 bg-zinc-100 rounded">{fileExtLabel(entry.name, entry.mime)}</span>
+                {entry.mime && <span className="text-[11px] text-zinc-500 ml-2 font-mono">{entry.mime}</span>}
+              </Row>
+              <Row label="크기">{formatSize(entry.size)}</Row>
+              <Row label="추가일시">{new Date(entry.addedAt).toLocaleString()}</Row>
+              <div className="text-[11px] text-zinc-500 bg-zinc-50 border border-zinc-200 rounded p-3 leading-relaxed">
+                일반 파일 — PKIZIP 봉투가 아니라서 등급/암호화 정보가 없습니다.
+                필요하면 "봉투 만들기" 페이지에서 분석·가명화·암호화 후 .pki 봉투로 변환하세요.
               </div>
-            </div>
+            </>
           )}
-          {c?.explanation && (
-            <div>
-              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">설명</div>
-              <p className="text-xs leading-relaxed text-zinc-700">{c.explanation}</p>
-            </div>
+          {isPki && (
+            <>
+              <Row label="등급">
+                <span className={`inline-block px-2 py-0.5 rounded font-bold ${gradeColors(badge.grade).pill}`}>
+                  {badge.grade.toUpperCase()}
+                </span>
+                {c && <span className="text-xs text-zinc-500 ml-2">신뢰도 {(c.confidence * 100).toFixed(0)}%</span>}
+              </Row>
+              <Row label="암호화">
+                {badge.encrypted ? (
+                  <>🔒 {h?.pqcKemRecipientInfo ? <b className="text-violet-700">PQC</b> : '단순'}
+                    {h?.encryption?.algorithm && <span className="text-xs text-zinc-500 ml-2">{h.encryption.algorithm}</span>}
+                  </>
+                ) : '없음 (서명만)'}
+              </Row>
+              <Row label="서명">
+                {badge.signed ? <ShieldCheck className="inline w-4 h-4 text-emerald-600 mr-1" /> : '—'}
+                {h?.pqcSignerInfo?.algorithm && <b>{h.pqcSignerInfo.algorithm}</b>}
+                {h?.signatures && h.signatures.length > 0 && <> · {h.signatures.length}개 서명</>}
+              </Row>
+              {c && (
+                <Row label="분류기 버전">
+                  <code className="text-xs">{c.classifierVersion}</code>
+                </Row>
+              )}
+              {h?.language?.detected && (
+                <Row label="언어">
+                  {h.language.detected.toUpperCase()}
+                  <span className="text-xs text-zinc-500 ml-2">{(h.language.confidence * 100).toFixed(0)}%</span>
+                </Row>
+              )}
+              {h?.ocr?.applied && (
+                <Row label="OCR">
+                  {h.ocr.engine} · {h.ocr.languages?.join(', ')}
+                  {h.ocr.confidence && <span className="text-xs text-zinc-500 ml-2">{(h.ocr.confidence * 100).toFixed(0)}%</span>}
+                </Row>
+              )}
+              {h?.searchKey?.included && (
+                <Row label="HE 검색키">
+                  <code className="text-xs">{h.searchKey.engine} · {h.searchKey.scheme}</code>
+                  {h.searchKey.tokenCount && <span className="text-xs text-zinc-500 ml-2">{h.searchKey.tokenCount} tokens</span>}
+                </Row>
+              )}
+              {c?.findingsSummary && Object.keys(c.findingsSummary).length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">탐지된 PII</div>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(c.findingsSummary).map(([k, v]) => (
+                      <span key={k} className="text-xs px-2 py-0.5 bg-zinc-100 rounded font-mono">
+                        {k} <b>×{v}</b>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {c?.explanation && (
+                <div>
+                  <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">설명</div>
+                  <p className="text-xs leading-relaxed text-zinc-700">{c.explanation}</p>
+                </div>
+              )}
+              {h?.pseudonymization?.applied && (
+                <Row label="가명/익명화">
+                  {h.pseudonymization.isReversible ? '가명 (복원 가능)' : '익명 (비가역)'}
+                  {h.pseudonymization.targetGrade && <> · target {h.pseudonymization.targetGrade}</>}
+                </Row>
+              )}
+              {h?.mipLabel && (
+                <div>
+                  <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">MIP 라벨</div>
+                  <code className="text-xs block bg-zinc-50 p-2 rounded">
+                    {h.mipLabel.labelName} (sensitivity={h.mipLabel.sensitivityValue})
+                  </code>
+                </div>
+              )}
+              <Row label="추가일시">{new Date(entry.addedAt).toLocaleString()}</Row>
+              <Row label="크기">{formatSize(entry.size)}</Row>
+            </>
           )}
-          {h?.pseudonymization?.applied && (
-            <Row label="가명/익명화">
-              {h.pseudonymization.isReversible ? '가명 (복원 가능)' : '익명 (비가역)'}
-              {h.pseudonymization.targetGrade && <> · target {h.pseudonymization.targetGrade}</>}
-            </Row>
-          )}
-          {h?.mipLabel && (
-            <div>
-              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">MIP 라벨</div>
-              <code className="text-xs block bg-zinc-50 p-2 rounded">
-                {h.mipLabel.labelName} (sensitivity={h.mipLabel.sensitivityValue})
-              </code>
-            </div>
-          )}
-          <Row label="추가일시">
-            {new Date(entry.addedAt).toLocaleString()}
-          </Row>
-          <Row label="크기">{(entry.size / 1024).toFixed(1)} KB</Row>
         </div>
       </motion.div>
     </div>
@@ -344,17 +547,26 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function EmptyState({ onPick }: { onPick: () => void }) {
+function EmptyState({ onPickFile, onPickDir }: { onPickFile: () => void; onPickDir: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center mb-4">
-        <Upload className="w-7 h-7 text-zinc-400" />
+        <FolderOpen className="w-7 h-7 text-zinc-400" />
       </div>
       <p className="text-sm text-zinc-500 mb-1">아직 파일이 없습니다</p>
-      <p className="text-xs text-zinc-400 mb-4">.pki 또는 .pkizip 파일을 드래그하거나 추가</p>
-      <button onClick={onPick} className="px-4 py-2 bg-blue-600 text-white rounded text-sm">
-        파일 선택
-      </button>
+      <p className="text-xs text-zinc-400 mb-4">디렉토리 선택 → 하위 모든 파일 / 또는 .pki 파일 드래그·추가</p>
+      <div className="flex gap-2">
+        <button onClick={onPickDir} className="px-4 py-2 bg-emerald-600 text-white rounded text-sm flex items-center gap-1.5">
+          <FolderOpen className="w-4 h-4" /> 디렉토리 선택
+        </button>
+        <button onClick={onPickFile} className="px-4 py-2 bg-blue-600 text-white rounded text-sm flex items-center gap-1.5">
+          <Upload className="w-4 h-4" /> 파일 선택
+        </button>
+      </div>
+      <p className="text-[10px] text-zinc-400 mt-3 max-w-md">
+        디렉토리 선택은 File System Access API (Chrome/Edge) 또는 webkitdirectory 폴백으로
+        하위 모든 파일을 재귀적으로 스캔합니다. 본문은 외부 전송 없음.
+      </p>
     </div>
   );
 }
