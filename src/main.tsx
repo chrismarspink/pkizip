@@ -59,6 +59,27 @@ w.pkizipForceRefresh = async () => {
   }
 };
 
+// PWA file_handlers — OS "PKIZIP 으로 열기" 로 진입 시 launchQueue 로 파일 수신
+// → setPendingFile() 에 넣고 /files 로 라우팅 (FilesTempPage 가 takePendingFile() 로 자동 분석)
+type LaunchParams = { files: { getFile: () => Promise<File> }[] };
+const wq = window as typeof window & {
+  launchQueue?: { setConsumer: (cb: (params: LaunchParams) => void) => void };
+};
+if (wq.launchQueue) {
+  wq.launchQueue.setConsumer(async (params) => {
+    if (!params.files || params.files.length === 0) return;
+    try {
+      const file = await params.files[0]!.getFile();
+      const { setPendingFile } = await import('./lib/store/pending-file');
+      setPendingFile(file);
+      const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+      window.location.assign(`${base}/files`);
+    } catch (e) {
+      console.warn('[PKIZIP] launchQueue 파일 수신 실패:', e);
+    }
+  });
+}
+
 // 동적 청크 404 (옛 SW 가 옛 청크 참조하는 stale) → 자동 1회 새로고침
 window.addEventListener('vite:preloadError', (event) => {
   console.warn('[PKIZIP] preload 실패 — SW 갱신 후 새로고침', event);

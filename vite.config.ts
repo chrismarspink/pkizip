@@ -59,6 +59,20 @@ export default defineConfig({
             icons: [{ src: 'icon-96.png', sizes: '96x96' }],
           },
         ],
+        // .pki 파일 더블클릭 → "PKIZIP 으로 열기" 컨텍스트 메뉴 등록
+        // (Chrome/Edge 102+, PWA 설치 후 활성)
+        file_handlers: [
+          {
+            action: '/pkizip/files',
+            accept: {
+              'application/x-pkizip': ['.pki', '.pkizip', '.pqcz'],
+            },
+            icons: [
+              { src: 'pki-file-icon.svg', sizes: 'any', type: 'image/svg+xml' },
+              { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+            ],
+          },
+        ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],

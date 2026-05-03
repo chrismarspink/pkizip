@@ -702,12 +702,18 @@ function FileCard({ entry, opening, canOpenInFiles, onClick, onOpenInFiles }: {
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${palette.iconBg}`}>
           {!isPki ? (
             <FileIcon className={`w-5 h-5 ${palette.icon}`} />
-          ) : badge.encrypted ? (
-            <FileLock2 className={`w-5 h-5 ${palette.icon}`} />
-          ) : badge.signed ? (
-            <FileCheck2 className={`w-5 h-5 ${palette.icon}`} />
           ) : (
-            <FileText className={`w-5 h-5 ${palette.icon}`} />
+            // PKIZIP 전용 .pki 파일 아이콘 + 상태별 작은 오버레이
+            <div className="relative w-8 h-8">
+              <img src={`${import.meta.env.BASE_URL}pki-file-icon.svg`}
+                   alt=".pki" className="w-8 h-8" />
+              {badge.encrypted && (
+                <FileLock2 className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 text-violet-700 bg-white rounded-sm p-0.5" />
+              )}
+              {!badge.encrypted && badge.signed && (
+                <FileCheck2 className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 text-emerald-700 bg-white rounded-sm p-0.5" />
+              )}
+            </div>
           )}
         </div>
         <div className="flex-1 min-w-0">
