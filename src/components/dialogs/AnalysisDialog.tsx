@@ -100,6 +100,9 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   const nerStatus = useMemo(() => neuralNer.status(), [decisionSaved]);
   const neuralPrefs = useMemo(() => prefs.neural?.get?.() ?? { nerEnabled: false, nerAutoLoad: false, nerMinScore: 0.5 }, []);
 
+  // 분석 결과 (가명/익명화 후 갱신될 수 있음)
+  const [current, setCurrent] = useState<AnalysisResult>(initialResult);
+
   // SHAP 토큰 기여도 — 사용자가 명시적으로 실행
   const [shapResult, setShapResult] = useState<AttributionResult | null>(null);
   const [shapRunning, setShapRunning] = useState(false);
@@ -126,8 +129,6 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     }, 30);
   }
 
-  // 분석 결과 (가명/익명화 후 갱신될 수 있음)
-  const [current, setCurrent] = useState<AnalysisResult>(initialResult);
   const autoAppliedRef = useRef(false);
   useEffect(() => {
     setCurrent(initialResult);
