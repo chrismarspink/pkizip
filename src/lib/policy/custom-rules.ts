@@ -124,34 +124,20 @@ export async function clearAllDisabledBuiltins(): Promise<void> {
 
 export const BUILTIN_RULES: Readonly<CustomRule[]> = Object.freeze([
   {
-    id: 'BUILTIN_C_GRADE_REQUIRES_PQC_FOR_EXTERNAL',
-    name: 'C 등급 외부전송 PQC 필수',
+    id: 'BUILTIN_SENSITIVE_REQUIRES_PQC_OR_ANON_FOR_EXTERNAL',
+    name: 'C/S 등급 외부전송 — PQC 암호화 또는 가명/익명화 필수',
     enabled: true,
+    // 룰 본문: classic 암호 + 가명화 미적용 둘 다일 때만 fire (= PQC OR anon 미충족)
     conditions: [
-      { field: 'classification.grade', op: 'eq', value: 'C' },
+      { field: 'classification.grade', op: 'neq', value: 'O' },
       { field: 'intent.purpose', op: 'eq', value: 'external' },
       { field: 'intent.crypto_kind', op: 'eq', value: 'classic' },
-    ],
-    action: {
-      type: 'deny',
-      reason: 'C_GRADE_REQUIRES_PQC_FOR_EXTERNAL',
-      message: 'C(위험) 등급 문서는 외부 전송 시 PQC(양자내성) 암호화가 필요합니다. 단순 암호로는 전송 불가.',
-    },
-    createdAt: 0,
-  },
-  {
-    id: 'BUILTIN_C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL',
-    name: 'C 등급 외부전송 가명/익명화 필수',
-    enabled: true,
-    conditions: [
-      { field: 'classification.grade', op: 'eq', value: 'C' },
-      { field: 'intent.purpose', op: 'eq', value: 'external' },
       { field: 'pseudonymization.applied', op: 'eq', value: false },
     ],
     action: {
       type: 'deny',
-      reason: 'C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL',
-      message: 'C(위험) 등급 문서는 외부 전송 전 가명/익명화 처리가 필요합니다.',
+      reason: 'SENSITIVE_REQUIRES_PQC_OR_ANON_FOR_EXTERNAL',
+      message: 'C/S(위험·민감) 등급 문서는 외부 전송 시 PQC(양자내성) 암호화 또는 가명/익명화 처리 둘 중 하나가 필요합니다.',
     },
     createdAt: 0,
   },

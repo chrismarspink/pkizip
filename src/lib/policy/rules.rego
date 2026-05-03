@@ -29,20 +29,14 @@ default require_pqc = false
 # 거부 사유 (deny_reasons)
 # ─────────────────────────────────────────────────────
 
-# C 등급 + 외부 전송 + 단순 암호 → 차단 (PQC 강제)
+# C/S 등급 + 외부 전송 → PQC 암호화 또는 가명/익명화 둘 중 하나는 필수
+# (classic 암호 + 가명화 미적용 조합만 차단. 둘 중 하나라도 충족하면 통과)
 deny_reasons[reason] {
-  input.classification.grade == "C"
+  input.classification.grade != "O"
   input.intent.purpose == "external"
   input.intent.crypto_kind == "classic"
-  reason := "C_GRADE_REQUIRES_PQC_FOR_EXTERNAL"
-}
-
-# C 등급 + 외부 전송 + 가명/익명 미적용 → 차단
-deny_reasons[reason] {
-  input.classification.grade == "C"
-  input.intent.purpose == "external"
   not input.pseudonymization.applied
-  reason := "C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL"
+  reason := "SENSITIVE_REQUIRES_PQC_OR_ANON_FOR_EXTERNAL"
 }
 
 # 비한국어 문서 + O 등급 + 외부 전송 (등급 우회 의심)

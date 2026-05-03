@@ -113,12 +113,9 @@ function evalTs(input: PolicyInput): PolicyDecision {
   const ocr = input.ocr.applied;
   const anon = input.pseudonymization.applied;
 
-  // 거부 사유
-  if (grade === 'C' && isExternal && cryptoKind === 'classic') {
-    denyReasons.push('C_GRADE_REQUIRES_PQC_FOR_EXTERNAL');
-  }
-  if (grade === 'C' && isExternal && !anon) {
-    denyReasons.push('C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL');
+  // 거부 사유 — C/S 등급 외부 전송: PQC 암호화 또는 가명/익명화 둘 중 하나 필수
+  if (grade !== 'O' && isExternal && cryptoKind === 'classic' && !anon) {
+    denyReasons.push('SENSITIVE_REQUIRES_PQC_OR_ANON_FOR_EXTERNAL');
   }
   if (lang !== 'ko' && lang !== 'und' && grade === 'O' && isExternal && !anon) {
     denyReasons.push('LANGUAGE_DOWNGRADE_BLOCKED');
@@ -245,10 +242,8 @@ function mergeCustomRules(base: PolicyDecision, input: PolicyInput): PolicyDecis
 
 /** 거부 사유 → 사용자 친화적 한국어 메시지 */
 export const REASON_MESSAGES: Record<string, string> = {
-  C_GRADE_REQUIRES_PQC_FOR_EXTERNAL:
-    'C(위험) 등급 문서는 외부 전송 시 PQC(양자내성) 암호화가 필요합니다. 단순 암호로는 전송 불가.',
-  C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL:
-    'C(위험) 등급 문서는 외부 전송 전 가명/익명화 처리가 필요합니다.',
+  SENSITIVE_REQUIRES_PQC_OR_ANON_FOR_EXTERNAL:
+    'C/S(위험·민감) 등급 문서는 외부 전송 시 PQC(양자내성) 암호화 또는 가명/익명화 처리 둘 중 하나가 필요합니다.',
   LANGUAGE_DOWNGRADE_BLOCKED:
     '비한국어 문서를 O(공개) 등급으로 외부 전송 시도 — 언어 변환 우회 의심으로 차단됩니다.',
   OCR_C_GRADE_REQUIRES_REVIEW:
