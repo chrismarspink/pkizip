@@ -1,10 +1,11 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings } from 'lucide-react';
+import { Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch } from 'lucide-react';
 
 const TABS = [
   { path: '/', icon: Home, label: '홈' },
   { path: '/create', icon: FilePlus, label: '생성' },
   { path: '/files', icon: FileArchive, label: '파일' },
+  { path: '/explorer', icon: FolderSearch, label: '내 파일' },
   { path: '/certs', icon: ShieldCheck, label: '인증서' },
   { path: '/contacts', icon: BookUser, label: '주소록' },
   { path: '/settings', icon: Settings, label: '설정' },
@@ -22,12 +23,12 @@ export function BottomTabBar() {
             <Link
               key={tab.path}
               to={tab.path}
-              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${
+              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full min-w-0 px-0.5 transition-colors ${
                 active ? 'text-[#175DDC]' : 'text-zinc-400'
               }`}
             >
-              <tab.icon className="w-5 h-5" />
-              <span className="text-[10px] font-medium">{tab.label}</span>
+              <tab.icon className="w-5 h-5 flex-shrink-0" />
+              <span className="text-[9px] font-medium truncate max-w-full">{tab.label}</span>
             </Link>
           );
         })}
