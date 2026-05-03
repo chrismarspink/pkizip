@@ -6,9 +6,10 @@
  * 실제 .pki 파일을 열고, 단계별 처리 과정을 Claude Code 스타일
  * TaskStream UI로 실시간 표시한다.
  */
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { TaskStream, useTaskStream, type StreamItem } from '@/components/TaskStream';
 import { FolderOpen, Trash2 } from 'lucide-react';
+import { takePendingFile } from '@/lib/store/pending-file';
 import { PqcBadge } from '@/components/PqcBadge';
 import {
   isPkiFile, readPkiContainer, hasFlag,
@@ -46,6 +47,14 @@ export function FilesTempPage() {
     reset();
     runAnalysis(data);
   }, [reset]);
+
+  // 다른 페이지 (Explorer 등) 에서 setPendingFile() 로 던진 파일 자동 분석.
+  // 마운트 시 한 번만 — takePendingFile() 가 값을 소비하므로 재실행 안전.
+  useEffect(() => {
+    const pending = takePendingFile();
+    if (pending) handleOpen(pending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // === 메인 분석 흐름 ===
   const runAnalysis = useCallback(async (rawData: Uint8Array) => {

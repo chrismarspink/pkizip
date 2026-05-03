@@ -13,6 +13,7 @@
  *   - 옵션: Supabase 에서 본인 봉투 메타 fetch
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Upload, FileLock2, FileCheck2, Search, X, FileText, ShieldCheck,
@@ -25,6 +26,7 @@ import {
   checkHandlePermission, requestHandlePermission,
   type AccessMode,
 } from '@/lib/store/last-folder';
+import { setPendingFile } from '@/lib/store/pending-file';
 
 interface ExplorerEntry {
   id: string;                 // uuid
@@ -79,6 +81,24 @@ function isPkiByName(name: string): boolean {
   return PKI_EXTS.some(ext => lower.endsWith(ext));
 }
 
+/**
+ * 핸들 + 상대 경로 → File 객체.
+ * relPath = 'sub/dir/file.pki' 같은 경우 단계별로 directoryHandle 을 따라가서
+ * 마지막에 fileHandle.getFile() 로 File 추출. 권한 없으면 throw.
+ */
+async function getFileFromHandle(
+  root: FileSystemDirectoryHandle, relPath: string,
+): Promise<File> {
+  const parts = relPath.split('/').filter(Boolean);
+  if (parts.length === 0) throw new Error('빈 경로');
+  let cur: FileSystemDirectoryHandle = root;
+  for (let i = 0; i < parts.length - 1; i++) {
+    cur = await cur.getDirectoryHandle(parts[i]!);
+  }
+  const fh = await cur.getFileHandle(parts[parts.length - 1]!);
+  return await fh.getFile();
+}
+
 /** 순수 함수 — useEffect 안에서 React 의존성 없이 호출 */
 async function buildEntriesPure(walked: WalkedFile[]): Promise<ExplorerEntry[]> {
   const out: ExplorerEntry[] = [];
@@ -121,8 +141,10 @@ export function ExplorerPage() {
   const [savedHandle, setSavedHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [lastScanAt, setLastScanAt] = useState<number | null>(null);
   const [accessMode, setAccessMode] = useState<AccessMode | null>(null);
+  const [openingPki, setOpeningPki] = useState<string | null>(null);   // 클릭한 entry id
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   // 권한 재요청 필요 여부 — 핸들은 있는데 queryPermission 이 'prompt' 인 경우
   const [needsReauth, setNeedsReauth] = useState(false);
@@ -361,6 +383,39 @@ export function ExplorerPage() {
     }
   }, [savedHandle, ingestDirectory]);
 
+  /**
+   * 카드 클릭 router — PKI 봉투 + 핸들 있으면 /files 로 이동 (자동 분석 시작),
+   * 그 외 (일반 파일 / webkit 폴백) 는 DetailPanel 표시.
+   */
+  const onCardClick = useCallback(async (entry: ExplorerEntry) => {
+    if (entry.kind !== 'pki' || !savedHandle) {
+      setSelected(entry);
+      return;
+    }
+    setOpeningPki(entry.id);
+    try {
+      const perm = await checkHandlePermission(savedHandle);
+      if (perm !== 'granted') {
+        const req = await requestHandlePermission(savedHandle);
+        if (req !== 'granted') {
+          alert('읽기 권한이 거부되었습니다. 캐시된 메타만 표시합니다.');
+          setSelected(entry);
+          return;
+        }
+      }
+      const file = await getFileFromHandle(savedHandle, entry.relPath);
+      setPendingFile(file);
+      navigate('/files');
+    } catch (e) {
+      console.error('PKI 파일 열기 실패:', e);
+      // 디스크 변경/삭제됐을 가능성 — 폴백으로 DetailPanel 표시
+      alert(`이 파일을 열 수 없습니다 (이동/삭제됐을 수 있음): ${(e as Error).message}\n캐시된 메타만 표시합니다.`);
+      setSelected(entry);
+    } finally {
+      setOpeningPki(null);
+    }
+  }, [savedHandle, navigate]);
+
   const clearCache = useCallback(async () => {
     if (!confirm('마지막 디렉토리 기억을 삭제하시겠습니까?')) return;
     await clearLastFolder();
@@ -575,7 +630,12 @@ export function ExplorerPage() {
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
             {visible.map(e => (
-              <FileCard key={e.id} entry={e} onClick={() => setSelected(e)} />
+              <FileCard
+                key={e.id}
+                entry={e}
+                opening={openingPki === e.id}
+                onClick={() => onCardClick(e)}
+              />
             ))}
           </div>
         )}
@@ -600,7 +660,11 @@ export function ExplorerPage() {
 // 카드 — 등급 아이콘 + 메타
 // ─────────────────────────────────────────────
 
-function FileCard({ entry, onClick }: { entry: ExplorerEntry; onClick: () => void }) {
+function FileCard({ entry, opening, onClick }: {
+  entry: ExplorerEntry;
+  opening?: boolean;
+  onClick: () => void;
+}) {
   const badge = deriveBadge(entry.header);
   const colors = gradeColors(badge.grade);
   const isPki = entry.kind === 'pki';
@@ -618,10 +682,19 @@ function FileCard({ entry, onClick }: { entry: ExplorerEntry; onClick: () => voi
     <motion.button
       onClick={onClick}
       whileHover={{ y: -2 }}
-      className={`text-left bg-white border rounded-xl p-4 hover:shadow-md transition ${palette.border} ${
+      disabled={opening}
+      className={`text-left bg-white border rounded-xl p-4 hover:shadow-md transition relative ${palette.border} ${
         !isPki ? 'opacity-90' : ''
-      }`}
+      } ${opening ? 'ring-2 ring-blue-400' : ''}`}
     >
+      {opening && (
+        <div className="absolute inset-0 bg-white/70 rounded-xl flex items-center justify-center z-10">
+          <span className="inline-flex items-center gap-1.5 text-xs text-blue-700 font-medium">
+            <span className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            파일 메뉴로 이동…
+          </span>
+        </div>
+      )}
       <div className="flex items-start gap-3">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${palette.iconBg}`}>
           {!isPki ? (
