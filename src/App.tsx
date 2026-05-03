@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { HomePage } from '@/pages/HomePage';
 import { CreatePage } from '@/pages/CreatePage';
 import { FilesTempPage } from '@/pages/FilesTempPage';
@@ -25,6 +26,7 @@ export function App() {
 
   return (
     <BrowserRouter basename={basename}>
+      <UpdateBanner />
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />

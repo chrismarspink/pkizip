@@ -16,7 +16,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // prompt 모드 — 사용자에게 업데이트 배너로 알림 후 명시적 클릭으로 적용.
+      // autoUpdate 는 mid-session 강제 reload 라 모바일 PWA 에서 입력 손실 위험.
+      registerType: 'prompt',
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
         id: '/pkizip/',

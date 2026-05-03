@@ -4,7 +4,8 @@
  * 아이덴티티 관리는 CertsPage(인증서 카드 면 2)로 이동됨.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload, Clock, Languages, Fingerprint } from 'lucide-react';
+import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload, Clock, Languages, Fingerprint, RefreshCw } from 'lucide-react';
+import { ForceRefreshButton, VersionBadge } from '@/components/UpdateBanner';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { changeLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, type Language } from '@/i18n';
@@ -68,6 +69,33 @@ export function SettingsPage() {
           <CloudUpload className="w-4 h-4" /> 니모닉 백업
         </h2>
         <BackupManagementSection />
+      </div>
+
+      {/* 앱 업데이트 + 캐시 청소 — 모바일 PWA stale cache 대응 */}
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <RefreshCw className="w-4 h-4" /> 앱 업데이트
+        </h2>
+        <div className="bg-white rounded-xl border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">현재 버전</div>
+              <VersionBadge className="mt-0.5" />
+            </div>
+            <button
+              onClick={() => window.pkizipUpdate?.(true)}
+              className="text-xs px-3 py-1.5 border border-blue-300 text-blue-700 rounded hover:bg-blue-50 inline-flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3 h-3" />
+              업데이트 확인
+            </button>
+          </div>
+          <div className="text-[11px] text-zinc-500 leading-relaxed border-t pt-3">
+            모바일에서 옛 버전이 계속 보이면 아래 "캐시 강제 청소" 를 눌러주세요.
+            서비스 워커 등록 해제 + 모든 캐시 + 세션 데이터를 삭제합니다.
+          </div>
+          <ForceRefreshButton />
+        </div>
       </div>
     </div>
   );
