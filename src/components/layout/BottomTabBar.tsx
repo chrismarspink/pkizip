@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch } from 'lucide-react';
+import { Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch, FlaskConical } from 'lucide-react';
 
 const TABS = [
   { path: '/', icon: Home, label: '홈' },
@@ -9,6 +9,7 @@ const TABS = [
   { path: '/certs', icon: ShieldCheck, label: '인증서' },
   { path: '/contacts', icon: BookUser, label: '주소록' },
   { path: '/settings', icon: Settings, label: '설정' },
+  { path: '/policies', icon: FlaskConical, label: '정책-실험' },
 ];
 
 export function BottomTabBar() {

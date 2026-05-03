@@ -11,6 +11,7 @@
  */
 import type { Grade } from '../analysis/types';
 import type { CryptoKind, Purpose } from '../store/preferences';
+import { evalCustomRules, listCustomRules, type CustomRule } from './custom-rules';
 
 export interface PolicyInput {
   intent: {
@@ -157,7 +158,50 @@ function evalTs(input: PolicyInput): PolicyDecision {
 
 export async function evaluate(input: PolicyInput): Promise<PolicyDecision> {
   const wasm = await evalWasm(input);
-  return wasm ?? evalTs(input);
+  const base = wasm ?? evalTs(input);
+  return mergeCustomRules(base, input);
+}
+
+/**
+ * 사용자 정의 룰 (실험 기능) 결과를 base 결정에 병합.
+ * 캐시: PoliciesPage 가 마운트 시 또는 룰 변경 시 invalidate. evaluate() 첫
+ * 호출 시 비동기 로드 (그 호출은 base 만 반환 → 다음 호출부터 custom 적용).
+ */
+let _cachedCustomRules: CustomRule[] | null = null;
+let _customRulesLoading: Promise<void> | null = null;
+
+function loadCustomRulesAsync(): Promise<void> {
+  if (_customRulesLoading) return _customRulesLoading;
+  _customRulesLoading = (async () => {
+    try {
+      _cachedCustomRules = await listCustomRules();
+    } catch {
+      _cachedCustomRules = [];
+    }
+  })();
+  return _customRulesLoading;
+}
+
+/** 사용자가 룰 추가/수정/삭제 시 호출 — 캐시 무효화 + 즉시 재로드 */
+export async function invalidateCustomRulesCache(): Promise<void> {
+  _cachedCustomRules = null;
+  _customRulesLoading = null;
+  await loadCustomRulesAsync();
+}
+
+function mergeCustomRules(base: PolicyDecision, input: PolicyInput): PolicyDecision {
+  if (_cachedCustomRules === null) {
+    void loadCustomRulesAsync();
+    return base;
+  }
+  if (_cachedCustomRules.length === 0) return base;
+  const custom = evalCustomRules(input, _cachedCustomRules);
+  return {
+    ...base,
+    denyReasons: [...base.denyReasons, ...custom.denyReasons.map(r => r.reason)],
+    recommendedActions: [...base.recommendedActions, ...custom.recommended.map(r => r.reason)],
+    allow: base.allow && custom.denyReasons.length === 0,
+  };
 }
 
 /** 거부 사유 → 사용자 친화적 한국어 메시지 */

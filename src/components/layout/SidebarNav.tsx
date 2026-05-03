@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Shield, Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch } from 'lucide-react';
+import { Shield, Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch, FlaskConical } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { APP_VERSION } from '@/version';
 
@@ -14,6 +14,7 @@ export function SidebarNav() {
     { path: '/certs', icon: ShieldCheck, label: t('nav.certificates') },
     { path: '/contacts', icon: BookUser, label: t('nav.contacts') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
+    { path: '/policies', icon: FlaskConical, label: '정책-실험' },
   ];
 
   return (

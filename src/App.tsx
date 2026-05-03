@@ -8,6 +8,7 @@ import { ExplorerPage } from '@/pages/ExplorerPage';
 import { CertsPage } from '@/pages/CertsPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { PoliciesPage } from '@/pages/PoliciesPage';
 import { MePage } from '@/pages/MePage';
 import { AdminPage } from '@/pages/AdminPage';
 import { TeamLayout } from '@/components/team/TeamLayout';
@@ -36,6 +37,7 @@ export function App() {
           <Route path="/certs" element={<CertsPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/me" element={<MePage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/team/:slug" element={<TeamLayout />}>
