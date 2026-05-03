@@ -11,7 +11,7 @@
  */
 import type { Grade } from '../analysis/types';
 import type { CryptoKind, Purpose } from '../store/preferences';
-import { evalCustomRules, listCustomRules, type CustomRule } from './custom-rules';
+import { evalCustomRules, listCustomRules, listDisabledBuiltinReasons, type CustomRule } from './custom-rules';
 
 export interface PolicyInput {
   intent: {
@@ -159,7 +159,46 @@ function evalTs(input: PolicyInput): PolicyDecision {
 export async function evaluate(input: PolicyInput): Promise<PolicyDecision> {
   const wasm = await evalWasm(input);
   const base = wasm ?? evalTs(input);
-  return mergeCustomRules(base, input);
+  const filtered = filterDisabledBuiltins(base);
+  return mergeCustomRules(filtered, input);
+}
+
+/** 사용자가 GUI 에서 비활성화한 빌트인 룰의 reason 을 base 결정에서 제거 */
+let _cachedDisabled: Set<string> | null = null;
+let _disabledLoading: Promise<void> | null = null;
+
+function loadDisabledAsync(): Promise<void> {
+  if (_disabledLoading) return _disabledLoading;
+  _disabledLoading = (async () => {
+    try {
+      const arr = await listDisabledBuiltinReasons();
+      _cachedDisabled = new Set(arr);
+    } catch {
+      _cachedDisabled = new Set();
+    }
+  })();
+  return _disabledLoading;
+}
+
+export async function invalidateDisabledBuiltinsCache(): Promise<void> {
+  _cachedDisabled = null;
+  _disabledLoading = null;
+  await loadDisabledAsync();
+}
+
+function filterDisabledBuiltins(base: PolicyDecision): PolicyDecision {
+  if (_cachedDisabled === null) {
+    void loadDisabledAsync();
+    return base;
+  }
+  if (_cachedDisabled.size === 0) return base;
+  const denyReasons = base.denyReasons.filter(r => !_cachedDisabled!.has(r));
+  return {
+    ...base,
+    denyReasons,
+    // 모든 거부 사유가 비활성화로 사라졌으면 allow=true 로 (단 다른 곳에서 추가될 수 있음)
+    allow: denyReasons.length === 0,
+  };
 }
 
 /**

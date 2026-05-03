@@ -8,23 +8,28 @@
  *   4) App.tsx 의 라우트, SidebarNav/BottomTabBar 의 항목
  */
 import { useEffect, useState } from 'react';
-import { Trash2, Plus, FlaskConical, ToggleLeft, ToggleRight, Save, X } from 'lucide-react';
+import { Trash2, Plus, FlaskConical, ToggleLeft, ToggleRight, Save, X, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   listCustomRules, saveCustomRule, deleteCustomRule, clearAllCustomRules, ulid,
+  listEffectiveBuiltinRules, setBuiltinDisabled,
   FIELD_LABELS, OP_LABELS,
   type CustomRule, type Condition, type FieldPath, type Op, type ActionType,
 } from '@/lib/policy/custom-rules';
-import { invalidateCustomRulesCache } from '@/lib/policy/opa-engine';
+import { invalidateCustomRulesCache, invalidateDisabledBuiltinsCache } from '@/lib/policy/opa-engine';
 
 export function PoliciesPage() {
   const [rules, setRules] = useState<CustomRule[]>([]);
+  const [builtins, setBuiltins] = useState<CustomRule[]>([]);
   const [editing, setEditing] = useState<CustomRule | null>(null);
+  // 빌트인에서 복제한 룰을 편집 중일 때 — 저장 시 원본 자동 비활성화 대상
+  const [cloneFromReason, setCloneFromReason] = useState<string | null>(null);
 
   useEffect(() => { void load(); }, []);
 
   async function load() {
     setRules(await listCustomRules());
+    setBuiltins(await listEffectiveBuiltinRules());
   }
 
   async function persist(rule: CustomRule) {
@@ -36,6 +41,52 @@ export function PoliciesPage() {
 
   async function toggle(rule: CustomRule) {
     await persist({ ...rule, enabled: !rule.enabled });
+  }
+
+  async function toggleBuiltin(rule: CustomRule) {
+    // enabled 가 true 였으면 disabled 로, false 였으면 disabled 해제 (활성화)
+    await setBuiltinDisabled(rule.action.reason, rule.enabled);
+    await invalidateDisabledBuiltinsCache();
+    await load();
+    toast.success(rule.enabled ? '비활성화됨' : '활성화됨');
+  }
+
+  async function cloneBuiltin(rule: CustomRule) {
+    // 빌트인 → 사용자 룰 (편집 가능). 원본 자동 비활성화.
+    const cloned: CustomRule = {
+      id: ulid(),
+      name: rule.name + ' (복사)',
+      enabled: true,
+      conditions: rule.conditions.map(c => ({ ...c })),
+      action: {
+        type: rule.action.type,
+        reason: 'CUSTOM_' + rule.action.reason,
+        message: rule.action.message,
+      },
+      createdAt: Date.now(),
+    };
+    setEditing(cloned);
+    setCloneFromReason(rule.action.reason);
+    // 원본 비활성화는 사용자가 저장하는 시점 (handleEditorSave) 에서 처리
+  }
+
+  async function handleEditorSave(r: CustomRule) {
+    await saveCustomRule(r);
+    if (cloneFromReason) {
+      // 복제 저장 → 원본 빌트인 자동 비활성화
+      await setBuiltinDisabled(cloneFromReason, true);
+      await invalidateDisabledBuiltinsCache();
+    }
+    await invalidateCustomRulesCache();
+    setEditing(null);
+    setCloneFromReason(null);
+    await load();
+    toast.success(cloneFromReason ? '복제 저장됨 — 원본 빌트인 비활성화' : '룰 저장됨');
+  }
+
+  function handleEditorCancel() {
+    setEditing(null);
+    setCloneFromReason(null);
   }
 
   async function remove(id: string) {
@@ -94,42 +145,48 @@ export function PoliciesPage() {
         </div>
       </div>
 
-      {/* 룰 목록 */}
-      {rules.length === 0 ? (
-        <div className="text-center py-16 border-2 border-dashed border-zinc-200 rounded-xl text-zinc-500">
-          <p className="text-sm mb-2">사용자 정의 룰이 없습니다.</p>
-          <p className="text-xs text-zinc-400">"새 룰" 을 눌러 빌트인 룰 위에 추가 룰을 정의하세요.</p>
+      {/* 빌트인 룰 — toggle / 복제 가능 */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-sm font-semibold text-zinc-700">빌트인 룰 ({builtins.length})</h2>
+          <span className="text-[11px] text-zinc-500">— 끄거나 복제하여 편집할 수 있습니다 (코드 자체는 불변)</span>
         </div>
-      ) : (
         <div className="space-y-2">
-          {rules.map(r => (
-            <RuleCard key={r.id} rule={r}
-              onToggle={() => toggle(r)}
-              onEdit={() => setEditing({ ...r })}
-              onDelete={() => remove(r.id)} />
+          {builtins.map(r => (
+            <RuleCard key={r.id} rule={r} kind="builtin"
+              onToggle={() => toggleBuiltin(r)}
+              onClone={() => cloneBuiltin(r)} />
           ))}
         </div>
-      )}
+      </div>
 
-      {/* 빌트인 룰 안내 (참고) */}
-      <details className="mt-8 border rounded-lg bg-zinc-50">
-        <summary className="cursor-pointer p-3 text-xs font-semibold text-zinc-600 uppercase">
-          빌트인 룰 (참고만 — 편집 불가)
-        </summary>
-        <div className="px-3 pb-3 text-xs text-zinc-600 space-y-1.5">
-          <div>• <b>C_GRADE_REQUIRES_PQC_FOR_EXTERNAL</b> — C + external + classic → 거부</div>
-          <div>• <b>C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL</b> — C + external + 가명화 미적용 → 거부</div>
-          <div>• <b>LANGUAGE_DOWNGRADE_BLOCKED</b> — 비한국어 + O + external → 거부</div>
-          <div>• <b>OCR_C_GRADE_REQUIRES_REVIEW</b> — OCR + C + 가명화 미적용 → 거부</div>
-        </div>
-      </details>
+      {/* 사용자 룰 */}
+      <div>
+        <h2 className="text-sm font-semibold text-zinc-700 mb-2">사용자 룰 ({rules.length})</h2>
+        {rules.length === 0 ? (
+          <div className="text-center py-10 border-2 border-dashed border-zinc-200 rounded-xl text-zinc-500">
+            <p className="text-sm mb-1">사용자 정의 룰이 없습니다.</p>
+            <p className="text-xs text-zinc-400">"새 룰" 또는 빌트인 룰의 [복제하여 편집] 으로 추가하세요.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {rules.map(r => (
+              <RuleCard key={r.id} rule={r} kind="custom"
+                onToggle={() => toggle(r)}
+                onEdit={() => setEditing({ ...r })}
+                onDelete={() => remove(r.id)} />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* 편집 모달 */}
       {editing && (
         <RuleEditor
           rule={editing}
-          onSave={async (r) => { await persist(r); setEditing(null); }}
-          onCancel={() => setEditing(null)}
+          cloneFromReason={cloneFromReason}
+          onSave={handleEditorSave}
+          onCancel={handleEditorCancel}
         />
       )}
     </div>
@@ -140,17 +197,29 @@ export function PoliciesPage() {
 // 룰 카드
 // ─────────────────────────────────────────────
 
-function RuleCard({ rule, onToggle, onEdit, onDelete }: {
-  rule: CustomRule; onToggle: () => void; onEdit: () => void; onDelete: () => void;
+function RuleCard({ rule, kind, onToggle, onEdit, onDelete, onClone }: {
+  rule: CustomRule;
+  kind: 'builtin' | 'custom';
+  onToggle: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onClone?: () => void;
 }) {
   return (
-    <div className={`border rounded-lg p-3 ${rule.enabled ? 'bg-white border-zinc-200' : 'bg-zinc-50 border-zinc-200 opacity-60'}`}>
+    <div className={`border rounded-lg p-3 ${
+      rule.enabled ? 'bg-white border-zinc-200' : 'bg-zinc-50 border-zinc-200 opacity-60'
+    } ${kind === 'builtin' ? 'border-l-4 border-l-zinc-400' : 'border-l-4 border-l-blue-400'}`}>
       <div className="flex items-start gap-3">
-        <button onClick={onToggle} className="text-zinc-600 hover:text-blue-600 flex-shrink-0">
+        <button onClick={onToggle} className="text-zinc-600 hover:text-blue-600 flex-shrink-0" title={rule.enabled ? '비활성화' : '활성화'}>
           {rule.enabled ? <ToggleRight className="w-6 h-6 text-emerald-600" /> : <ToggleLeft className="w-6 h-6" />}
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+              kind === 'builtin' ? 'bg-zinc-200 text-zinc-700' : 'bg-blue-100 text-blue-700'
+            }`}>
+              {kind === 'builtin' ? '🛡 빌트인' : '✏️ 사용자'}
+            </span>
             <span className="font-semibold text-sm">{rule.name || '(이름 없음)'}</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
               rule.action.type === 'deny' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
@@ -169,10 +238,24 @@ function RuleCard({ rule, onToggle, onEdit, onDelete }: {
           {rule.action.message && (
             <div className="text-xs text-zinc-700 mt-1.5">→ {rule.action.message}</div>
           )}
+          <div className="text-[10px] text-zinc-400 mt-1 font-mono">
+            reason: {rule.action.reason}
+          </div>
         </div>
-        <div className="flex gap-1 flex-shrink-0">
-          <button onClick={onEdit} className="text-xs px-2 py-1 hover:bg-zinc-100 rounded">편집</button>
-          <button onClick={onDelete} className="text-xs px-2 py-1 hover:bg-red-50 text-red-600 rounded">삭제</button>
+        <div className="flex gap-1 flex-shrink-0 flex-wrap justify-end">
+          {kind === 'builtin' && onClone && (
+            <button onClick={onClone}
+              className="text-xs px-2 py-1 hover:bg-blue-50 text-blue-700 rounded inline-flex items-center gap-1"
+              title="이 빌트인 룰을 사용자 룰로 복제하여 편집 (저장 시 원본 자동 비활성화)">
+              <Copy className="w-3 h-3" /> 복제하여 편집
+            </button>
+          )}
+          {kind === 'custom' && onEdit && (
+            <button onClick={onEdit} className="text-xs px-2 py-1 hover:bg-zinc-100 rounded">편집</button>
+          )}
+          {kind === 'custom' && onDelete && (
+            <button onClick={onDelete} className="text-xs px-2 py-1 hover:bg-red-50 text-red-600 rounded">삭제</button>
+          )}
         </div>
       </div>
     </div>
@@ -183,8 +266,11 @@ function RuleCard({ rule, onToggle, onEdit, onDelete }: {
 // 룰 편집 모달
 // ─────────────────────────────────────────────
 
-function RuleEditor({ rule, onSave, onCancel }: {
-  rule: CustomRule; onSave: (r: CustomRule) => void; onCancel: () => void;
+function RuleEditor({ rule, cloneFromReason, onSave, onCancel }: {
+  rule: CustomRule;
+  cloneFromReason?: string | null;
+  onSave: (r: CustomRule) => void;
+  onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<CustomRule>(rule);
   const valid = draft.name.trim().length > 0 && draft.conditions.length > 0 && draft.action.message.trim().length > 0;
@@ -205,9 +291,19 @@ function RuleEditor({ rule, onSave, onCancel }: {
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="font-semibold">룰 {rule.name ? '편집' : '추가'}</h2>
+          <h2 className="font-semibold">
+            {cloneFromReason ? '빌트인 룰 복제 → 사용자 룰 편집' : (rule.name ? '룰 편집' : '룰 추가')}
+          </h2>
           <button onClick={onCancel} className="p-1 hover:bg-zinc-100 rounded"><X className="w-4 h-4" /></button>
         </div>
+
+        {cloneFromReason && (
+          <div className="mx-4 mt-3 p-2.5 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-900 leading-relaxed">
+            <b>📋 빌트인 룰 복제 중:</b> <code className="font-mono">{cloneFromReason}</code>.
+            저장하면 사용자 룰로 추가되며, <b>원본 빌트인 룰은 자동 비활성화</b>됩니다.
+            취소 시 원본은 그대로 유지됩니다.
+          </div>
+        )}
 
         <div className="p-4 space-y-4">
           <div>

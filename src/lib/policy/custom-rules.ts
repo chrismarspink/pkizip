@@ -48,17 +48,25 @@ interface CustomRulesDB extends DBSchema {
     key: string;
     value: CustomRule;
   };
+  'disabled-builtins-EXPERIMENTAL': {
+    key: string;                        // 빌트인 룰 reason code
+    value: { reason: string; disabledAt: number };
+  };
 }
 
 const DB_NAME = 'pkizip-policy';
-const DB_VERSION = 1;
+const DB_VERSION = 2;                   // 빌트인 비활성화 store 추가
 const STORE = 'custom-rules-EXPERIMENTAL';
+const DISABLED_STORE = 'disabled-builtins-EXPERIMENTAL';
 
 let _db: Promise<IDBPDatabase<CustomRulesDB>> | null = null;
 function db() {
   if (!_db) {
     _db = openDB<CustomRulesDB>(DB_NAME, DB_VERSION, {
-      upgrade(d) { d.createObjectStore(STORE, { keyPath: 'id' }); },
+      upgrade(d, oldVersion) {
+        if (oldVersion < 1) d.createObjectStore(STORE, { keyPath: 'id' });
+        if (oldVersion < 2) d.createObjectStore(DISABLED_STORE, { keyPath: 'reason' });
+      },
     });
   }
   return _db;
@@ -83,6 +91,110 @@ export async function deleteCustomRule(id: string): Promise<void> {
 export async function clearAllCustomRules(): Promise<void> {
   const d = await db();
   await d.clear(STORE);
+}
+
+// ─────────────────────────────────────────────
+// 빌트인 룰 비활성화 set CRUD
+// ─────────────────────────────────────────────
+
+export async function listDisabledBuiltinReasons(): Promise<string[]> {
+  const d = await db();
+  const all = await d.getAll(DISABLED_STORE);
+  return all.map(x => x.reason);
+}
+
+export async function setBuiltinDisabled(reason: string, disabled: boolean): Promise<void> {
+  const d = await db();
+  if (disabled) {
+    await d.put(DISABLED_STORE, { reason, disabledAt: Date.now() });
+  } else {
+    await d.delete(DISABLED_STORE, reason);
+  }
+}
+
+export async function clearAllDisabledBuiltins(): Promise<void> {
+  const d = await db();
+  await d.clear(DISABLED_STORE);
+}
+
+// ─────────────────────────────────────────────
+// 빌트인 룰 — JSON DSL 미러 (rules.rego / opa-engine.ts evalTs 와 동기화)
+// 편집 불가, 복제만 가능. 비활성화는 disabled set 에 reason 추가로.
+// ─────────────────────────────────────────────
+
+export const BUILTIN_RULES: Readonly<CustomRule[]> = Object.freeze([
+  {
+    id: 'BUILTIN_C_GRADE_REQUIRES_PQC_FOR_EXTERNAL',
+    name: 'C 등급 외부전송 PQC 필수',
+    enabled: true,
+    conditions: [
+      { field: 'classification.grade', op: 'eq', value: 'C' },
+      { field: 'intent.purpose', op: 'eq', value: 'external' },
+      { field: 'intent.crypto_kind', op: 'eq', value: 'classic' },
+    ],
+    action: {
+      type: 'deny',
+      reason: 'C_GRADE_REQUIRES_PQC_FOR_EXTERNAL',
+      message: 'C(위험) 등급 문서는 외부 전송 시 PQC(양자내성) 암호화가 필요합니다. 단순 암호로는 전송 불가.',
+    },
+    createdAt: 0,
+  },
+  {
+    id: 'BUILTIN_C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL',
+    name: 'C 등급 외부전송 가명/익명화 필수',
+    enabled: true,
+    conditions: [
+      { field: 'classification.grade', op: 'eq', value: 'C' },
+      { field: 'intent.purpose', op: 'eq', value: 'external' },
+      { field: 'pseudonymization.applied', op: 'eq', value: false },
+    ],
+    action: {
+      type: 'deny',
+      reason: 'C_GRADE_REQUIRES_ANONYMIZATION_FOR_EXTERNAL',
+      message: 'C(위험) 등급 문서는 외부 전송 전 가명/익명화 처리가 필요합니다.',
+    },
+    createdAt: 0,
+  },
+  {
+    id: 'BUILTIN_LANGUAGE_DOWNGRADE_BLOCKED',
+    name: '비한국어 + O 등급 외부전송 차단 (언어 우회 의심)',
+    enabled: true,
+    conditions: [
+      { field: 'language.detected', op: 'neq', value: 'ko' },
+      { field: 'language.detected', op: 'neq', value: 'und' },
+      { field: 'classification.grade', op: 'eq', value: 'O' },
+      { field: 'intent.purpose', op: 'eq', value: 'external' },
+      { field: 'pseudonymization.applied', op: 'eq', value: false },
+    ],
+    action: {
+      type: 'deny',
+      reason: 'LANGUAGE_DOWNGRADE_BLOCKED',
+      message: '비한국어 문서를 O(공개) 등급으로 외부 전송 시도 — 언어 변환 우회 의심으로 차단됩니다.',
+    },
+    createdAt: 0,
+  },
+  {
+    id: 'BUILTIN_OCR_C_GRADE_REQUIRES_REVIEW',
+    name: 'OCR + C 등급 수동 검토 필수',
+    enabled: true,
+    conditions: [
+      { field: 'ocr.applied', op: 'eq', value: true },
+      { field: 'classification.grade', op: 'eq', value: 'C' },
+      { field: 'pseudonymization.applied', op: 'eq', value: false },
+    ],
+    action: {
+      type: 'deny',
+      reason: 'OCR_C_GRADE_REQUIRES_REVIEW',
+      message: 'OCR이 적용된 C(위험) 등급 문서는 수동 검토가 필요합니다.',
+    },
+    createdAt: 0,
+  },
+]);
+
+/** 빌트인 + 비활성화 정보를 합쳐서 표시용 룰 배열 반환 */
+export async function listEffectiveBuiltinRules(): Promise<CustomRule[]> {
+  const disabled = new Set(await listDisabledBuiltinReasons());
+  return BUILTIN_RULES.map(r => ({ ...r, enabled: !disabled.has(r.action.reason) }));
 }
 
 // ─────────────────────────────────────────────
