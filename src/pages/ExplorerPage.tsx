@@ -201,28 +201,6 @@ export function ExplorerPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // 사용자 제스처 (버튼 클릭) 안에서 권한 재요청 → 통과 시 walk
-  const reauthorizeAndScan = useCallback(async () => {
-    if (!savedHandle) return;
-    setScanning(true);
-    setNeedsReauth(false);
-    try {
-      const req = await requestHandlePermission(savedHandle);
-      if (req !== 'granted') {
-        alert('읽기 권한이 거부되었습니다. 디렉토리를 다시 선택해주세요.');
-        setNeedsReauth(true);
-        return;
-      }
-      const walked = await walkDirHandle(savedHandle);
-      await ingestDirectory(savedHandle.name, walked, savedHandle, 'fs-access');
-    } catch (e) {
-      console.error('재인증 후 스캔 실패:', e);
-      alert('스캔 실패: ' + String(e));
-    } finally {
-      setScanning(false);
-    }
-  }, [savedHandle, ingestDirectory]);
-
   // 디렉토리 walk 결과를 저장 — 재방문 시 복원용
   const persistFolder = useCallback(async (
     rootName: string,
@@ -300,6 +278,28 @@ export function ExplorerPage() {
     setScanRoot(rootName);
     await persistFolder(rootName, built, handle, mode);
   }, [buildEntries, persistFolder]);
+
+  // 사용자 제스처 (버튼 클릭) 안에서 권한 재요청 → 통과 시 walk
+  const reauthorizeAndScan = useCallback(async () => {
+    if (!savedHandle) return;
+    setScanning(true);
+    setNeedsReauth(false);
+    try {
+      const req = await requestHandlePermission(savedHandle);
+      if (req !== 'granted') {
+        alert('읽기 권한이 거부되었습니다. 디렉토리를 다시 선택해주세요.');
+        setNeedsReauth(true);
+        return;
+      }
+      const walked = await walkDirHandle(savedHandle);
+      await ingestDirectory(savedHandle.name, walked, savedHandle, 'fs-access');
+    } catch (e) {
+      console.error('재인증 후 스캔 실패:', e);
+      alert('스캔 실패: ' + String(e));
+    } finally {
+      setScanning(false);
+    }
+  }, [savedHandle, ingestDirectory]);
 
   // 디렉토리 선택 — File System Access API 우선, webkitdirectory 폴백.
   // 다운로드/바탕화면/문서 등 well-known 시스템 폴더는 Chrome 이 직접 차단하므로
