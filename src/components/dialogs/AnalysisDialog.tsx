@@ -360,6 +360,22 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 </div>
               </div>
 
+              {/* 원본 분석 vs 현재 — 가명/익명화로 등급이 바뀐 경우만 노출 */}
+              {initialResult.classification.grade !== c.grade && (
+                <div className="mt-2 pt-2 border-t border-current/20 text-[11px] leading-relaxed opacity-95 flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold">📋 원본 분석:</span>
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold ${GRADE_COLOR[initialResult.classification.grade]}`}>
+                    {initialResult.classification.grade} ({initialResult.classification.score}점)
+                  </span>
+                  <span>→</span>
+                  <span className="font-semibold">현재:</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold bg-white/40">
+                    {c.grade} ({c.score}점)
+                  </span>
+                  <span className="opacity-80">— 가명/익명화로 강등됨</span>
+                </div>
+              )}
+
               {/* Score bar — O/S/C 임계값 + 현재 score 위치 */}
               <ScoreBar score={c.score} sThreshold={c.thresholds.S} cThreshold={c.thresholds.C} />
 
