@@ -122,31 +122,51 @@ export function ExplorerPage() {
     await ingest(list.map(f => ({ path: f.name, file: f })));
   }, [ingest]);
 
-  // 디렉토리 선택 — File System Access API 우선, webkitdirectory 폴백
+  // 디렉토리 선택 — File System Access API 우선, webkitdirectory 폴백.
+  // 다운로드/바탕화면/문서 등 well-known 시스템 폴더는 Chrome 이 직접 차단하므로
+  // AbortError / SecurityError 발생 시 사용자에게 호환 모드 제안.
+  const pickDirectoryViaInput = useCallback(() => {
+    dirInputRef.current?.click();
+  }, []);
+
   const pickDirectory = useCallback(async () => {
     const w = window as typeof window & {
-      showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+      showDirectoryPicker?: (opts?: { id?: string; mode?: string }) => Promise<FileSystemDirectoryHandle>;
     };
-    if (typeof w.showDirectoryPicker === 'function') {
-      try {
-        setScanning(true);
-        const handle = await w.showDirectoryPicker();
-        setScanRoot(handle.name);
-        const walked = await walkDirHandle(handle);
-        await ingest(walked);
-      } catch (e) {
-        if ((e as Error).name !== 'AbortError') {
-          console.error('디렉토리 walk 실패:', e);
-          alert('디렉토리 읽기 실패: ' + String(e));
-        }
-      } finally {
-        setScanning(false);
-      }
-    } else {
-      // 폴백: input[webkitdirectory] 클릭
-      dirInputRef.current?.click();
+    if (typeof w.showDirectoryPicker !== 'function') {
+      pickDirectoryViaInput();
+      return;
     }
-  }, [ingest]);
+    try {
+      setScanning(true);
+      const handle = await w.showDirectoryPicker({ id: 'pkizip-explorer', mode: 'read' });
+      setScanRoot(handle.name);
+      const walked = await walkDirHandle(handle);
+      await ingest(walked);
+    } catch (e) {
+      const err = e as Error;
+      const blocked = err.name === 'SecurityError'
+        || /system files|시스템 파일|well[- ]known/i.test(err.message);
+      const aborted = err.name === 'AbortError';
+      if (blocked || aborted) {
+        // 시스템 폴더 차단 또는 사용자 취소 — 호환 모드 자동 제안
+        const useFallback = confirm(
+          (blocked
+            ? 'Chrome 이 이 폴더를 차단했습니다 (다운로드/바탕화면/문서 등 시스템 폴더는 직접 열 수 없음).\n\n'
+            : '폴더 선택이 취소되었습니다.\n\n') +
+          '호환 모드(webkitdirectory) 로 재시도할까요? 시스템 폴더도 모두 열 수 있습니다.'
+        );
+        if (useFallback) {
+          pickDirectoryViaInput();
+        }
+      } else {
+        console.error('디렉토리 walk 실패:', err);
+        alert('디렉토리 읽기 실패: ' + String(err));
+      }
+    } finally {
+      setScanning(false);
+    }
+  }, [ingest, pickDirectoryViaInput]);
 
   const onDirInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -246,11 +266,18 @@ export function ExplorerPage() {
               <option value="grade">등급</option>
               <option value="size">크기</option>
             </select>
-            <button onClick={pickDirectory} disabled={scanning}
-              className="px-3 py-1.5 bg-emerald-600 text-white rounded text-sm flex items-center gap-1.5 hover:bg-emerald-700 disabled:bg-zinc-300">
-              <FolderOpen className="w-4 h-4" />
-              {scanning ? '스캔 중…' : '디렉토리 선택'}
-            </button>
+            <div className="inline-flex rounded overflow-hidden border border-emerald-700">
+              <button onClick={pickDirectory} disabled={scanning}
+                className="px-3 py-1.5 bg-emerald-600 text-white text-sm flex items-center gap-1.5 hover:bg-emerald-700 disabled:bg-zinc-300">
+                <FolderOpen className="w-4 h-4" />
+                {scanning ? '스캔 중…' : '디렉토리 선택'}
+              </button>
+              <button onClick={pickDirectoryViaInput} disabled={scanning}
+                title="다운로드 등 시스템 폴더 포함 모든 폴더 (webkitdirectory)"
+                className="px-2 py-1.5 bg-emerald-700 text-white text-[11px] hover:bg-emerald-800 disabled:bg-zinc-300 border-l border-emerald-800">
+                호환
+              </button>
+            </div>
             <button onClick={() => inputRef.current?.click()}
               className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm flex items-center gap-1.5 hover:bg-blue-700">
               <Upload className="w-4 h-4" /> 파일 추가
@@ -273,7 +300,7 @@ export function ExplorerPage() {
             />
           </div>
         </div>
-        {(scanRoot || scanning) && (
+        {(scanRoot || scanning) ? (
           <div className="mt-2 text-[11px] text-zinc-500 flex items-center gap-2">
             <Folder className="w-3 h-3" />
             {scanning ? (
@@ -284,6 +311,11 @@ export function ExplorerPage() {
                 · {entries.length}개 파일 ({entries.filter(e => e.kind === 'pki').length} PKI · {entries.filter(e => e.kind === 'other').length} 기타)
               </>
             )}
+          </div>
+        ) : (
+          <div className="mt-2 text-[10px] text-zinc-400">
+            💡 Chrome 은 다운로드 / 바탕화면 / 문서 폴더를 직접 차단합니다 — 차단되면
+            <b className="text-emerald-700"> 호환</b> 버튼 또는 자동 폴백을 사용하세요.
           </div>
         )}
       </div>
