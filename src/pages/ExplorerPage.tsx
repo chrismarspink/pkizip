@@ -383,23 +383,24 @@ export function ExplorerPage() {
     }
   }, [savedHandle, ingestDirectory]);
 
+  /** 카드 클릭 — 항상 DetailPanel (메타 보기). 분석 이동은 별도 버튼. */
+  const onCardClick = useCallback((entry: ExplorerEntry) => {
+    setSelected(entry);
+  }, []);
+
   /**
-   * 카드 클릭 router — PKI 봉투 + 핸들 있으면 /files 로 이동 (자동 분석 시작),
-   * 그 외 (일반 파일 / webkit 폴백) 는 DetailPanel 표시.
+   * "파일 메뉴로 이동" 버튼 — PKI 봉투 + 핸들 있을 때만 노출.
+   * 디렉토리 핸들로 실제 파일 추출 → /files 로 navigate → 자동 분석 시작.
    */
-  const onCardClick = useCallback(async (entry: ExplorerEntry) => {
-    if (entry.kind !== 'pki' || !savedHandle) {
-      setSelected(entry);
-      return;
-    }
+  const onOpenInFiles = useCallback(async (entry: ExplorerEntry) => {
+    if (entry.kind !== 'pki' || !savedHandle) return;
     setOpeningPki(entry.id);
     try {
       const perm = await checkHandlePermission(savedHandle);
       if (perm !== 'granted') {
         const req = await requestHandlePermission(savedHandle);
         if (req !== 'granted') {
-          alert('읽기 권한이 거부되었습니다. 캐시된 메타만 표시합니다.');
-          setSelected(entry);
+          alert('읽기 권한이 거부되었습니다.');
           return;
         }
       }
@@ -408,9 +409,7 @@ export function ExplorerPage() {
       navigate('/files');
     } catch (e) {
       console.error('PKI 파일 열기 실패:', e);
-      // 디스크 변경/삭제됐을 가능성 — 폴백으로 DetailPanel 표시
-      alert(`이 파일을 열 수 없습니다 (이동/삭제됐을 수 있음): ${(e as Error).message}\n캐시된 메타만 표시합니다.`);
-      setSelected(entry);
+      alert(`파일을 열 수 없습니다 (이동/삭제됐을 수 있음): ${(e as Error).message}`);
     } finally {
       setOpeningPki(null);
     }
@@ -634,7 +633,9 @@ export function ExplorerPage() {
                 key={e.id}
                 entry={e}
                 opening={openingPki === e.id}
+                canOpenInFiles={e.kind === 'pki' && !!savedHandle}
                 onClick={() => onCardClick(e)}
+                onOpenInFiles={() => onOpenInFiles(e)}
               />
             ))}
           </div>
@@ -660,10 +661,12 @@ export function ExplorerPage() {
 // 카드 — 등급 아이콘 + 메타
 // ─────────────────────────────────────────────
 
-function FileCard({ entry, opening, onClick }: {
+function FileCard({ entry, opening, canOpenInFiles, onClick, onOpenInFiles }: {
   entry: ExplorerEntry;
   opening?: boolean;
+  canOpenInFiles?: boolean;
   onClick: () => void;
+  onOpenInFiles: () => void;
 }) {
   const badge = deriveBadge(entry.header);
   const colors = gradeColors(badge.grade);
@@ -745,6 +748,25 @@ function FileCard({ entry, opening, onClick }: {
         )}
         {isPki && entry.header?.ocr?.applied && <> · OCR</>}
       </div>
+
+      {canOpenInFiles && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onOpenInFiles(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpenInFiles();
+            }
+          }}
+          aria-label="파일 메뉴로 이동하여 분석"
+          className="mt-3 w-full text-center text-xs px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-medium transition cursor-pointer"
+        >
+          📂 파일 메뉴로 이동
+        </div>
+      )}
     </motion.button>
   );
 }
