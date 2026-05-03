@@ -157,6 +157,16 @@ export function CreatePage() {
     setFiles(prev => [...prev, ...entries]);
   }, []);
 
+  // Explorer 등 다른 페이지에서 setPendingFile() 로 던진 파일을 마운트 시 자동 추가
+  useEffect(() => {
+    (async () => {
+      const { takePendingFile } = await import('@/lib/store/pending-file');
+      const f = takePendingFile();
+      if (f) handleAddFiles([f]);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleOption = (key: keyof CmsOptions) => {
     setOptions(prev => {
       const next = { ...prev };

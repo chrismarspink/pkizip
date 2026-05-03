@@ -389,11 +389,11 @@ export function ExplorerPage() {
   }, []);
 
   /**
-   * "파일 메뉴로 이동" 버튼 — PKI 봉투 + 핸들 있을 때만 노출.
-   * 디렉토리 핸들로 실제 파일 추출 → /files 로 navigate → 자동 분석 시작.
+   * 핸들에서 파일 추출 + setPendingFile + 라우팅 (공통).
+   * route: '/files' (PKI 분석) 또는 '/create' (봉투 생성)
    */
-  const onOpenInFiles = useCallback(async (entry: ExplorerEntry) => {
-    if (entry.kind !== 'pki' || !savedHandle) return;
+  const handOffToRoute = useCallback(async (entry: ExplorerEntry, route: '/files' | '/create') => {
+    if (!savedHandle) return;
     setOpeningPki(entry.id);
     try {
       const perm = await checkHandlePermission(savedHandle);
@@ -406,14 +406,26 @@ export function ExplorerPage() {
       }
       const file = await getFileFromHandle(savedHandle, entry.relPath);
       setPendingFile(file);
-      navigate('/files');
+      navigate(route);
     } catch (e) {
-      console.error('PKI 파일 열기 실패:', e);
+      console.error('파일 핸드오프 실패:', e);
       alert(`파일을 열 수 없습니다 (이동/삭제됐을 수 있음): ${(e as Error).message}`);
     } finally {
       setOpeningPki(null);
     }
   }, [savedHandle, navigate]);
+
+  /** PKI 카드 — 파일 메뉴로 이동 (분석/복호화) */
+  const onOpenInFiles = useCallback(
+    (entry: ExplorerEntry) => handOffToRoute(entry, '/files'),
+    [handOffToRoute],
+  );
+
+  /** 일반 파일 카드 — 봉투 생성 페이지로 이동 (분석 다이얼로그 → .pki 봉인) */
+  const onCreateEnvelope = useCallback(
+    (entry: ExplorerEntry) => handOffToRoute(entry, '/create'),
+    [handOffToRoute],
+  );
 
   const clearCache = useCallback(async () => {
     if (!confirm('마지막 디렉토리 기억을 삭제하시겠습니까?')) return;
@@ -634,8 +646,10 @@ export function ExplorerPage() {
                 entry={e}
                 opening={openingPki === e.id}
                 canOpenInFiles={e.kind === 'pki' && !!savedHandle}
+                canCreateEnvelope={e.kind === 'other' && !!savedHandle}
                 onClick={() => onCardClick(e)}
                 onOpenInFiles={() => onOpenInFiles(e)}
+                onCreateEnvelope={() => onCreateEnvelope(e)}
               />
             ))}
           </div>
@@ -661,12 +675,15 @@ export function ExplorerPage() {
 // 카드 — 등급 아이콘 + 메타
 // ─────────────────────────────────────────────
 
-function FileCard({ entry, opening, canOpenInFiles, onClick, onOpenInFiles }: {
+function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
+                     onClick, onOpenInFiles, onCreateEnvelope }: {
   entry: ExplorerEntry;
   opening?: boolean;
   canOpenInFiles?: boolean;
+  canCreateEnvelope?: boolean;
   onClick: () => void;
   onOpenInFiles: () => void;
+  onCreateEnvelope: () => void;
 }) {
   const badge = deriveBadge(entry.header);
   const colors = gradeColors(badge.grade);
@@ -771,6 +788,24 @@ function FileCard({ entry, opening, canOpenInFiles, onClick, onOpenInFiles }: {
           className="mt-3 w-full text-center text-xs px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-medium transition cursor-pointer"
         >
           📂 파일 메뉴로 이동
+        </div>
+      )}
+      {canCreateEnvelope && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onCreateEnvelope(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              onCreateEnvelope();
+            }
+          }}
+          aria-label="이 파일로 PKI 봉투 만들기"
+          className="mt-3 w-full text-center text-xs px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md font-medium transition cursor-pointer"
+        >
+          🛡 PKIZIP 봉투 만들기
         </div>
       )}
     </motion.button>
