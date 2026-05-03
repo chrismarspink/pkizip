@@ -73,8 +73,10 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   const [rememberDefaults, setRememberDefaults] = useState(true);
   const [showExplain, setShowExplain] = useState(true);
 
-  // 사용자 최종 분류 — AI 등급에서 시작, 사용자가 변경 가능
+  // 사용자 최종 분류 — 현재 (가명화 후) AI 등급에서 시작, 사용자가 변경 가능
+  // userManuallyPicked = true 이면 가명화로 current 가 바뀌어도 사용자 선택 유지.
   const [userGrade, setUserGrade] = useState<Grade>(initialResult.classification.grade);
+  const [userManuallyPicked, setUserManuallyPicked] = useState(false);
   const [userMemo, setUserMemo] = useState('');
   const [decisionSaved, setDecisionSaved] = useState(false);
   const [savingDecision, setSavingDecision] = useState(false);
@@ -102,6 +104,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
 
   // 분석 결과 (가명/익명화 후 갱신될 수 있음)
   const [current, setCurrent] = useState<AnalysisResult>(initialResult);
+
+  // current 등급 변화 시 (가명/익명화 적용) — 사용자가 직접 picker 를 누르지
+  // 않았다면 userGrade 도 같이 따라가게. 이렇게 해야 등급 카드와 picker 의
+  // "AI 추천" 별이 서로 다른 등급을 가리키지 않음.
+  useEffect(() => {
+    if (!userManuallyPicked) setUserGrade(current.classification.grade);
+  }, [current.classification.grade, userManuallyPicked]);
 
   // SHAP 토큰 기여도 — 사용자가 명시적으로 실행
   const [shapResult, setShapResult] = useState<AttributionResult | null>(null);
@@ -134,6 +143,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     setCurrent(initialResult);
     autoAppliedRef.current = false;
     setUserGrade(initialResult.classification.grade);
+    setUserManuallyPicked(false);
     setUserMemo('');
     setDecisionSaved(false);
   }, [initialResult]);
@@ -203,11 +213,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     if (savingDecision) return;
     setSavingDecision(true);
     try {
-      const c0 = initialResult.classification;
-      const hash = await textHash(initialResult.text);
+      // 사용자가 picker 에서 본 AI 추천 = current (가명화 후 최종) 의 등급.
+      // 동의 여부 (gap) 가 picker UI 와 일치하려면 current 기준으로 저장해야 함.
+      const c0 = current.classification;
+      const hash = await textHash(current.text);
       await saveDecision({
         textHash: hash,
-        textLength: initialResult.text.length,
+        textLength: current.text.length,
         ai: {
           grade: c0.grade,
           score: c0.score,
@@ -217,8 +229,8 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
         },
         userGrade,
         memo: userMemo,
-        findings: initialResult.findings,
-        language: initialResult.language.detected,
+        findings: current.findings,
+        language: current.language.detected,
       });
       setDecisionSaved(true);
     } catch (e) {
@@ -229,7 +241,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     }
   }
 
-  const userGradeGap = Math.abs(GRADE_RANK[initialResult.classification.grade] - GRADE_RANK[userGrade]);
+  const userGradeGap = Math.abs(GRADE_RANK[current.classification.grade] - GRADE_RANK[userGrade]);
 
   if (!open) return null;
   const c = current.classification;
@@ -522,11 +534,11 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               <div className="grid grid-cols-3 gap-2 mb-2">
                 {(['C', 'S', 'O'] as Grade[]).map(g => {
                   const active = userGrade === g;
-                  const isAi = initialResult.classification.grade === g;
+                  const isAi = current.classification.grade === g;
                   return (
                     <button
                       key={g}
-                      onClick={() => { setUserGrade(g); setDecisionSaved(false); }}
+                      onClick={() => { setUserGrade(g); setUserManuallyPicked(true); setDecisionSaved(false); }}
                       className={`px-2 py-2 text-xs rounded border transition text-left ${
                         active
                           ? g === 'C' ? 'bg-red-600 text-white border-red-600'
@@ -559,7 +571,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               <div className="mt-2 flex items-center gap-2">
                 {userGradeGap > 0 ? (
                   <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                    AI({initialResult.classification.grade}) → 사용자({userGrade}) · gap {userGradeGap}단계
+                    AI({current.classification.grade}) → 사용자({userGrade}) · gap {userGradeGap}단계
                   </span>
                 ) : (
                   <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
