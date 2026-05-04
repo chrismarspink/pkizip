@@ -42,6 +42,14 @@ function saveCache(cache: TsaHealthCache[]) {
 
 /** 단일 TSA 헬스체크 (HEAD 또는 빈 POST) */
 async function checkSingleTsa(server: TsaServer, timeoutMs = 3000): Promise<number> {
+  // HTTPS 페이지에서 HTTP TSA 직접 호출은 Mixed Content 로 차단됨.
+  // 실제 서명 시에는 Edge Function 프록시 경유라 동작하지만, 헬스체크는 스킵.
+  if (typeof window !== 'undefined'
+      && window.location.protocol === 'https:'
+      && server.url.startsWith('http://')) {
+    return -2; // -2 = mixed content 로 확인 불가 (실패와 구분)
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const start = performance.now();

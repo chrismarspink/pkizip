@@ -273,20 +273,22 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
     }
   }
 
-  // 요약 — 응답 가능한 서버 수
-  const reachable = results.filter(r => r.responseMs > 0 && !isBlacklisted(r));
-  const allFailed = results.length > 0 && reachable.length === 0;
+  // 요약 — 응답 가능한 서버 수 (-2 는 Mixed Content 로 확인 불가, 실패로 카운트 X)
+  const checkable = results.filter(r => r.responseMs !== -2);
+  const reachable = checkable.filter(r => r.responseMs > 0 && !isBlacklisted(r));
+  const allFailed = checkable.length > 0 && reachable.length === 0;
   const status: 'ok' | 'partial' | 'fail' | 'checking' =
     checking ? 'checking'
     : allFailed ? 'fail'
     : reachable.length === results.length ? 'ok'
     : 'partial';
 
+  const status_label = `TSA ${reachable.length}/${checkable.length}`;
   const cfg = {
     checking: { Icon: Loader2, color: 'text-zinc-500 bg-zinc-100 border-zinc-200', label: 'TSA …', spin: true },
-    ok:       { Icon: Check,      color: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: `TSA ${reachable.length}/${results.length}` },
-    partial:  { Icon: AlertCircle, color: 'text-amber-700 bg-amber-50 border-amber-200',   label: `TSA ${reachable.length}/${results.length}` },
-    fail:     { Icon: AlertCircle, color: 'text-red-700 bg-red-50 border-red-200',   label: `TSA ✗ ${reachable.length}/${results.length}` },
+    ok:       { Icon: Check,      color: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: status_label },
+    partial:  { Icon: AlertCircle, color: 'text-amber-700 bg-amber-50 border-amber-200',   label: status_label },
+    fail:     { Icon: AlertCircle, color: 'text-red-700 bg-red-50 border-red-200',   label: `TSA ✗ ${reachable.length}/${checkable.length}` },
   } as const;
   const { Icon, color, label, spin } = cfg[status];
 
@@ -316,19 +318,23 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
             {servers.map(srv => {
               const r = results.find(x => x.serverId === srv.id);
               const blacklisted = r ? isBlacklisted(r) : false;
+              const mixedContent = r?.responseMs === -2;
               const ok = r && r.responseMs > 0 && !blacklisted;
+              const dotColor = ok ? 'bg-emerald-500'
+                : blacklisted ? 'bg-zinc-400'
+                : mixedContent ? 'bg-zinc-300'
+                : 'bg-red-500';
               return (
                 <div key={srv.id} className="px-3 py-2 border-b border-zinc-100 last:border-b-0">
                   <div className="flex items-start gap-2">
-                    <div className={`w-2 h-2 mt-1 rounded-full flex-shrink-0 ${
-                      ok ? 'bg-emerald-500' : blacklisted ? 'bg-zinc-400' : 'bg-red-500'
-                    }`} />
+                    <div className={`w-2 h-2 mt-1 rounded-full flex-shrink-0 ${dotColor}`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-semibold text-xs">{srv.name}</span>
                         <span className="text-[10px] text-zinc-400">우선 {srv.priority}</span>
                         {!srv.enabled && <span className="text-[10px] text-zinc-400">· 비활성</span>}
                         {blacklisted && <span className="text-[10px] text-amber-600">· 일시 차단</span>}
+                        {mixedContent && <span className="text-[10px] text-zinc-500">· HTTP (확인 불가)</span>}
                       </div>
                       <div className="text-[10px] text-zinc-500 font-mono break-all mt-0.5">
                         {srv.url}
@@ -336,6 +342,10 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
                       <div className="text-[10px] mt-0.5">
                         {!r ? (
                           <span className="text-zinc-400">미확인</span>
+                        ) : mixedContent ? (
+                          <span className="text-zinc-500">
+                            HTTPS 페이지에서 HTTP 직접 호출 차단 (Mixed Content) — 실제 서명 시 Edge 프록시 경유로 동작
+                          </span>
                         ) : ok ? (
                           <span className="text-emerald-700">
                             응답 {r.responseMs.toFixed(0)}ms · 확인 {timeAgo(r.lastChecked)}

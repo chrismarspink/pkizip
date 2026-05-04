@@ -3,6 +3,7 @@
  * 클라이언트 사이드 암호화 → Supabase REST API 직접 호출
  * 사용자당 최대 5개 백업
  */
+import { supabase } from './client';
 
 const SUPABASE_URL = 'https://ikyhpuerwljxypyzkpiw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlreWhwdWVyd2xqeHlweXprcGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1OTM1NjQsImV4cCI6MjA5MjE2OTU2NH0.31GrKSlBzcGRXCU7yHioEVIChO3EMi6di75O6mLFlBU';
@@ -26,6 +27,40 @@ function hdrs(prefer?: string): Record<string, string> {
   if (prefer) h['Prefer'] = prefer;
   if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
+}
+
+/**
+ * 401 (JWT expired) 자동 처리 — refreshSession 후 1회 재시도.
+ * 새 토큰을 받으면 fresh 헤더로 다시 호출.
+ */
+async function fetchWithAuthRefresh(
+  url: string,
+  init: RequestInit & { _prefer?: string } = {},
+): Promise<Response> {
+  const { _prefer, ...fetchInit } = init;
+  const buildInit = (): RequestInit => ({
+    ...fetchInit,
+    headers: { ...hdrs(_prefer), ...(fetchInit.headers as Record<string, string> | undefined) },
+  });
+
+  let res = await fetch(url, buildInit());
+  if (res.status !== 401) return res;
+
+  // JWT 만료 추정 — refresh 후 재시도
+  console.warn('[supabase] 401 감지 — JWT refresh 시도');
+  try {
+    const { error } = await supabase.auth.refreshSession();
+    if (error) {
+      console.warn('[supabase] refresh 실패', error);
+      return res;     // 원본 401 반환 → 호출자가 처리
+    }
+  } catch (e) {
+    console.warn('[supabase] refresh 예외', e);
+    return res;
+  }
+  // 헤더 재구성 (새 토큰 반영)
+  res = await fetch(url, buildInit());
+  return res;
 }
 
 const toB64 = (b: Uint8Array) => {
@@ -55,9 +90,8 @@ export interface BackupEntry {
 
 /** 백업 목록 조회 */
 export async function listBackups(userId: string): Promise<BackupEntry[]> {
-  const res = await fetch(
+  const res = await fetchWithAuthRefresh(
     `${SUPABASE_URL}/rest/v1/mnemonic_backups?user_id=eq.${userId}&select=identity_id,hint,updated_at&order=updated_at.desc`,
-    { headers: hdrs() },
   );
   if (!res.ok) return [];
   return await res.json();
@@ -98,10 +132,10 @@ export async function backupMnemonic(
     updated_at: new Date().toISOString(),
   };
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/mnemonic_backups?on_conflict=user_id,identity_id`, {
+  const res = await fetchWithAuthRefresh(`${SUPABASE_URL}/rest/v1/mnemonic_backups?on_conflict=user_id,identity_id`, {
     method: 'POST',
-    headers: hdrs('resolution=merge-duplicates,return=minimal'),
     body: JSON.stringify(body),
+    _prefer: 'resolution=merge-duplicates,return=minimal',
   });
 
   if (!res.ok) {
@@ -116,9 +150,8 @@ export async function restoreMnemonic(
   identityId: string,
   userId: string,
 ): Promise<string> {
-  const res = await fetch(
+  const res = await fetchWithAuthRefresh(
     `${SUPABASE_URL}/rest/v1/mnemonic_backups?user_id=eq.${userId}&identity_id=eq.${identityId}&select=*&limit=1`,
-    { headers: hdrs() },
   );
   if (!res.ok) throw new Error('백업을 찾을 수 없습니다');
   const rows = await res.json();
@@ -138,9 +171,9 @@ export async function restoreMnemonic(
 
 /** 특정 백업 삭제 */
 export async function deleteBackup(userId: string, identityId: string): Promise<void> {
-  const res = await fetch(
+  const res = await fetchWithAuthRefresh(
     `${SUPABASE_URL}/rest/v1/mnemonic_backups?user_id=eq.${userId}&identity_id=eq.${identityId}`,
-    { method: 'DELETE', headers: hdrs() },
+    { method: 'DELETE' },
   );
   if (!res.ok) throw new Error(`삭제 실패: ${res.status}`);
 }
