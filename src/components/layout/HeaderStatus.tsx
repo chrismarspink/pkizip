@@ -13,10 +13,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Shield, ChevronDown, Star, Lock, Wifi, WifiOff, Package, Download,
-  HardDrive, Cpu, Clock, Check, AlertCircle, Loader2,
+  HardDrive, Cpu, Check, AlertCircle, Loader2, RefreshCw, X,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store/app-store';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import {
+  checkAllTsaHealth, getTsaSettings,
+  type TsaServer, type TsaHealthCache,
+} from '@/lib/tsa-health';
 
 declare const __APP_VERSION__: string;
 declare const __APP_BUILD__: string;
@@ -235,64 +239,150 @@ function PqcModeBadge() {
 // 4. TSA 연결 상태
 // ─────────────────────────────────────────────
 
-type TsaStatus = 'checking' | 'ok' | 'fail' | 'idle';
-
 function TsaStatusBadge() {
-  const [status, setStatus] = useState<TsaStatus>('idle');
+  const [open, setOpen] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [results, setResults] = useState<TsaHealthCache[]>([]);
+  const [servers] = useState<TsaServer[]>(() => getTsaSettings().servers);
   const [lastCheck, setLastCheck] = useState<number | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    void checkTsa();
-    // 5분 주기 재확인
-    const t = setInterval(() => void checkTsa(), 5 * 60 * 1000);
+    void runCheck();
+    // 5분 주기
+    const t = setInterval(() => void runCheck(), 5 * 60 * 1000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function checkTsa() {
-    setStatus('checking');
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  async function runCheck() {
+    setChecking(true);
     try {
-      // FreeTSA 의 status 엔드포인트는 GET 가능. CORS 미허용 가능 — 그러면 fail.
-      // 가벼운 ping 형태로 시도.
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 4000);
-      const res = await fetch('https://freetsa.org/', {
-        method: 'HEAD',
-        mode: 'no-cors',
-        signal: ctrl.signal,
-        cache: 'no-store',
-      });
-      clearTimeout(timer);
-      // no-cors 모드는 실제 status 못 봄 — 단지 네트워크 reachable 인지 확인
-      void res;
-      setStatus('ok');
+      const r = await checkAllTsaHealth(servers);
+      setResults(r);
       setLastCheck(Date.now());
-    } catch (e) {
-      console.warn('[TSA] 상태 확인 실패', e);
-      setStatus('fail');
-      setLastCheck(Date.now());
+    } finally {
+      setChecking(false);
     }
   }
 
+  // 요약 — 응답 가능한 서버 수
+  const reachable = results.filter(r => r.responseMs > 0 && !isBlacklisted(r));
+  const allFailed = results.length > 0 && reachable.length === 0;
+  const status: 'ok' | 'partial' | 'fail' | 'checking' =
+    checking ? 'checking'
+    : allFailed ? 'fail'
+    : reachable.length === results.length ? 'ok'
+    : 'partial';
+
   const cfg = {
     checking: { Icon: Loader2, color: 'text-zinc-500 bg-zinc-100 border-zinc-200', label: 'TSA …', spin: true },
-    ok:       { Icon: Check,      color: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: 'TSA' },
-    fail:     { Icon: AlertCircle, color: 'text-amber-700 bg-amber-50 border-amber-200',   label: 'TSA ✗' },
-    idle:     { Icon: Clock,      color: 'text-zinc-500 bg-zinc-100 border-zinc-200', label: 'TSA' },
+    ok:       { Icon: Check,      color: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: `TSA ${reachable.length}/${results.length}` },
+    partial:  { Icon: AlertCircle, color: 'text-amber-700 bg-amber-50 border-amber-200',   label: `TSA ${reachable.length}/${results.length}` },
+    fail:     { Icon: AlertCircle, color: 'text-red-700 bg-red-50 border-red-200',   label: `TSA ✗ ${reachable.length}/${results.length}` },
   } as const;
   const { Icon, color, label, spin } = cfg[status];
 
-  const titleText =
-    status === 'ok'   ? `TSA 도달 가능 (FreeTSA) · 마지막 확인 ${lastCheck ? new Date(lastCheck).toLocaleTimeString() : '-'}\n클릭 시 재확인`
-    : status === 'fail' ? `TSA 응답 없음 — 서명 시 signingTime 폴백 사용\n클릭 시 재확인`
-    : status === 'checking' ? '확인 중…'
-    : '대기';
-
   return (
-    <button onClick={() => void checkTsa()} title={titleText}
-      className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 transition hover:opacity-80 ${color}`}>
-      <Icon className={`w-3 h-3 ${spin ? 'animate-spin' : ''}`} />
-      <span>{label}</span>
-    </button>
+    <div ref={ref} className="relative flex-shrink-0">
+      <button onClick={() => setOpen(s => !s)}
+        title={`TSA 서버 도달 ${reachable.length}/${results.length} · 클릭 시 상세`}
+        className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border transition hover:opacity-80 ${color}`}>
+        <Icon className={`w-3 h-3 ${spin ? 'animate-spin' : ''}`} />
+        <span>{label}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-[420px] bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
+          <div className="px-3 py-2 border-b flex items-center justify-between bg-zinc-50">
+            <div>
+              <div className="text-xs font-semibold text-zinc-700">TSA 서버 상태 (RFC 3161)</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">
+                서명 시 우선순위순 시도 — 첫 응답 사용. 모두 실패 시 signingTime 폴백.
+              </div>
+            </div>
+            <button onClick={() => setOpen(false)} className="p-0.5 hover:bg-zinc-200 rounded">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {servers.map(srv => {
+              const r = results.find(x => x.serverId === srv.id);
+              const blacklisted = r ? isBlacklisted(r) : false;
+              const ok = r && r.responseMs > 0 && !blacklisted;
+              return (
+                <div key={srv.id} className="px-3 py-2 border-b border-zinc-100 last:border-b-0">
+                  <div className="flex items-start gap-2">
+                    <div className={`w-2 h-2 mt-1 rounded-full flex-shrink-0 ${
+                      ok ? 'bg-emerald-500' : blacklisted ? 'bg-zinc-400' : 'bg-red-500'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-xs">{srv.name}</span>
+                        <span className="text-[10px] text-zinc-400">우선 {srv.priority}</span>
+                        {!srv.enabled && <span className="text-[10px] text-zinc-400">· 비활성</span>}
+                        {blacklisted && <span className="text-[10px] text-amber-600">· 일시 차단</span>}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 font-mono break-all mt-0.5">
+                        {srv.url}
+                      </div>
+                      <div className="text-[10px] mt-0.5">
+                        {!r ? (
+                          <span className="text-zinc-400">미확인</span>
+                        ) : ok ? (
+                          <span className="text-emerald-700">
+                            응답 {r.responseMs.toFixed(0)}ms · 확인 {timeAgo(r.lastChecked)}
+                          </span>
+                        ) : blacklisted ? (
+                          <span className="text-amber-700">
+                            ~{timeAgo(r.blacklistedUntil!)} 까지 일시 차단 — 사용 안 함
+                          </span>
+                        ) : (
+                          <span className="text-red-600">
+                            응답 없음 · 마지막 시도 {timeAgo(r.lastChecked)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="px-3 py-2 border-t flex items-center justify-between bg-zinc-50 text-[10px]">
+            <div className="text-zinc-500">
+              {lastCheck ? `최종 ${new Date(lastCheck).toLocaleTimeString()}` : '확인 전'}
+              {' · CORS 차단 시 Edge Function 프록시 경유'}
+            </div>
+            <button onClick={() => void runCheck()} disabled={checking}
+              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-zinc-300">
+              <RefreshCw className={`w-3 h-3 ${checking ? 'animate-spin' : ''}`} />
+              {checking ? '확인 중' : '재확인'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
+}
+
+function isBlacklisted(r: TsaHealthCache): boolean {
+  return !!r.blacklistedUntil && r.blacklistedUntil > Date.now();
+}
+
+function timeAgo(ts: number): string {
+  const sec = Math.round((Date.now() - ts) / 1000);
+  if (sec < 60) return `${sec}초 전`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.round(min / 60);
+  return `${hr}시간 전`;
 }
