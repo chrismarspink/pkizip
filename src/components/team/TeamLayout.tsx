@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { getTenantBySlug, listMembers, type Tenant } from '@/lib/supabase/tenants';
+import { UserMenu } from '@/components/auth/UserMenu';
 
 type Role = 'owner' | 'admin' | 'member';
 
@@ -87,6 +88,14 @@ export function TeamLayout() {
 
   return (
     <Ctx.Provider value={{ tenant, myRole }}>
+      {/* 조직 관리 전용 상단 바 — 메인 사이드바 없음, UserMenu + 'PKIZIP 으로 돌아가기' 만 */}
+      <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-zinc-100 bg-white">
+        <Link to="/" className="flex items-center gap-2 text-sm text-zinc-600 hover:text-zinc-900">
+          <ArrowLeft className="w-4 h-4" />
+          <span className="font-semibold">PKIZIP 메인으로</span>
+        </Link>
+        <UserMenu />
+      </div>
       <div className="flex min-h-[calc(100vh-44px)] bg-zinc-50">
         {/* 사이드바 (데스크탑 sticky, 모바일 drawer) */}
         <aside className={`

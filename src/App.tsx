@@ -40,18 +40,20 @@ export function App() {
           <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/me" element={<MePage />} />
           <Route path="/admin" element={<AdminPage />} />
-          <Route path="/team/:slug" element={<TeamLayout />}>
-            <Route index element={<TeamDashboardPage />} />
-            <Route path="members" element={<TeamMembersPage />} />
-            <Route path="invites" element={<TeamInvitesPage />} />
-            <Route path="contacts" element={<TeamContactsPage />} />
-            <Route path="policies" element={<TeamPoliciesPage />} />
-            <Route path="audit" element={<TeamAuditPage />} />
-            <Route path="settings" element={<TeamSettingsPage />} />
-            <Route path="billing" element={<TeamBillingPage />} />
-          </Route>
           {/* 매칭 안 되는 경로는 홈으로 — 옛 SW 캐시 + 새 라우트 충돌 시 빈 화면 방지 */}
           <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+
+        {/* 조직 관리 — AppShell 의 사이드바 없이 별도 layout (TeamLayout 자체 사이드바만) */}
+        <Route path="/team/:slug" element={<TeamLayout />}>
+          <Route index element={<TeamDashboardPage />} />
+          <Route path="members" element={<TeamMembersPage />} />
+          <Route path="invites" element={<TeamInvitesPage />} />
+          <Route path="contacts" element={<TeamContactsPage />} />
+          <Route path="policies" element={<TeamPoliciesPage />} />
+          <Route path="audit" element={<TeamAuditPage />} />
+          <Route path="settings" element={<TeamSettingsPage />} />
+          <Route path="billing" element={<TeamBillingPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

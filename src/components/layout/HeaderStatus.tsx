@@ -28,18 +28,13 @@ declare const __APP_BUILD__: string;
 export function HeaderStatus() {
   const isMobile = useIsMobile();
   return (
-    <div className="flex items-center gap-2 min-w-0 flex-1">
+    <div className="flex items-center gap-1.5 min-w-0 flex-1">
       <ActiveIdentityBadge />
-      {!isMobile && (
-        <>
-          <div className="w-px h-6 bg-zinc-200 flex-shrink-0" />
-          <SystemStatus />
-          <div className="w-px h-6 bg-zinc-200 flex-shrink-0" />
-          <PqcModeBadge />
-          <div className="w-px h-6 bg-zinc-200 flex-shrink-0" />
-          <TsaStatusBadge />
-        </>
-      )}
+      <div className="w-px h-6 bg-zinc-200 flex-shrink-0" />
+      <SystemStatus compact={isMobile} />
+      {!isMobile && <div className="w-px h-6 bg-zinc-200 flex-shrink-0" />}
+      <PqcModeBadge compact={isMobile} />
+      <TsaStatusBadge compact={isMobile} />
     </div>
   );
 }
@@ -147,7 +142,7 @@ function ActiveIdentityBadge() {
 // 2. 시스템 상태 클러스터
 // ─────────────────────────────────────────────
 
-function SystemStatus() {
+function SystemStatus({ compact = false }: { compact?: boolean }) {
   const [online, setOnline] = useState(navigator.onLine);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [storageMB, setStorageMB] = useState<number | null>(null);
@@ -184,20 +179,24 @@ function SystemStatus() {
           ? <Wifi className="w-3.5 h-3.5 text-emerald-600" />
           : <WifiOff className="w-3.5 h-3.5 text-amber-600" />}
       </span>
-      <span title={`PKIZIP v${version} · build ${build}`}
-        className="inline-flex items-center gap-1 text-[10px] text-zinc-500 font-mono">
-        <Package className="w-3 h-3" /> v{version}
-      </span>
+      {!compact && (
+        <span title={`PKIZIP v${version} · build ${build}`}
+          className="inline-flex items-center gap-1 text-[10px] text-zinc-500 font-mono">
+          <Package className="w-3 h-3" /> v{version}
+        </span>
+      )}
       {updateAvailable && (
         <button
           onClick={() => window.pkizipUpdate?.(true)}
           title="새 버전 사용 가능 — 클릭하여 업데이트"
-          className="inline-flex items-center gap-0.5 text-[10px] text-blue-600 hover:bg-blue-50 px-1 py-0.5 rounded animate-pulse">
+          className={`inline-flex items-center gap-0.5 text-blue-600 hover:bg-blue-50 px-1 py-0.5 rounded animate-pulse ${
+            compact ? '' : 'text-[10px]'
+          }`}>
           <Download className="w-3 h-3" />
-          <span>업데이트</span>
+          {!compact && <span className="text-[10px]">업데이트</span>}
         </button>
       )}
-      {storageMB !== null && (
+      {!compact && storageMB !== null && (
         <Link to="/settings" title={`IndexedDB + 캐시: ${storageMB}MB · 클릭 시 설정`}
           className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 px-1 py-0.5 rounded">
           <HardDrive className="w-3 h-3" /> {storageMB}MB
@@ -211,7 +210,7 @@ function SystemStatus() {
 // 3. PQC 모드 배지
 // ─────────────────────────────────────────────
 
-function PqcModeBadge() {
+function PqcModeBadge({ compact = false }: { compact?: boolean }) {
   const { pqcConfig } = useAppStore();
   const enabled = pqcConfig.kemEnabled || pqcConfig.dsaEnabled;
   const mode = pqcConfig.kemMode || pqcConfig.dsaMode || 'classic';
@@ -224,13 +223,13 @@ function PqcModeBadge() {
 
   return (
     <Link to="/settings" title={`현재 암호 모드: ${label} · 클릭 시 설정 변경`}
-      className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 transition ${
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border flex-shrink-0 transition ${
         enabled
           ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
           : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200'
       }`}>
       <Cpu className="w-3 h-3" />
-      <span>{label}</span>
+      {!compact && <span className="text-[10px]">{label}</span>}
     </Link>
   );
 }
@@ -239,7 +238,7 @@ function PqcModeBadge() {
 // 4. TSA 연결 상태
 // ─────────────────────────────────────────────
 
-function TsaStatusBadge() {
+function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [results, setResults] = useState<TsaHealthCache[]>([]);
@@ -295,9 +294,9 @@ function TsaStatusBadge() {
     <div ref={ref} className="relative flex-shrink-0">
       <button onClick={() => setOpen(s => !s)}
         title={`TSA 서버 도달 ${reachable.length}/${results.length} · 클릭 시 상세`}
-        className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border transition hover:opacity-80 ${color}`}>
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition hover:opacity-80 ${color}`}>
         <Icon className={`w-3 h-3 ${spin ? 'animate-spin' : ''}`} />
-        <span>{label}</span>
+        {!compact && <span className="text-[10px]">{label}</span>}
       </button>
 
       {open && (
