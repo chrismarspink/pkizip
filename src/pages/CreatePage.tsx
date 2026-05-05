@@ -16,6 +16,7 @@ import { SigningConsentDialog } from '@/components/dialogs/SigningConsentDialog'
 import { AnalysisDialog, type AnalysisDecision } from '@/components/dialogs/AnalysisDialog';
 import { analyze as analyzePipeline, analyzeAsync as analyzePipelineAsync } from '@/lib/analysis/pipeline';
 import { extractAll } from '@/lib/analysis/text-extractor';
+import { anonymizeAllFiles, type FileAnonymizationReport, type PerFileExtract } from '@/lib/analysis/anonymize-files';
 import { createMipLabel } from '@/lib/mip/mip-label';
 import type { AnalysisResult } from '@/lib/analysis/types';
 
@@ -46,8 +47,10 @@ function decisionToSealMeta(d: AnalysisDecision, fingerprint?: string) {
       confidence: c.confidence,
       classifierVersion: c.version,
       explanation: d.result.explanation?.summary,
+      // 원본 PII findings 사용 — 가명화 적용 후에도 "어떤 PII 가 있었는지" 정보가 봉투 메타에 남도록.
+      // d.result.findings 는 가명화 후 텍스트의 finding 이라 비어있을 수 있음.
       findingsSummary: Object.fromEntries(
-        d.result.findings.reduce((m, f) => m.set(f.entityType, (m.get(f.entityType) || 0) + 1), new Map<string, number>())
+        d.originalFindings.reduce((m, f) => m.set(f.entityType, (m.get(f.entityType) || 0) + 1), new Map<string, number>())
       ),
     },
     mipLabel: createMipLabel({ grade: c.grade, appliedBy: fingerprint }),
@@ -132,6 +135,10 @@ export function CreatePage() {
 
   // v2 — AI 분석 결과 + 사용자 결정
   const [analysisInitial, setAnalysisInitial] = useState<AnalysisResult | null>(null);
+  /** 텍스트 추출 결과 (가/익명화 적용 시 sidecar 모드에서 재사용) */
+  const [perFileExtract, setPerFileExtract] = useState<PerFileExtract[]>([]);
+  /** 가/익명화 적용 보고 — 사용자에게 안내 */
+  const [anonReports, setAnonReports] = useState<FileAnonymizationReport[]>([]);
   const [analysisDecision, setAnalysisDecision] = useState<AnalysisDecision | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisSkipped, setAnalysisSkipped] = useState(false);
@@ -154,6 +161,12 @@ export function CreatePage() {
         type: f.type || 'application/octet-stream',
       }))
     );
+    // HWP 바이너리 사용자 안내 — 가명화가 직접 적용되지 않으므로 HWPX 변환 권장
+    const hwpFiles = entries.filter(e => /\.hwp$/i.test(e.name));
+    if (hwpFiles.length > 0) {
+      toast(`HWP 바이너리 ${hwpFiles.length}개 — 가명화가 직접 적용 안 됨.\nHWPX 로 저장하시면 가명화가 더 정확히 적용됩니다.`,
+        { icon: '⚠', duration: 7000 });
+    }
     setFiles(prev => [...prev, ...entries]);
   }, []);
 
@@ -326,6 +339,10 @@ export function CreatePage() {
       }).catch(() => baseResult);
       setAnalysisInitial(result);
       setAnalysisSkipped(false);
+      // 추출 결과 보존 — 가/익명화 sidecar 모드에서 재사용
+      setPerFileExtract(extracted.perFile.map(p => ({
+        filename: p.name, text: p.text, source: p.source, warnings: p.warnings,
+      })));
       // 추출 경로 정보 안내
       const sources = Array.from(new Set(extracted.perFile.map(p => p.source))).join(', ');
       toast(`분석 준비 완료 — 추출 경로: ${sources}${extracted.ocrApplied ? ' (OCR 적용)' : ''}`, {
@@ -342,7 +359,15 @@ export function CreatePage() {
   };
 
   /** 분석 다이얼로그 onAccept — 의도/등급에 따라 cryptoMode + options 자동 설정 */
-  const handleAnalysisAccept = (decision: AnalysisDecision) => {
+  const handleAnalysisAccept = async (decision: AnalysisDecision) => {
+    // [DPV-DEBUG] — 분석 결과가 어떻게 들어오는지 확인.
+    console.log('[DPV-DEBUG] CreatePage.handleAnalysisAccept', {
+      originalFindingsCount: decision.originalFindings.length,
+      originalEntityTypes: [...new Set(decision.originalFindings.map(f => f.entityType))],
+      anonymizationAction: decision.anonymizationAction,
+      hasAnonymization: !!decision.result.anonymization,
+      replacementsCount: decision.result.anonymization?.result.replacements.length ?? 0,
+    });
     setAnalysisDecision(decision);
 
     // 1) cryptoMode 매핑
@@ -362,6 +387,32 @@ export function CreatePage() {
     } else {
       // S/C 내부 보관 → encrypted (비밀번호 암호화)
       setOptions({ compress: true, sign: false, enveloped: false, encrypted: true });
+    }
+
+    // 3) 가/익명화 실제 적용 (Phase 2a/2b/2c)
+    //    분석 결과의 anonymization 이 있고 사용자가 'pseudonymize' / 'anonymize' 선택했으면
+    //    실제 파일 내용을 가명화된 내용으로 교체 (또는 sidecar 동봉).
+    const anon = decision.result.anonymization;
+    if (anon && decision.anonymizationAction !== 'skip' && anon.result.replacements.length > 0) {
+      try {
+        const r = await anonymizeAllFiles(files, anon.result.replacements, perFileExtract);
+        setFiles(r.files);
+        setAnonReports(r.reports);
+        const inlineCount = r.reports.filter(x => x.method === 'inline').length;
+        const sidecarCount = r.reports.filter(x => x.method === 'sidecar').length;
+        const unsupportedCount = r.reports.filter(x => x.method === 'unsupported').length;
+        const parts: string[] = [];
+        if (inlineCount > 0)      parts.push(`${inlineCount}개 직접 적용`);
+        if (sidecarCount > 0)     parts.push(`${sidecarCount}개 동봉`);
+        if (unsupportedCount > 0) parts.push(`${unsupportedCount}개 미지원`);
+        toast.success(`가/익명화 적용 — ${parts.join(' · ') || '없음'}`, { duration: 5000 });
+      } catch (err) {
+        console.error('anonymize-files failed:', err);
+        toast.error(`가/익명화 적용 실패 — ${(err as Error).message}. 원본 그대로 봉투 생성.`);
+        setAnonReports([]);
+      }
+    } else {
+      setAnonReports([]);
     }
 
     setStep('options');
@@ -413,6 +464,7 @@ export function CreatePage() {
     setOptions({ compress: true, sign: false, enveloped: false, encrypted: false });
     setResultData(null);
     setAnalysisInitial(null); setAnalysisDecision(null); setAnalysisSkipped(false);
+    setPerFileExtract([]); setAnonReports([]);
   };
 
   // PQC 인스턴스 (store에서 가져옴 — 잠금 해제 시 초기화됨)
@@ -508,6 +560,12 @@ export function CreatePage() {
         const analysisMeta = analysisDecision
           ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
           : undefined;
+        console.log('[DPV-DEBUG] seal() 호출 직전 analysisMeta', {
+          hasMeta: !!analysisMeta,
+          findingsSummary: analysisMeta?.classification?.findingsSummary,
+          findingsCount: analysisMeta?.classification?.findingsSummary
+            ? Object.keys(analysisMeta.classification.findingsSummary).length : 0,
+        });
         const result = await seal({
           files, compress: true,
           encrypt: { recipients: recipientInfos },
@@ -531,6 +589,12 @@ export function CreatePage() {
         const analysisMeta = analysisDecision
           ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
           : undefined;
+        console.log('[DPV-DEBUG] seal() 호출 직전 analysisMeta', {
+          hasMeta: !!analysisMeta,
+          findingsSummary: analysisMeta?.classification?.findingsSummary,
+          findingsCount: analysisMeta?.classification?.findingsSummary
+            ? Object.keys(analysisMeta.classification.findingsSummary).length : 0,
+        });
         const result = await seal({
           files, compress: true,
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
@@ -680,6 +744,45 @@ export function CreatePage() {
           <motion.div key="options" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
             <h2 className="text-lg font-bold mb-1">CMS 타입 선택</h2>
             <p className="text-sm text-zinc-500 mb-4">파일 보호 옵션을 선택하세요.</p>
+
+            {anonReports.length > 0 && (
+              <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 mb-3">
+                <div className="text-xs font-semibold text-violet-700 uppercase mb-2">
+                  가/익명화 적용 결과 — 봉투에 들어갈 파일 상태
+                </div>
+                <div className="space-y-1.5">
+                  {anonReports.map(r => {
+                    const icon = r.method === 'inline'      ? '✅'
+                               : r.method === 'sidecar'     ? '📎'
+                               :                              '⚠';
+                    const label = r.method === 'inline'      ? '직접 적용'
+                                : r.method === 'sidecar'     ? '동봉'
+                                :                              '미지원';
+                    const labelColor = r.method === 'inline'  ? 'text-emerald-700 bg-emerald-100'
+                                     : r.method === 'sidecar' ? 'text-blue-700 bg-blue-100'
+                                     :                          'text-amber-700 bg-amber-100';
+                    return (
+                      <div key={r.filename} className="text-xs flex items-start gap-2">
+                        <span>{icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <code className="font-mono text-[11px] truncate">{r.filename}</code>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${labelColor}`}>{label}</span>
+                            {r.sidecarFilename && (
+                              <code className="text-[10px] text-blue-600 truncate">+ {r.sidecarFilename}</code>
+                            )}
+                          </div>
+                          {r.note && <div className="text-[11px] text-zinc-600 mt-0.5">{r.note}</div>}
+                          {r.suggestion && (
+                            <div className="text-[11px] text-amber-700 mt-0.5">💡 {r.suggestion}</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* 암호 모드 선택 (최상단) */}
             <div className="bg-white border border-zinc-200 rounded-xl p-4 mb-3 space-y-2">

@@ -1,0 +1,34 @@
+{
+  "_comment": "[카테고리 A 추가 — JSON] 평문 텍스트와 동일하게 직접 교체 검증",
+  "company": {
+    "name": "(주) 인노티움",
+    "businessNumber": "123-45-67890",
+    "ceo": {
+      "name": "홍길동",
+      "rrn": "800101-1234567",
+      "email": "hong@innotium.example.com",
+      "phone": "010-1234-5678"
+    }
+  },
+  "contacts": [
+    {
+      "department": "영업",
+      "name": "박철수",
+      "rrn": "850315-2345678",
+      "email": "park@example.com",
+      "phone": "010-9876-5432"
+    },
+    {
+      "department": "회계",
+      "name": "김영희",
+      "rrn": "901225-2456789",
+      "email": "kim@example.com",
+      "phone": "02-555-1234"
+    }
+  ],
+  "_apiKeys": {
+    "_warning": "이런 식으로 JSON 안에 자격증명 포함 시 OPA 차단 룰 검증 가능",
+    "AWS_ACCESS_KEY": "AKIAQRSTUVWXYZ123456",
+    "INTERNAL_API_KEY": "sk-prod-abc123XYZ456def789ghi012JKL345"
+  }
+}

@@ -34,6 +34,12 @@ export interface PolicyInput {
   ocr: {
     applied: boolean;
   };
+  /** DPV 메타 — 봉투 헤더에 자동 부착된 IRI. 정책 룰이 의미 단위로 판단 가능. */
+  dpv?: {
+    data_categories?: string[];
+    processing_activities?: string[];
+    applied_measures?: string[];
+  };
 }
 
 export interface PolicyDecision {
@@ -102,6 +108,15 @@ async function evalWasm(input: PolicyInput): Promise<PolicyDecision | null> {
 // ─────────────────────────────────────────────
 // TS fallback — rules.rego 와 동일 로직
 // ─────────────────────────────────────────────
+// DPV 고위험 데이터 카테고리 — 외부 전송 시 가명/익명화 필수
+const DPV_HIGH_RISK_CATEGORIES = new Set([
+  'dpv:NationalIdentifier',
+  'dpv:Passport',
+  'dpv:DriversLicense',
+  'dpv:HealthCareInsurance',
+  'dpv:CreditCardNumber',
+]);
+
 function evalTs(input: PolicyInput): PolicyDecision {
   const denyReasons: string[] = [];
   const recommended: string[] = [];
@@ -112,6 +127,9 @@ function evalTs(input: PolicyInput): PolicyDecision {
   const lang = input.language.detected;
   const ocr = input.ocr.applied;
   const anon = input.pseudonymization.applied;
+  const dpvCats = input.dpv?.data_categories ?? [];
+  const hasCredential = dpvCats.includes('dpv:Authenticating');
+  const hasHighRiskPii = dpvCats.some(c => DPV_HIGH_RISK_CATEGORIES.has(c));
 
   // 거부 사유 — C/S 등급 외부 전송: PQC 암호화 또는 가명/익명화 둘 중 하나 필수
   if (grade !== 'O' && isExternal && cryptoKind === 'classic' && !anon) {
@@ -122,6 +140,13 @@ function evalTs(input: PolicyInput): PolicyDecision {
   }
   if (ocr && grade === 'C' && !anon) {
     denyReasons.push('OCR_C_GRADE_REQUIRES_REVIEW');
+  }
+  // DPV 기반 룰
+  if (hasCredential && isExternal) {
+    denyReasons.push('DPV_CREDENTIAL_EXTERNAL_BLOCKED');
+  }
+  if (hasHighRiskPii && isExternal && !anon) {
+    denyReasons.push('DPV_HIGH_RISK_PII_REQUIRES_ANON_EXTERNAL');
   }
 
   // 강제 액션
@@ -136,6 +161,10 @@ function evalTs(input: PolicyInput): PolicyDecision {
   }
   if (grade === 'S' && isExternal && !anon) recommended.push('CONSIDER_PSEUDONYMIZATION');
   if (ocr) recommended.push('OCR_APPLIED_VERIFY_ACCURACY');
+  // 고위험 PII 가 있는데 등급이 O 인 경우 — 분류 오류 의심
+  if (hasHighRiskPii && grade === 'O') recommended.push('DPV_REVIEW_GRADE_HIGH_RISK_PII');
+  // 고위험 PII 가 있고 익명화 미적용 시 권고 (외부 전송 아니어도)
+  if (hasHighRiskPii && !anon) recommended.push('DPV_HIGH_RISK_PII_DETECTED');
 
   return {
     allow: denyReasons.length === 0,
@@ -248,6 +277,10 @@ export const REASON_MESSAGES: Record<string, string> = {
     '비한국어 문서를 O(공개) 등급으로 외부 전송 시도 — 언어 변환 우회 의심으로 차단됩니다.',
   OCR_C_GRADE_REQUIRES_REVIEW:
     'OCR이 적용된 C(위험) 등급 문서는 수동 검토가 필요합니다.',
+  DPV_CREDENTIAL_EXTERNAL_BLOCKED:
+    '자격증명(API 키·인증 토큰 등) 이 포함된 봉투의 외부 전송은 차단됩니다 — 즉시 키를 회전(rotate)하세요.',
+  DPV_HIGH_RISK_PII_REQUIRES_ANON_EXTERNAL:
+    '고위험 PII (주민번호·여권·신용카드·건강보험·운전면허) 가 포함된 봉투의 외부 전송은 가명/익명화가 필수입니다.',
 };
 
 export const ACTION_MESSAGES: Record<string, string> = {
@@ -255,4 +288,8 @@ export const ACTION_MESSAGES: Record<string, string> = {
   USE_PQC_FOR_C_GRADE: 'C 등급은 PQC(양자내성) 암호화 사용을 권장합니다.',
   CONSIDER_PSEUDONYMIZATION: '가명처리를 고려하세요 — 외부 전송 시 부분 식별자 노출 차단.',
   OCR_APPLIED_VERIFY_ACCURACY: 'OCR 결과의 정확도를 사용자가 확인 후 송신해주세요.',
+  DPV_REVIEW_GRADE_HIGH_RISK_PII:
+    '고위험 PII 가 검출됐는데 등급이 O(공개) 입니다 — 분류 오류 가능성. 등급 재검토하세요.',
+  DPV_HIGH_RISK_PII_DETECTED:
+    '고위험 PII (주민번호·여권 등) 가 검출됐습니다 — 가명/익명화를 고려하세요.',
 };

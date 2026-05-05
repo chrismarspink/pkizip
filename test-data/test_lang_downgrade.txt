@@ -1,0 +1,32 @@
+[시나리오 5.3] 비한국어 + 고위험 PII → 등급 재검토 권고 검증
+
+→ 그대로 .txt 사용 (변환 X)
+→ 분석 결과: 영어로 인식되지만 한국 PII (주민번호 패턴) 검출
+→ "DPV_REVIEW_GRADE_HIGH_RISK_PII" 권고 메시지 확인
+
+Employee Background Verification Report
+
+Subject: Employee identity verification for security clearance
+
+Employee Information:
+
+1. Hong Gildong (Employee ID 001)
+   Korean Resident Registration Number: 800101-1234567
+   Passport Number: M12345678
+   Date of Birth: January 1, 1980
+
+2. Park Cheolsu (Employee ID 002)
+   Korean Resident Registration Number: 850315-2345678
+   Passport Number: S98765432
+   Date of Birth: March 15, 1985
+
+Verification Status: Pending
+
+This document is for internal HR review. The Korean Resident Registration
+Numbers and Passport Numbers above are subject to PIPA Article 24 special
+protection requirements regardless of the document language.
+
+Note: Even if the document is classified as English (and might be downgraded
+to O grade by language heuristics), the high-risk Korean PII categories
+(dpv:NationalIdentifier, dpv:Passport) should trigger a grade review
+recommendation.

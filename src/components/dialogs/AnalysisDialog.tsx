@@ -23,6 +23,8 @@ import * as neuralNer from '@/lib/analysis/neural-ner';
 import { computeAttributions, buildAttributionHtml, type AttributionResult } from '@/lib/analysis/shap-attribution';
 import { saveDecision, textHash, listDecisions } from '@/lib/learning/decision-store';
 import { evaluate, REASON_MESSAGES, ACTION_MESSAGES, type PolicyDecision } from '@/lib/policy/opa-engine';
+import { findingsToDpvCategories } from '@/lib/policy/standards/dpv-data-category';
+import { dpvLabel, dpvIcon, dpvRisk, dpvChipClass } from '@/lib/policy/standards/dpv-labels';
 import { prefs, type CryptoKind, type Purpose } from '@/lib/store/preferences';
 
 interface Props {
@@ -35,6 +37,9 @@ interface Props {
 export interface AnalysisDecision {
   /** 사용자가 최종 채택한 결과 — 송신·암호화에 사용될 텍스트/메타 */
   result: AnalysisResult;
+  /** 가명화 적용 전 원본 PII findings — 봉투 헤더의 findingsSummary / DPV data_categories 산출에 사용.
+   *  result.findings 는 가명화 후 (대부분 비어있음) 라 별도 추적. */
+  originalFindings: import('@/lib/analysis/types').Finding[];
   /** 워크플로 의도 */
   intent: { purpose: Purpose; cryptoKind: CryptoKind };
   /** 정책 결정 */
@@ -193,6 +198,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
         },
         language: { detected: effective.language.detected },
         ocr: { applied: !!effective.ocr?.applied },
+        dpv: { data_categories: dpvCategories },
       });
       if (!cancelled) setPolicy(decision);
     })();
@@ -232,7 +238,21 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
       prefs.workflow.set({ purpose: intent.purpose, cryptoKind: intent.cryptoKind });
       prefs.anon.set({ defaultAction: anonAction });
     }
-    onAccept({ result: effective, intent, policy, anonymizationAction: anonAction });
+    // [DPV-DEBUG] — 봉투 헤더에 메타가 안 들어가는 원인 진단용. fix 후 제거 가능.
+    console.log('[DPV-DEBUG] AnalysisDialog.handleAccept', {
+      anonAction,
+      processingChoice,
+      effectiveFindingsCount: effective.findings.length,
+      initialFindingsCount: initialResult.findings.length,
+      initialEntityTypes: [...new Set(initialResult.findings.map(f => f.entityType))],
+      hasAnonymization: !!effective.anonymization,
+      replacementsCount: effective.anonymization?.result.replacements.length ?? 0,
+    });
+    onAccept({
+      result: effective,
+      originalFindings: initialResult.findings,
+      intent, policy, anonymizationAction: anonAction,
+    });
   }
 
   async function handleSaveDecision() {
@@ -271,11 +291,20 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   if (!open) return null;
   const c = effective.classification;
   const expl = effective.explanation;
+  // 봉투 메타·DPV·UI 표시는 가명화 적용 전 원본 PII 기반.
+  // effective.findings 는 가명화 후 (대부분 비어있음) — 본문 하이라이트 위치 정합성 외에는 의미 X.
   const findingsBy = useMemo(() => {
     const out = new Map<string, number>();
-    for (const f of effective.findings) out.set(f.entityType, (out.get(f.entityType) || 0) + 1);
+    for (const f of initialResult.findings) out.set(f.entityType, (out.get(f.entityType) || 0) + 1);
     return Array.from(out.entries()).sort((a, b) => b[1] - a[1]);
-  }, [effective.findings]);
+  }, [initialResult.findings]);
+
+  /** DPV 데이터 카테고리 — 원본 findings 기반 (가명화 후에도 유지). */
+  const dpvCategories = useMemo(() => {
+    const summary: Record<string, number> = {};
+    for (const [k, v] of findingsBy) summary[k] = v;
+    return findingsToDpvCategories(summary);
+  }, [findingsBy]);
 
   // 본문 하이라이트 — PII findings + 등급 키워드 매칭 위치
   const highlightedHtml = useMemo(() => {
@@ -415,6 +444,41 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 </span>
               </summary>
               <div className="px-3 pb-3 space-y-3">
+
+            {/* 3-pre. DPV 표준 분류 — 봉투 메타에 자동 부착될 IRI 미리보기 */}
+            {dpvCategories.length > 0 && (
+              <section className="border rounded-lg p-3 bg-violet-50/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <BookOpen className="w-3 h-3 text-violet-700" />
+                  <div className="text-xs font-semibold text-violet-700 uppercase">
+                    DPV 표준 분류
+                  </div>
+                  <span className="text-[10px] text-zinc-500 font-mono">
+                    https://w3id.org/dpv/v2
+                  </span>
+                  <span className="ml-auto text-[10px] text-zinc-500">
+                    봉투 메타에 자동 부착 (data_categories)
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {dpvCategories.map(iri => {
+                    const risk = dpvRisk(iri);
+                    return (
+                      <span key={iri}
+                        className={`text-xs px-2 py-0.5 rounded border ${dpvChipClass(risk)}`}
+                        title={iri}>
+                        {dpvIcon(iri)} {dpvLabel(iri, 'ko')}
+                        <span className="text-[10px] text-zinc-500 ml-1.5 font-mono">{iri}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="text-[10px] text-zinc-500 mt-1.5">
+                  PKIZIP 내부 entityType ({findingsBy.length}종) → DPV 글로벌 IRI ({dpvCategories.length}개) 매핑.
+                  외국 시스템 (EU GDPR / 일본 APPI 도구) 이 별도 매핑 없이 의미 자동 인식.
+                </div>
+              </section>
+            )}
 
             {/* 3. Findings 요약 + 본문 하이라이트 */}
             <section className="border rounded-lg p-3">

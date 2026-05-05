@@ -57,6 +57,56 @@ deny_reasons[reason] {
   reason := "OCR_C_GRADE_REQUIRES_REVIEW"
 }
 
+# DPV — 자격증명 (API 키·인증 토큰) 포함 + 외부 전송 → 차단
+deny_reasons[reason] {
+  some i
+  input.dpv.data_categories[i] == "dpv:Authenticating"
+  input.intent.purpose == "external"
+  reason := "DPV_CREDENTIAL_EXTERNAL_BLOCKED"
+}
+
+# DPV — 고위험 PII (주민번호·여권·신용카드·건강보험·운전면허) + 외부 전송 + 비가명화 → 차단
+deny_reasons[reason] {
+  some i
+  cat := input.dpv.data_categories[i]
+  cat == "dpv:NationalIdentifier"
+  input.intent.purpose == "external"
+  not input.pseudonymization.applied
+  reason := "DPV_HIGH_RISK_PII_REQUIRES_ANON_EXTERNAL"
+}
+deny_reasons[reason] {
+  some i
+  cat := input.dpv.data_categories[i]
+  cat == "dpv:Passport"
+  input.intent.purpose == "external"
+  not input.pseudonymization.applied
+  reason := "DPV_HIGH_RISK_PII_REQUIRES_ANON_EXTERNAL"
+}
+deny_reasons[reason] {
+  some i
+  cat := input.dpv.data_categories[i]
+  cat == "dpv:CreditCardNumber"
+  input.intent.purpose == "external"
+  not input.pseudonymization.applied
+  reason := "DPV_HIGH_RISK_PII_REQUIRES_ANON_EXTERNAL"
+}
+deny_reasons[reason] {
+  some i
+  cat := input.dpv.data_categories[i]
+  cat == "dpv:HealthCareInsurance"
+  input.intent.purpose == "external"
+  not input.pseudonymization.applied
+  reason := "DPV_HIGH_RISK_PII_REQUIRES_ANON_EXTERNAL"
+}
+deny_reasons[reason] {
+  some i
+  cat := input.dpv.data_categories[i]
+  cat == "dpv:DriversLicense"
+  input.intent.purpose == "external"
+  not input.pseudonymization.applied
+  reason := "DPV_HIGH_RISK_PII_REQUIRES_ANON_EXTERNAL"
+}
+
 # ─────────────────────────────────────────────────────
 # 강제 액션
 # ─────────────────────────────────────────────────────

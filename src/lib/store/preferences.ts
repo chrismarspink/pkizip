@@ -73,6 +73,10 @@ export interface ExplorerPrefs {
   cardSize: 'sm' | 'md' | 'lg';
   /** 등급 필터 */
   filterGrade?: 'C' | 'S' | 'O' | 'all';
+  /** DPV 카테고리 필터 — 'all' 또는 IRI ('dpv:Email' 등) */
+  filterDpv?: string;
+  /** DPV 라벨 표시 언어 */
+  dpvLabelLang?: 'ko' | 'en';
   /** 정렬 */
   sortBy: 'date' | 'name' | 'grade' | 'size';
   sortDir: 'asc' | 'desc';
@@ -109,6 +113,8 @@ export const DEFAULT_EXPLORER: ExplorerPrefs = {
   cardSize: 'md',
   sortBy: 'date',
   sortDir: 'desc',
+  filterDpv: 'all',
+  dpvLabelLang: 'ko',
 };
 
 // ─────────────────────────────────────────────

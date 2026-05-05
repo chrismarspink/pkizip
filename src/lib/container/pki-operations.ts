@@ -43,6 +43,7 @@ import {
   serializeRecipients,
   deserializeRecipients,
 } from './pki-format';
+import { buildDpvMeta } from '../policy/standards/dpv-context';
 
 export interface SealOptions {
   files: FileEntry[];
@@ -180,6 +181,18 @@ export async function seal(options: SealOptions): Promise<SealResult> {
     if (m.searchKey)         header.searchKey         = m.searchKey;
     if (m.intent)            header.intent            = m.intent;
   }
+
+  // DPV (W3C Data Privacy Vocabulary v2) 메타 자동 부착.
+  //   Phase 1 — data_categories: findingsSummary → IRI
+  //   Phase 2 — processing_activities + applied_measures: 봉투 작업 자동 도출
+  // intent.purpose 외 모든 정보는 이 시점의 header 에 이미 채워짐 (encryption / signatures /
+  // timestamp / pseudonymization / pqc).  단 timestamp 는 곧 채워질 수 있어 후순위로 미룸.
+  console.log('[DPV-DEBUG] seal() 안 buildDpvMeta 호출 직전 header 상태', {
+    hasClassification: !!header.classification,
+    findingsSummary: header.classification?.findingsSummary,
+    intent: header.intent,
+    pseudonymization: header.pseudonymization,
+  });
 
   let pqcKemDone = false;
   let pqcDsaDone = false;
@@ -329,6 +342,24 @@ export async function seal(options: SealOptions): Promise<SealResult> {
   }
 
   header.flags = flags;
+
+  // DPV 메타 자동 부착 — flags / timestamp / pseudonymization 모두 채워진 시점에 도출.
+  const dpv = buildDpvMeta({
+    findingsSummary:    header.classification?.findingsSummary,
+    intent:             header.intent,
+    encrypted:          hasFlag(flags, FLAG_ENCRYPTED),
+    pqcProtected:       header.pqcHeader?.pqcProtected,
+    signed:             hasFlag(flags, FLAG_SIGNED),
+    timestamped:        !!header.timestamp,
+    pseudonymization:   header.pseudonymization
+      ? { applied: header.pseudonymization.applied, isReversible: header.pseudonymization.isReversible }
+      : undefined,
+  });
+  if (dpv) header.dpv = dpv;
+  console.log('[DPV-DEBUG] seal() buildDpvMeta 결과 + header.dpv 부착', {
+    dpvResult: dpv,
+    headerDpv: header.dpv,
+  });
 
   // 6. 컨테이너 패킹
   const container: PkiContainer = { header, payload };

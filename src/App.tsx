@@ -9,6 +9,7 @@ import { CertsPage } from '@/pages/CertsPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { PoliciesPage } from '@/pages/PoliciesPage';
+import { StatsPage } from '@/pages/StatsPage';
 import { MePage } from '@/pages/MePage';
 import { AdminPage } from '@/pages/AdminPage';
 import { TeamLayout } from '@/components/team/TeamLayout';
@@ -38,6 +39,7 @@ export function App() {
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
+          <Route path="/stats" element={<StatsPage />} />
           <Route path="/me" element={<MePage />} />
           <Route path="/admin" element={<AdminPage />} />
           {/* 매칭 안 되는 경로는 홈으로 — 옛 SW 캐시 + 새 라우트 충돌 시 빈 화면 방지 */}

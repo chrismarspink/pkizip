@@ -191,6 +191,17 @@ export interface PkiHeader {
     cryptoKind: 'classic' | 'hybrid' | 'pqc-only' | 'pqc-he';
     requestedBy?: string;
   };
+
+  /** DPV (W3C Data Privacy Vocabulary v2) 메타 — seal() 시점에 자동 생성.
+   *  Phase 1: data_categories  (PII 카테고리)
+   *  Phase 2: processing_activities + applied_measures  (봉투 작업 자동 도출)
+   *  Phase 3 예정: processing_purposes + legal_basis  (사용자 입력 의존) */
+  dpv?: {
+    '@context': string;
+    data_categories: string[];
+    processing_activities?: string[];
+    applied_measures?: string[];
+  };
 }
 
 export interface PkiContainer {

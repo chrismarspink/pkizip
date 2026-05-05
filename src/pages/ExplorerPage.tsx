@@ -17,10 +17,14 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Upload, FileLock2, FileCheck2, Search, X, FileText, ShieldCheck,
-  FolderOpen, File as FileIcon, Folder, RefreshCw, Trash2,
+  FolderOpen, File as FileIcon, Folder, RefreshCw, Trash2, Signature,
 } from 'lucide-react';
 import { isPkiFile, readPkiHeader, deriveBadge, type PkiHeader } from '@/lib/container/pki-format';
 import { prefs, type ExplorerPrefs } from '@/lib/store/preferences';
+import {
+  dpvLabel, dpvIcon, dpvRisk, dpvWorstRisk, dpvChipClass,
+  DPV_LABEL,
+} from '@/lib/policy/standards/dpv-labels';
 import {
   saveLastFolder, loadLastFolder, clearLastFolder,
   checkHandlePermission, requestHandlePermission,
@@ -449,15 +453,28 @@ export function ExplorerPage() {
     let xs = entries;
     if (filter) {
       const f = filter.toLowerCase();
-      xs = xs.filter(e =>
-        e.name.toLowerCase().includes(f) ||
-        e.relPath.toLowerCase().includes(f) ||
-        e.header?.classification?.grade?.toLowerCase().includes(f)
-      );
+      xs = xs.filter(e => {
+        if (e.name.toLowerCase().includes(f)) return true;
+        if (e.relPath.toLowerCase().includes(f)) return true;
+        if (e.header?.classification?.grade?.toLowerCase().includes(f)) return true;
+        // DPV 카테고리 — 한국어/영어 라벨 + IRI 모두 매칭
+        const cats = e.header?.dpv?.data_categories ?? [];
+        for (const iri of cats) {
+          if (iri.toLowerCase().includes(f)) return true;
+          if (dpvLabel(iri, 'ko').toLowerCase().includes(f)) return true;
+          if (dpvLabel(iri, 'en').toLowerCase().includes(f)) return true;
+        }
+        return false;
+      });
     }
     if (explorerPrefs.filterGrade && explorerPrefs.filterGrade !== 'all') {
       xs = xs.filter(e =>
         e.kind === 'pki' && e.header?.classification?.grade === explorerPrefs.filterGrade);
+    }
+    if (explorerPrefs.filterDpv && explorerPrefs.filterDpv !== 'all') {
+      const wantedIri = explorerPrefs.filterDpv;
+      xs = xs.filter(e =>
+        e.kind === 'pki' && e.header?.dpv?.data_categories?.includes(wantedIri));
     }
     const sortBy = explorerPrefs.sortBy;
     const dir = explorerPrefs.sortDir === 'asc' ? 1 : -1;
@@ -500,8 +517,8 @@ export function ExplorerPage() {
               <input
                 value={filter}
                 onChange={e => setFilter(e.target.value)}
-                placeholder="파일명·등급 검색..."
-                className="pl-7 pr-2 py-1.5 border rounded text-sm w-56"
+                placeholder="파일명·등급·DPV 라벨 (이메일·주민번호) 검색..."
+                className="pl-7 pr-2 py-1.5 border rounded text-sm w-72"
               />
             </div>
             <select value={explorerPrefs.filterGrade || 'all'}
@@ -512,6 +529,24 @@ export function ExplorerPage() {
               <option value="S">S 민감</option>
               <option value="O">O 공개</option>
             </select>
+            <select value={explorerPrefs.filterDpv || 'all'}
+              onChange={e => setPref('filterDpv', e.target.value)}
+              className="px-2 py-1.5 border rounded text-sm"
+              title="DPV 카테고리 필터">
+              <option value="all">모든 DPV</option>
+              {Object.keys(DPV_LABEL).map(iri => (
+                <option key={iri} value={iri}>
+                  {dpvIcon(iri)} {dpvLabel(iri, explorerPrefs.dpvLabelLang || 'ko')}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setPref('dpvLabelLang',
+                (explorerPrefs.dpvLabelLang || 'ko') === 'ko' ? 'en' : 'ko')}
+              className="px-2 py-1.5 border rounded text-sm hover:bg-zinc-50"
+              title="DPV 라벨 언어 전환">
+              {(explorerPrefs.dpvLabelLang || 'ko') === 'ko' ? '🇰🇷 KO' : '🇬🇧 EN'}
+            </button>
             <select value={explorerPrefs.sortBy}
               onChange={e => setPref('sortBy', e.target.value as ExplorerPrefs['sortBy'])}
               className="px-2 py-1.5 border rounded text-sm">
@@ -647,6 +682,7 @@ export function ExplorerPage() {
                 opening={openingPki === e.id}
                 canOpenInFiles={e.kind === 'pki' && !!savedHandle}
                 canCreateEnvelope={e.kind === 'other' && !!savedHandle}
+                labelLang={explorerPrefs.dpvLabelLang || 'ko'}
                 onClick={() => onCardClick(e)}
                 onOpenInFiles={() => onOpenInFiles(e)}
                 onCreateEnvelope={() => onCreateEnvelope(e)}
@@ -675,12 +711,13 @@ export function ExplorerPage() {
 // 카드 — 등급 아이콘 + 메타
 // ─────────────────────────────────────────────
 
-function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
+function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope, labelLang,
                      onClick, onOpenInFiles, onCreateEnvelope }: {
   entry: ExplorerEntry;
   opening?: boolean;
   canOpenInFiles?: boolean;
   canCreateEnvelope?: boolean;
+  labelLang?: 'ko' | 'en';
   onClick: () => void;
   onOpenInFiles: () => void;
   onCreateEnvelope: () => void;
@@ -693,6 +730,18 @@ function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
     pill: 'bg-zinc-100 text-zinc-600',
   };
   const palette = isPki ? colors : otherColors;
+  const dpvCats = entry.header?.dpv?.data_categories;
+  const worstRisk = dpvWorstRisk(dpvCats);
+  const lang = labelLang || 'ko';
+  // PPT 슬라이드 9 mock-up — 카드 자체 = 위험도 시각화
+  // worst risk 와 grade 양쪽 정보를 합성해서 카드 톤 결정
+  const riskTone = worstRisk === 'high'
+    ? { border: 'border-red-300 border-2', bg: 'bg-red-50/40', accent: 'bg-red-500', label: '🔴 위험' }
+    : worstRisk === 'medium'
+      ? { border: 'border-amber-300 border-2', bg: 'bg-amber-50/30', accent: 'bg-amber-400', label: '🟡 보통' }
+      : worstRisk === 'low'
+        ? { border: 'border-emerald-200 border', bg: 'bg-emerald-50/20', accent: 'bg-emerald-400', label: '🟢 안전' }
+        : null;
   // 상대 경로의 디렉토리 부분만 — "sub/dir/file.txt" → "sub/dir"
   const dirPart = entry.relPath.includes('/')
     ? entry.relPath.slice(0, entry.relPath.lastIndexOf('/'))
@@ -703,9 +752,14 @@ function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
       onClick={onClick}
       whileHover={{ y: -2 }}
       disabled={opening}
-      className={`text-left bg-white border rounded-xl p-4 hover:shadow-md transition relative ${palette.border} ${
+      className={`text-left rounded-xl p-4 hover:shadow-md transition relative flex flex-col ${
+        riskTone ? `${riskTone.border} ${riskTone.bg}` : `bg-white border ${palette.border}`
+      } ${
         !isPki ? 'opacity-90' : ''
       } ${opening ? 'ring-2 ring-blue-400' : ''}`}
+      title={dpvCats && dpvCats.length > 0
+        ? `DPV 카테고리:\n${dpvCats.map(iri => `• ${dpvIcon(iri)} ${dpvLabel(iri, lang)} (${iri})`).join('\n')}`
+        : entry.relPath}
     >
       {opening && (
         <div className="absolute inset-0 bg-white/70 rounded-xl flex items-center justify-center z-10">
@@ -713,6 +767,11 @@ function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
             <span className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             파일 메뉴로 이동…
           </span>
+        </div>
+      )}
+      {riskTone && (
+        <div className="absolute top-2 right-2 text-[10px] font-semibold px-1.5 py-0.5 bg-white/80 rounded border border-zinc-200">
+          {riskTone.label}
         </div>
       )}
       <div className="flex items-start gap-3">
@@ -748,7 +807,12 @@ function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
                 </span>
                 {badge.pqc && <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">PQC</span>}
                 {badge.he && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700">🔍 HE</span>}
-                {badge.signed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">✍</span>}
+                {badge.signed && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 inline-flex items-center gap-0.5"
+                        title="서명됨 (디지털 서명)">
+                    <Signature className="w-3 h-3" /> 서명
+                  </span>
+                )}
               </>
             ) : (
               <span className={`text-[10px] px-1.5 py-0.5 rounded ${palette.pill}`}>
@@ -758,7 +822,26 @@ function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
           </div>
         </div>
       </div>
-      {isPki && entry.header?.classification?.findingsSummary && (
+      {isPki && dpvCats && dpvCats.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {dpvCats.slice(0, 4).map(iri => {
+            const risk = dpvRisk(iri);
+            return (
+              <span key={iri}
+                className={`text-[10px] px-1.5 py-0.5 rounded border ${dpvChipClass(risk)}`}
+                title={iri}>
+                {dpvIcon(iri)} {dpvLabel(iri, lang)}
+              </span>
+            );
+          })}
+          {dpvCats.length > 4 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600">
+              +{dpvCats.length - 4}
+            </span>
+          )}
+        </div>
+      )}
+      {isPki && (!dpvCats || dpvCats.length === 0) && entry.header?.classification?.findingsSummary && (
         <div className="mt-2 text-[10px] text-zinc-500 line-clamp-1">
           {Object.entries(entry.header.classification.findingsSummary).slice(0, 3)
             .map(([k, v]) => `${k}×${v}`).join(' · ')}
@@ -772,40 +855,44 @@ function FileCard({ entry, opening, canOpenInFiles, canCreateEnvelope,
         {isPki && entry.header?.ocr?.applied && <> · OCR</>}
       </div>
 
-      {canOpenInFiles && (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={(e) => { e.stopPropagation(); onOpenInFiles(); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              onOpenInFiles();
-            }
-          }}
-          aria-label="파일 메뉴로 이동하여 분석"
-          className="mt-3 w-full text-center text-xs px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-medium transition cursor-pointer"
-        >
-          📂 파일 메뉴로 이동
-        </div>
-      )}
-      {canCreateEnvelope && (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={(e) => { e.stopPropagation(); onCreateEnvelope(); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              onCreateEnvelope();
-            }
-          }}
-          aria-label="이 파일로 PKI 봉투 만들기"
-          className="mt-3 w-full text-center text-xs px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md font-medium transition cursor-pointer"
-        >
-          🛡 PKIZIP 봉투 만들기
+      {(canOpenInFiles || canCreateEnvelope) && (
+        <div className="mt-auto pt-3">
+          {canOpenInFiles && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onOpenInFiles(); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onOpenInFiles();
+                }
+              }}
+              aria-label="파일 메뉴로 이동하여 분석"
+              className="w-full text-center text-xs px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-medium transition cursor-pointer"
+            >
+              📂 파일 메뉴로 이동
+            </div>
+          )}
+          {canCreateEnvelope && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onCreateEnvelope(); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onCreateEnvelope();
+                }
+              }}
+              aria-label="이 파일로 PKI 봉투 만들기"
+              className="w-full text-center text-xs px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md font-medium transition cursor-pointer"
+            >
+              🛡 PKIZIP 봉투 만들기
+            </div>
+          )}
         </div>
       )}
     </motion.button>
@@ -909,9 +996,64 @@ function DetailPanel({ entry, onClose }: { entry: ExplorerEntry; onClose: () => 
                   {h.searchKey.tokenCount && <span className="text-xs text-zinc-500 ml-2">{h.searchKey.tokenCount} tokens</span>}
                 </Row>
               )}
+              {h?.dpv && (
+                <div className="border border-violet-200 bg-violet-50/30 rounded-md p-2.5 space-y-2">
+                  <div className="text-xs font-semibold text-violet-700 uppercase">
+                    DPV 표준 메타
+                    <span className="ml-2 font-mono normal-case text-[10px] text-zinc-400">
+                      {h.dpv['@context']}
+                    </span>
+                  </div>
+                  {h.dpv.data_categories.length > 0 && (
+                    <div>
+                      <div className="text-[10px] text-zinc-500 mb-1">데이터 카테고리</div>
+                      <div className="flex flex-wrap gap-1">
+                        {h.dpv.data_categories.map(iri => {
+                          const risk = dpvRisk(iri);
+                          return (
+                            <span key={iri}
+                              className={`text-xs px-2 py-0.5 rounded border ${dpvChipClass(risk)}`}
+                              title={iri}>
+                              {dpvIcon(iri)} {dpvLabel(iri, 'ko')}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {h.dpv.processing_activities && h.dpv.processing_activities.length > 0 && (
+                    <div>
+                      <div className="text-[10px] text-zinc-500 mb-1">처리 활동</div>
+                      <div className="flex flex-wrap gap-1">
+                        {h.dpv.processing_activities.map(iri => (
+                          <span key={iri}
+                            className="text-xs px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200"
+                            title={iri}>
+                            {dpvIcon(iri)} {dpvLabel(iri, 'ko')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {h.dpv.applied_measures && h.dpv.applied_measures.length > 0 && (
+                    <div>
+                      <div className="text-[10px] text-zinc-500 mb-1">적용 조치</div>
+                      <div className="flex flex-wrap gap-1">
+                        {h.dpv.applied_measures.map(iri => (
+                          <span key={iri}
+                            className="text-xs px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200"
+                            title={iri}>
+                            {dpvIcon(iri)} {dpvLabel(iri, 'ko')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               {c?.findingsSummary && Object.keys(c.findingsSummary).length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">탐지된 PII</div>
+                  <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">탐지된 PII (원본 entityType)</div>
                   <div className="flex flex-wrap gap-1">
                     {Object.entries(c.findingsSummary).map(([k, v]) => (
                       <span key={k} className="text-xs px-2 py-0.5 bg-zinc-100 rounded font-mono">

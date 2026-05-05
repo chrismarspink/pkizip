@@ -1,0 +1,37 @@
+[시나리오 3.6] 명함 — 이미지(JPG) 변환 후 검증
+
+→ 사용자가 명함 사진 (jpg/png) 으로 만들기:
+   1. 아래 텍스트를 명함 모양으로 디자인 (Canva, Figma, PowerPoint 등)
+   2. 이미지 export (jpg/png)
+   3. 또는 실제 명함을 스캔/사진 촬영
+
+→ OCR + sidecar 동봉 검증
+→ test_namecard.jpg.anonymized.txt 동봉 확인
+
+명함 내용 (이미지로 만들 텍스트):
+
+══════════════════════════════════════
+                            (주) 인노티움
+                          NotaryTech Co., Ltd
+
+  김  지  훈
+  Kim  Ji-Hoon
+
+  이사 / Director
+  보안기술팀 / Security Tech Team
+
+  📧  jhkim@innotium.com
+  📱  010-9876-5432
+  ☎  02-555-7890
+  📠  02-555-7891
+
+  서울특별시 영등포구 여의대로 99
+  더 파크원 타워 27층
+  www.innotium.example.com
+══════════════════════════════════════
+
+이미지 권장 사양:
+- 해상도: 600 x 350 px 이상
+- 포맷: JPG 또는 PNG
+- OCR 가독성: 글자 크기 12pt 이상
+- 배경 단순 (흰색 또는 옅은 색)
