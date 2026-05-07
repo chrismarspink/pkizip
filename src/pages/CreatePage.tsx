@@ -118,6 +118,10 @@ export function CreatePage() {
   const hasAnyIdentity = identities.length > 0;
 
   const [step, setStep] = useState<Step>('files');
+  /** 입력 소스 — 'files': 파일 추가 / 'text': 클립보드/텍스트 */
+  const [inputMode, setInputMode] = useState<'files' | 'text'>('files');
+  const [clipText, setClipText] = useState('');
+  const TEXT_LIMIT_BYTES = 64 * 1024;
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [options, setOptions] = useState<CmsOptions>({ compress: true, sign: false, enveloped: false, encrypted: false });
   const [cryptoMode, setCryptoMode] = useState<'hybrid' | 'pqc-only' | 'classic'>(() => {
@@ -360,14 +364,6 @@ export function CreatePage() {
 
   /** 분석 다이얼로그 onAccept — 의도/등급에 따라 cryptoMode + options 자동 설정 */
   const handleAnalysisAccept = async (decision: AnalysisDecision) => {
-    // [DPV-DEBUG] — 분석 결과가 어떻게 들어오는지 확인.
-    console.log('[DPV-DEBUG] CreatePage.handleAnalysisAccept', {
-      originalFindingsCount: decision.originalFindings.length,
-      originalEntityTypes: [...new Set(decision.originalFindings.map(f => f.entityType))],
-      anonymizationAction: decision.anonymizationAction,
-      hasAnonymization: !!decision.result.anonymization,
-      replacementsCount: decision.result.anonymization?.result.replacements.length ?? 0,
-    });
     setAnalysisDecision(decision);
 
     // 1) cryptoMode 매핑
@@ -465,6 +461,7 @@ export function CreatePage() {
     setResultData(null);
     setAnalysisInitial(null); setAnalysisDecision(null); setAnalysisSkipped(false);
     setPerFileExtract([]); setAnonReports([]);
+    setInputMode('files'); setClipText('');
   };
 
   // PQC 인스턴스 (store에서 가져옴 — 잠금 해제 시 초기화됨)
@@ -560,12 +557,6 @@ export function CreatePage() {
         const analysisMeta = analysisDecision
           ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
           : undefined;
-        console.log('[DPV-DEBUG] seal() 호출 직전 analysisMeta', {
-          hasMeta: !!analysisMeta,
-          findingsSummary: analysisMeta?.classification?.findingsSummary,
-          findingsCount: analysisMeta?.classification?.findingsSummary
-            ? Object.keys(analysisMeta.classification.findingsSummary).length : 0,
-        });
         const result = await seal({
           files, compress: true,
           encrypt: { recipients: recipientInfos },
@@ -589,12 +580,6 @@ export function CreatePage() {
         const analysisMeta = analysisDecision
           ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
           : undefined;
-        console.log('[DPV-DEBUG] seal() 호출 직전 analysisMeta', {
-          hasMeta: !!analysisMeta,
-          findingsSummary: analysisMeta?.classification?.findingsSummary,
-          findingsCount: analysisMeta?.classification?.findingsSummary
-            ? Object.keys(analysisMeta.classification.findingsSummary).length : 0,
-        });
         const result = await seal({
           files, compress: true,
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
@@ -678,30 +663,116 @@ export function CreatePage() {
         {/* Step 1: 파일 */}
         {step === 'files' && (
           <motion.div key="files" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-            <h2 className="text-lg font-bold mb-1">파일 선택</h2>
-            <p className="text-sm text-zinc-500 mb-4">CMS 컨테이너에 포함할 파일을 추가하세요.</p>
+            <h2 className="text-lg font-bold mb-1">입력 선택</h2>
+            <p className="text-sm text-zinc-500 mb-4">파일 또는 텍스트(클립보드)로 봉투를 만듭니다.</p>
 
-            {files.map(f => (
-              <div key={f.name} className="flex items-center justify-between bg-white border border-zinc-200 rounded-xl px-4 py-3 mb-2">
-                <span className="truncate flex-1 text-sm">{f.name}</span>
-                <span className="text-xs text-zinc-400 mx-2">{formatSize(f.size)}</span>
-                <button onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))} className="text-zinc-400 hover:text-red-500">
-                  <X className="w-4 h-4" />
+            {/* 입력 모드 토글 */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button
+                onClick={() => setInputMode('files')}
+                className={`px-3 py-2.5 rounded-xl border-2 transition-all ${
+                  inputMode === 'files'
+                    ? 'border-[#175DDC] bg-[#175DDC]/5 text-[#175DDC]'
+                    : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
+                }`}>
+                <div className="text-sm font-bold">📁 파일</div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">파일 추가 · 다중 선택 가능</div>
+              </button>
+              <button
+                onClick={() => setInputMode('text')}
+                className={`px-3 py-2.5 rounded-xl border-2 transition-all ${
+                  inputMode === 'text'
+                    ? 'border-[#175DDC] bg-[#175DDC]/5 text-[#175DDC]'
+                    : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
+                }`}>
+                <div className="text-sm font-bold">📋 텍스트 (클립보드)</div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">최대 64KB · Base64 봉투 출력</div>
+              </button>
+            </div>
+
+            {inputMode === 'files' && (
+              <>
+                {files.map(f => (
+                  <div key={f.name} className="flex items-center justify-between bg-white border border-zinc-200 rounded-xl px-4 py-3 mb-2">
+                    <span className="truncate flex-1 text-sm">{f.name}</span>
+                    <span className="text-xs text-zinc-400 mx-2">{formatSize(f.size)}</span>
+                    <button onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))} className="text-zinc-400 hover:text-red-500">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-8 text-center text-zinc-400 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors mt-2"
+                >
+                  <FilePlus className="w-8 h-8 mx-auto mb-2" />
+                  <span className="text-sm">파일 선택 또는 드래그</span>
                 </button>
-              </div>
-            ))}
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => { if (e.target.files) handleAddFiles(e.target.files); e.target.value = ''; }} />
+              </>
+            )}
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-8 text-center text-zinc-400 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors mt-2"
-            >
-              <FilePlus className="w-8 h-8 mx-auto mb-2" />
-              <span className="text-sm">파일 선택 또는 드래그</span>
-            </button>
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => { if (e.target.files) handleAddFiles(e.target.files); e.target.value = ''; }} />
+            {inputMode === 'text' && (
+              <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                <textarea
+                  value={clipText}
+                  onChange={e => setClipText(e.target.value)}
+                  placeholder="암호화할 텍스트를 입력하거나 클립보드에서 붙여넣으세요 (Cmd/Ctrl+V)..."
+                  className="w-full h-64 border border-zinc-200 rounded-lg p-3 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
+                />
+                {(() => {
+                  const bytes = new TextEncoder().encode(clipText).length;
+                  const overLimit = bytes > TEXT_LIMIT_BYTES;
+                  return (
+                    <div className={`mt-2 flex justify-between items-center text-[11px] ${overLimit ? 'text-red-600' : 'text-zinc-500'}`}>
+                      <span>
+                        {bytes.toLocaleString()} / {TEXT_LIMIT_BYTES.toLocaleString()} bytes
+                        {overLimit && ' — 한도 초과 ⚠'}
+                      </span>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const t = await navigator.clipboard.readText();
+                            setClipText(t.slice(0, TEXT_LIMIT_BYTES));
+                          } catch {
+                            toast.error('클립보드 권한이 필요합니다.');
+                          }
+                        }}
+                        className="text-blue-600 hover:underline">
+                        📋 클립보드에서 붙여넣기
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             <div className="flex justify-end mt-6">
-              <button onClick={goNext} disabled={files.length === 0} className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30">
+              <button
+                onClick={async () => {
+                  if (inputMode === 'text') {
+                    const bytes = new TextEncoder().encode(clipText).length;
+                    if (bytes === 0) { toast.error('텍스트를 입력하세요.'); return; }
+                    if (bytes > TEXT_LIMIT_BYTES) { toast.error('64KB 한도를 초과했습니다.'); return; }
+                    // 텍스트를 가상 파일로 변환 — 기존 파일 흐름 그대로 재사용
+                    const data = new TextEncoder().encode(clipText);
+                    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                    setFiles([{
+                      name: `clipboard_${ts}.txt`,
+                      data,
+                      size: data.byteLength,
+                      lastModified: Date.now(),
+                      type: 'text/plain',
+                    }]);
+                    // setFiles 비동기 — 다음 렌더에서 enterAnalyzeStep 진입 위해 setTimeout
+                    setTimeout(() => goNext(), 0);
+                  } else {
+                    goNext();
+                  }
+                }}
+                disabled={inputMode === 'files' ? files.length === 0 : clipText.length === 0}
+                className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30">
                 다음 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -991,6 +1062,49 @@ export function CreatePage() {
                 </div>
               )}
             </div>
+
+            {inputMode === 'text' && files[0] && (() => {
+              const enveloped = new TextDecoder().decode(files[0].data);
+              const HEAD = 200;
+              const TAIL = 100;
+              const truncated = enveloped.length > HEAD + TAIL + 20;
+              const head = enveloped.slice(0, HEAD);
+              const tail = truncated ? enveloped.slice(-TAIL) : '';
+              const inputLen = clipText.length;
+              const envLen = enveloped.length;
+              const diff = envLen - inputLen;
+              return (
+                <div className="bg-zinc-50 border border-zinc-300 rounded-xl p-4 max-w-2xl mx-auto mb-4 text-left">
+                  <div className="text-xs font-semibold text-zinc-700 uppercase mb-2">
+                    📄 봉투 내용 미리보기 — 봉투 안에 들어간 텍스트 확인
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mb-2 flex flex-wrap gap-3">
+                    <span>입력 <b className="text-zinc-700">{inputLen.toLocaleString()}</b>자</span>
+                    <span>→</span>
+                    <span>봉투 <b className="text-zinc-700">{envLen.toLocaleString()}</b>자</span>
+                    {diff !== 0 && (
+                      <span className={diff < 0 ? 'text-emerald-700' : 'text-amber-700'}>
+                        {diff > 0 ? '+' : ''}{diff.toLocaleString()}자
+                        {diff < 0 ? ' (가명화로 축소)' : diff > 0 ? ' (가명화로 확장)' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <pre className="bg-white border border-zinc-200 rounded p-3 text-xs whitespace-pre-wrap break-words font-mono leading-relaxed max-h-48 overflow-auto">
+                    {head}
+                    {truncated && (
+                      <span className="text-zinc-400 italic block my-1">
+                        ⋯ ({(envLen - HEAD - TAIL).toLocaleString()}자 생략) ⋯
+                      </span>
+                    )}
+                    {tail}
+                  </pre>
+                  <div className="text-[10px] text-zinc-400 mt-1.5">
+                    💡 가명화가 의도대로 적용됐는지 확인 — 원본 PII (이메일·주민번호 등) 가
+                    placeholder ([EMAIL_1] 등) 로 교체되어 있어야 정상.
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex gap-3 justify-center">
               <button onClick={handleDownload} className="flex items-center gap-2 bg-[#175DDC] text-white px-6 py-2.5 rounded-xl text-sm font-medium">

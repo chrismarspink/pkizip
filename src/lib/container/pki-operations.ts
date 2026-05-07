@@ -187,12 +187,6 @@ export async function seal(options: SealOptions): Promise<SealResult> {
   //   Phase 2 — processing_activities + applied_measures: 봉투 작업 자동 도출
   // intent.purpose 외 모든 정보는 이 시점의 header 에 이미 채워짐 (encryption / signatures /
   // timestamp / pseudonymization / pqc).  단 timestamp 는 곧 채워질 수 있어 후순위로 미룸.
-  console.log('[DPV-DEBUG] seal() 안 buildDpvMeta 호출 직전 header 상태', {
-    hasClassification: !!header.classification,
-    findingsSummary: header.classification?.findingsSummary,
-    intent: header.intent,
-    pseudonymization: header.pseudonymization,
-  });
 
   let pqcKemDone = false;
   let pqcDsaDone = false;
@@ -356,10 +350,6 @@ export async function seal(options: SealOptions): Promise<SealResult> {
       : undefined,
   });
   if (dpv) header.dpv = dpv;
-  console.log('[DPV-DEBUG] seal() buildDpvMeta 결과 + header.dpv 부착', {
-    dpvResult: dpv,
-    headerDpv: header.dpv,
-  });
 
   // 6. 컨테이너 패킹
   const container: PkiContainer = { header, payload };

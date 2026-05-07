@@ -238,16 +238,6 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
       prefs.workflow.set({ purpose: intent.purpose, cryptoKind: intent.cryptoKind });
       prefs.anon.set({ defaultAction: anonAction });
     }
-    // [DPV-DEBUG] — 봉투 헤더에 메타가 안 들어가는 원인 진단용. fix 후 제거 가능.
-    console.log('[DPV-DEBUG] AnalysisDialog.handleAccept', {
-      anonAction,
-      processingChoice,
-      effectiveFindingsCount: effective.findings.length,
-      initialFindingsCount: initialResult.findings.length,
-      initialEntityTypes: [...new Set(initialResult.findings.map(f => f.entityType))],
-      hasAnonymization: !!effective.anonymization,
-      replacementsCount: effective.anonymization?.result.replacements.length ?? 0,
-    });
     onAccept({
       result: effective,
       originalFindings: initialResult.findings,
