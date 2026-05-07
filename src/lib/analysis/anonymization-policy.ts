@@ -46,6 +46,7 @@ export const DEFAULT_POLICY: AnonymizationPolicy = {
 
     // 약한 식별자
     KR_PHONE:        { method: 'mask',     preserve_last: 4 },
+    KR_LANDLINE:     { method: 'mask',     preserve_last: 4 },
     PHONE_NUMBER:    { method: 'mask',     preserve_last: 4 },
     EMAIL_ADDRESS:   { method: 'replace',  format: '[EMAIL_%d]',  consistent: true },
 

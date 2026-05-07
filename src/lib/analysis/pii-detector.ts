@@ -32,6 +32,8 @@ const KR_PATTERNS: Pattern[] = [
   { entityType: 'KR_BIZ_NO',       regex: /\b\d{3}-\d{2}-\d{5}\b/g, score: 0.95,
     validate: validateKrBizNo },
   { entityType: 'KR_PHONE',        regex: /\b01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}\b/g, score: 0.85 },
+  // 한국 일반(유선) 전화 — 02 (서울) / 031~064 (광역시·도)
+  { entityType: 'KR_LANDLINE',     regex: /\b0(?:2|3[1-3]|4[1-4]|5[1-5]|6[1-4])[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g, score: 0.85 },
   { entityType: 'KR_ARC',          regex: /\b\d{6}-?[5-8]\d{6}\b/g, score: 0.95 },
   { entityType: 'KR_DRIVERS_LICENSE', regex: /\b\d{2}-\d{2}-\d{6}-\d{2}\b/g, score: 0.9 },
   { entityType: 'KR_HEALTH_INSURANCE', regex: /\b[1-9]-\d{10}\b/g, score: 0.85 },

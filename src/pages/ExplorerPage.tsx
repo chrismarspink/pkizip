@@ -25,6 +25,7 @@ import {
   dpvLabel, dpvIcon, dpvRisk, dpvWorstRisk, dpvChipClass,
   DPV_LABEL,
 } from '@/lib/policy/standards/dpv-labels';
+import { downloadDpvExport } from '@/lib/policy/standards/dpv-export';
 import {
   saveLastFolder, loadLastFolder, clearLastFolder,
   checkHandlePermission, requestHandlePermission,
@@ -998,11 +999,22 @@ function DetailPanel({ entry, onClose }: { entry: ExplorerEntry; onClose: () => 
               )}
               {h?.dpv && (
                 <div className="border border-violet-200 bg-violet-50/30 rounded-md p-2.5 space-y-2">
-                  <div className="text-xs font-semibold text-violet-700 uppercase">
-                    DPV 표준 메타
-                    <span className="ml-2 font-mono normal-case text-[10px] text-zinc-400">
-                      {h.dpv['@context']}
-                    </span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-xs font-semibold text-violet-700 uppercase">
+                      DPV 표준 메타
+                      <span className="ml-2 font-mono normal-case text-[10px] text-zinc-400">
+                        {h.dpv['@context']}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadDpvExport(entry.name, h);
+                      }}
+                      className="text-[10px] px-2 py-0.5 rounded bg-white border border-violet-300 text-violet-700 hover:bg-violet-100 font-medium"
+                      title="JSON-LD 형식으로 export — 외부 GDPR 도구 (OneTrust/Ethyca 등) 호환">
+                      📥 JSON-LD export
+                    </button>
                   </div>
                   {h.dpv.data_categories.length > 0 && (
                     <div>

@@ -29,6 +29,7 @@ export const ENTITY_TYPE_TO_DPV: Record<string, string> = {
   KR_PASSPORT:         'dpv:Passport',
   KR_BIZ_NO:           'dpv:OrganisationalIdentifier',
   KR_PHONE:            'dpv:TelephoneNumber',
+  KR_LANDLINE:         'dpv:TelephoneNumber',
   KR_ARC:              'dpv:NationalIdentifier',
   KR_DRIVERS_LICENSE:  'dpv:DriversLicense',
   KR_HEALTH_INSURANCE: 'dpv:HealthCareInsurance',

@@ -163,6 +163,27 @@ export function classify(findings: Finding[], text: string): Classification {
     grade = 'O'; gradeLabel = '공개 (Open)'; margin = S_THRESHOLD - score;
   }
 
+  // 3.5) 고위험 PII 자동 등급 보정 — dpv:NationalIdentifier / Passport / DriversLicense /
+  // HealthCareInsurance / CreditCardNumber 검출 시 O 등급은 C 로 강제 상승.
+  // 분류기의 가중치 합산만으로는 한 두 건 검출이 등급 O 로 떨어질 수 있어 별도 룰 필요.
+  const HIGH_RISK_TYPES = new Set([
+    'KR_RRN', 'KR_PASSPORT', 'KR_DRIVERS_LICENSE',
+    'KR_HEALTH_INSURANCE', 'CREDIT_CARD', 'KR_ARC',
+  ]);
+  const highRiskCount = findings.filter(f => HIGH_RISK_TYPES.has(f.entityType)).length;
+  if (highRiskCount > 0 && grade === 'O') {
+    grade = 'C';
+    gradeLabel = '위험 (Critical) — 고위험 PII 자동 보정';
+    margin = 0;
+    reasons.unshift({
+      kind: 'entity',
+      label: `⚠ 고위험 PII 자동 등급 보정 (${highRiskCount}건)`,
+      weight: 99,
+      count: highRiskCount,
+      contribution: 99,
+    });
+  }
+
   // 4) 신뢰도 — tanh(margin/2) 정규화
   const confidence = round(0.55 + 0.4 * Math.tanh(Math.max(0, margin) / 2), 3);
 
