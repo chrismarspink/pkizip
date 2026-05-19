@@ -1,0 +1,9 @@
+[보안 사고 보고서 #3850]
+신고자: 전시우 (010-8936-5898)
+발생일시: 2020년 7월 14일
+유출 의심 자격증명:
+  - AWS Access Key: AKIAZXCVBNMASDFGHJKL
+  - API_KEY = sk_test_4eC39HqLyjWDarjtT1zdp7dcabcdef1234567890
+대상 시스템: https://intranet.example.net/api/v5/resource/131
+서버 IP: 88.187.23.87
+즉시 조치 책임자: 한시우 (lsato94@example.co.jp)

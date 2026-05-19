@@ -1,0 +1,9 @@
+[セキュリティ事故報告書 #9697]
+報告者: 林 蓮 (090-9446-9987)
+発生日時: 2018年1月25日
+漏洩疑いの認証情報:
+  - AWS Access Key: AKIAIOSFODNN7EXAMPLE
+  - API_KEY = sk_test_4eC39HqLyjWDarjtT1zdp7dcabcdef1234567890
+対象システム: https://vpn.corp.example/api/v1/resource/440
+サーバーIP: 45.80.61.161
+即時対応責任者: 伊藤 健 (asmith90@example.net)

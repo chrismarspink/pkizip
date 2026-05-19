@@ -1,0 +1,9 @@
+[Customer Complaint Ticket]
+Ticket #: CC-965711
+Customer: Joshua Martinez (+1 (848) 293-3689)
+Email: joshua.martinez57@example.co.jp
+Address: 9890 Lake St, Portland, TX 88362
+SSN on file: 185-31-4066
+Refund card: 4111-2779-9788-4207
+Owner: Jessica Gonzalez
+Processed: 2026-02-09

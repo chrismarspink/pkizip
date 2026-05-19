@@ -1,0 +1,8 @@
+[명함 일괄 / Business Card Batch]
+1. 권민재 | 이노시스코리아 | 010-8216-6893 | nyoon79@acme.test
+2. 藤田 結衣 | 株式会社シナジーラボ | 070-7285-7732 | rjeon64@example.net
+3. Daniel Perez | Umbrella Holdings | +1 (453) 221-6319 | daniel.perez66@globex.example
+4. 황건우 | 스마트엔진 | 010-6450-6862
+5. 松本 心春 | 株式会社シナジーラボ | 070-2812-8739
+6. Linda Garcia | Soylent Industries | +1 (316) 386-6452
+교환일 / Exchanged: 2022-04-28

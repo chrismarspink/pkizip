@@ -1,0 +1,9 @@
+[HR File / Restricted]
+Employee ID: EMP-15352
+Name: Jennifer Clark
+Last 4 of SSN: 8641
+Company: Soylent Industries
+Address: 7066 Oak Way, Los Angeles, PA 24841
+Phone: +1 (440) 444-2650
+Direct deposit: routing #551077909, acct #9609339
+Start date: 2023-12-27

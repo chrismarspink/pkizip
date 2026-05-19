@@ -1,0 +1,10 @@
+[국제 채용 / International Hiring]
+지원자 (응시언어: 다국어):
+  Name: Nancy Wilson / 한국명: 손은서 / 日本名: 渡辺 翔
+  Phone (US): +1 (468) 953-9247
+  電話 (JP): 070-9671-1734
+  전화 (KR): 010-3130-9431
+  Email: nancy.wilson67@example.net
+  Resident in: 〒253-7276 広島県渋谷区天王寺2-9-10
+  Previously at: Umbrella Holdings, ジャパンクラウド株式会社, 코어시스템즈
+  Application date: 2024-07-14

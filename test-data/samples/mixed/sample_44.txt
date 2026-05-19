@@ -1,0 +1,12 @@
+[고객 컴플레인 / Complaint #557130]
+Original report (English):
+  Customer Thomas Anderson (SSN 348-66-1615, thomas.anderson36@example.co.jp) experienced data
+  exposure during cross-border sync.
+
+韓国側 follow-up:
+  담당 홍은서, 010-8537-7377, 영향고객 주민번호 431008-4206514.
+
+日本側 confirmation:
+  対応 橋本 陽翔, 070-2358-9930, 影響顧客のマイナンバー 6269 6656 7768.
+
+Processed: 2020-02-23

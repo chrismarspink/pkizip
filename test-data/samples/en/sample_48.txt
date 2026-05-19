@@ -1,0 +1,9 @@
+[Customer Complaint Ticket]
+Ticket #: CC-536096
+Customer: Betty Williams (+1 (328) 737-8434)
+Email: betty.williams38@example.co.jp
+Address: 5267 Park Way, Seattle, PA 23810
+SSN on file: 654-32-1353
+Refund card: 4111-3346-9885-6454
+Owner: William Moore
+Processed: 2020-06-28

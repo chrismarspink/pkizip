@@ -1,0 +1,12 @@
+[고객 컴플레인 / Complaint #505240]
+Original report (English):
+  Customer Carol Garcia (SSN 265-87-1282, carol.garcia91@acme.test) experienced data
+  exposure during cross-border sync.
+
+韓国側 follow-up:
+  담당 배현준, 010-1610-2237, 영향고객 주민번호 350923-1197020.
+
+日本側 confirmation:
+  対応 山本 さくら, 090-8713-5016, 影響顧客のマイナンバー 8077 2984 7769.
+
+Processed: 2024-04-28

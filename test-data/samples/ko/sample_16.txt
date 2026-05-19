@@ -1,0 +1,9 @@
+[보안 사고 보고서 #8090]
+신고자: 서시우 (010-6529-4060)
+발생일시: 2019년 12월 17일
+유출 의심 자격증명:
+  - AWS Access Key: AKIAIOSFODNN7EXAMPLE
+  - API_KEY = sk_test_4eC39HqLyjWDarjtT1zdp7dcabcdef1234567890
+대상 시스템: https://api.example.org/api/v1/resource/511
+서버 IP: 17.105.109.7
+즉시 조치 책임자: 박주원 (syoo96@globex.example)

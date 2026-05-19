@@ -1,0 +1,12 @@
+[국제 회의록 / International Meeting Minutes]
+일시 / Date: 2018-06-13
+참석 / Attendees:
+  - 韓国: 안건우 (Director, 퓨처인사이트) — 010-3405-2223
+  - 日本: 吉田 誠 (部長, デジタルブリッジ合同会社) — 090-8229-9362
+  - USA: Sarah White (VP, Soylent Industries) — +1 (203) 995-9555
+
+논의 / Discussion:
+  - ProjectAlpha 글로벌 확장
+  - プロジェクト雷鳥 との連携
+  - Operation Helios integration
+서버 IP: 159.228.31.178 / API: https://api.example.org/api/v3/resource/567

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FilePlus, X, ChevronRight, Check, Loader2, Download, Shield, PenTool, Lock, Package } from 'lucide-react';
+import { FilePlus, X, ChevronRight, Check, Loader2, Download, Shield, PenTool, Lock, Package, FileText } from 'lucide-react';
 // PqcBadge removed — crypto mode shown inline
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
@@ -17,6 +18,9 @@ import { AnalysisDialog, type AnalysisDecision } from '@/components/dialogs/Anal
 import { analyze as analyzePipeline, analyzeAsync as analyzePipelineAsync } from '@/lib/analysis/pipeline';
 import { extractAll } from '@/lib/analysis/text-extractor';
 import { anonymizeAllFiles, type FileAnonymizationReport, type PerFileExtract } from '@/lib/analysis/anonymize-files';
+import { convertConvertibleFilesToPdf, isConvertibleToPdf, type PdfConversionReport, type PdfWatermarkMeta } from '@/lib/analysis/text-to-pdf';
+import { findingsToDpvCategories } from '@/lib/policy/standards/dpv-data-category';
+import { deriveDpvMeasures } from '@/lib/policy/standards/dpv-applied-measure';
 import { createMipLabel } from '@/lib/mip/mip-label';
 import type { AnalysisResult } from '@/lib/analysis/types';
 
@@ -47,7 +51,7 @@ function decisionToSealMeta(d: AnalysisDecision, fingerprint?: string) {
       confidence: c.confidence,
       classifierVersion: c.version,
       explanation: d.result.explanation?.summary,
-      // 원본 PII findings 사용 — 가명화 적용 후에도 "어떤 PII 가 있었는지" 정보가 봉투 메타에 남도록.
+      // 원본 PII findings 사용 — 가명화 적용 후에도 t("create.whatPii") 정보가 봉투 메타에 남도록.
       // d.result.findings 는 가명화 후 텍스트의 finding 이라 비어있을 수 있음.
       findingsSummary: Object.fromEntries(
         d.originalFindings.reduce((m, f) => m.set(f.entityType, (m.get(f.entityType) || 0) + 1), new Map<string, number>())
@@ -97,6 +101,7 @@ function decisionToSealMeta(d: AnalysisDecision, fingerprint?: string) {
 }
 
 export function CreatePage() {
+  const { t } = useTranslation();
   const { keyIdentity, isKeyLoaded, identities, activeIdentityId, setIdentities, setActiveIdentityId } = useAppStore();
   // IndexedDB에서 아이덴티티 로드
   useEffect(() => {
@@ -143,6 +148,10 @@ export function CreatePage() {
   const [perFileExtract, setPerFileExtract] = useState<PerFileExtract[]>([]);
   /** 가/익명화 적용 보고 — 사용자에게 안내 */
   const [anonReports, setAnonReports] = useState<FileAnonymizationReport[]>([]);
+  /** #8-A. 봉투 → PDF 변환 옵션. 외부 + S/C 등급 시 default ON. */
+  const [pdfConvertEnabled, setPdfConvertEnabled] = useState(false);
+  const [pdfReports, setPdfReports] = useState<PdfConversionReport[]>([]);
+  const [pdfSkipped, setPdfSkipped] = useState<{ filename: string; reason: string }[]>([]);
   const [analysisDecision, setAnalysisDecision] = useState<AnalysisDecision | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisSkipped, setAnalysisSkipped] = useState(false);
@@ -411,6 +420,11 @@ export function CreatePage() {
       setAnonReports([]);
     }
 
+    // #8-A. PDF 변환 default — 외부 전송 + S/C 등급일 때만 자동 ON.
+    setPdfConvertEnabled(isExternal && (grade === 'S' || grade === 'C'));
+    setPdfReports([]);
+    setPdfSkipped([]);
+
     setStep('options');
     toast.success(`분석 완료 — ${grade} 등급, 옵션 자동 설정`);
   };
@@ -492,9 +506,52 @@ export function CreatePage() {
       let info: string;
       const algos: string[] = [];
 
+      // #8-A. PDF 변환 + DPV 워터마크 — 가/익명화 적용된 file.data 를 PDF 로 교체.
+      // 텍스트 기반 (txt/md/csv/json/xml/log/yaml/tsv/docx) 만 변환. 그 외는 원본 유지.
+      let workingFiles = files;
+      if (pdfConvertEnabled && analysisDecision) {
+        const c = analysisDecision.result.classification;
+        const findingsSummary: Record<string, number> = {};
+        for (const f of analysisDecision.originalFindings) {
+          findingsSummary[f.entityType] = (findingsSummary[f.entityType] || 0) + 1;
+        }
+        const dataCategories = findingsToDpvCategories(findingsSummary);
+        const a = analysisDecision.result.anonymization;
+        const measureSrc = {
+          encrypted: options.encrypted || options.enveloped,
+          pqcProtected: cryptoMode !== 'classic' && (options.sign || options.enveloped),
+          signed: options.sign || options.enveloped,
+          timestamped: false,
+          pseudonymization: a && analysisDecision.anonymizationAction !== 'skip'
+            ? { applied: true, isReversible: a.result.isReversible }
+            : undefined,
+        };
+        const watermarkMeta: PdfWatermarkMeta = {
+          grade: c.grade,
+          dataCategories,
+          appliedMeasures: deriveDpvMeasures(measureSrc),
+          purpose: analysisDecision.intent.purpose,
+          classifierVersion: c.version,
+        };
+        try {
+          const r = await convertConvertibleFilesToPdf(files, watermarkMeta);
+          workingFiles = r.files;
+          setFiles(r.files);
+          setPdfReports(r.reports);
+          setPdfSkipped(r.skipped);
+          if (r.reports.length > 0) {
+            toast.success(`PDF 변환 — ${r.reports.length}개 파일 (${r.reports.reduce((s, x) => s + x.pages, 0)} 페이지)`,
+              { duration: 4000 });
+          }
+        } catch (err) {
+          console.error('PDF 변환 실패:', err);
+          toast.error(`PDF 변환 실패 — ${(err as Error).message}. 원본 파일 그대로 봉투 생성.`);
+        }
+      }
+
       if (options.encrypted) {
-        const compressed = serializeEntries(files);
-        const fileInfos = files.map(f => ({ name: f.name, originalSize: f.size, compressedSize: 0, hash: '', type: f.type, lastModified: f.lastModified }));
+        const compressed = serializeEntries(workingFiles);
+        const fileInfos = workingFiles.map(f => ({ name: f.name, originalSize: f.size, compressedSize: 0, hash: '', type: f.type, lastModified: f.lastModified }));
 
         let innerData: Uint8Array;
         if (options.sign && keyIdentity) {
@@ -558,7 +615,7 @@ export function CreatePage() {
           ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
           : undefined;
         const result = await seal({
-          files, compress: true,
+          files: workingFiles, compress: true,
           encrypt: { recipients: recipientInfos },
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
           pqc: pqcOpts,
@@ -581,7 +638,7 @@ export function CreatePage() {
           ? decisionToSealMeta(analysisDecision, currentKey.signingKey.fingerprint)
           : undefined;
         const result = await seal({
-          files, compress: true,
+          files: workingFiles, compress: true,
           sign: { privateKey: currentKey.signingKey.privateKey, publicKey: currentKey.signingKey.publicKey, fingerprint: currentKey.signingKey.fingerprint },
           pqc: pqcOpts,
           analysisMeta,
@@ -594,7 +651,7 @@ export function CreatePage() {
         if (result.stats.timestamp?.method === 'tst') algos.push(`TSA (${result.stats.timestamp.tsaName})`);
         else if (result.stats.timestamp?.method === 'signingTime') algos.push('signingTime (로컬)');
       } else {
-        const result = await compressOnly(files);
+        const result = await compressOnly(workingFiles);
         pkiData = result.pkiData;
         suffix = 'compressed';
         info = 'CompressedMessage';
@@ -634,7 +691,7 @@ export function CreatePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
       {/* 페이지 타이틀 */}
-      <h1 className="text-xl font-bold mb-6">PKIZIP 파일 생성</h1>
+      <h1 className="text-xl font-bold mb-6">{t("create.title")}</h1>
 
       {/* 진행 바 — 모바일에서도 라벨 표시 */}
       <div className="flex items-center mb-8">
@@ -663,8 +720,8 @@ export function CreatePage() {
         {/* Step 1: 파일 */}
         {step === 'files' && (
           <motion.div key="files" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-            <h2 className="text-lg font-bold mb-1">입력 선택</h2>
-            <p className="text-sm text-zinc-500 mb-4">파일 또는 텍스트(클립보드)로 봉투를 만듭니다.</p>
+            <h2 className="text-lg font-bold mb-1">{t("create.inputSelect")}</h2>
+            <p className="text-sm text-zinc-500 mb-4">{t("create.inputSelectDesc")}</p>
 
             {/* 입력 모드 토글 */}
             <div className="grid grid-cols-2 gap-2 mb-4">
@@ -675,8 +732,8 @@ export function CreatePage() {
                     ? 'border-[#175DDC] bg-[#175DDC]/5 text-[#175DDC]'
                     : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
                 }`}>
-                <div className="text-sm font-bold">📁 파일</div>
-                <div className="text-[10px] text-zinc-400 mt-0.5">파일 추가 · 다중 선택 가능</div>
+                <div className="text-sm font-bold">{t("create.tabFile")}</div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">{t("create.tabFileDesc")}</div>
               </button>
               <button
                 onClick={() => setInputMode('text')}
@@ -685,8 +742,8 @@ export function CreatePage() {
                     ? 'border-[#175DDC] bg-[#175DDC]/5 text-[#175DDC]'
                     : 'border-zinc-200 text-zinc-500 hover:border-zinc-300'
                 }`}>
-                <div className="text-sm font-bold">📋 텍스트 (클립보드)</div>
-                <div className="text-[10px] text-zinc-400 mt-0.5">최대 64KB · Base64 봉투 출력</div>
+                <div className="text-sm font-bold">{t("create.tabText")}</div>
+                <div className="text-[10px] text-zinc-400 mt-0.5">{t("create.tabTextDesc")}</div>
               </button>
             </div>
 
@@ -707,7 +764,7 @@ export function CreatePage() {
                   className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-8 text-center text-zinc-400 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors mt-2"
                 >
                   <FilePlus className="w-8 h-8 mx-auto mb-2" />
-                  <span className="text-sm">파일 선택 또는 드래그</span>
+                  <span className="text-sm">{t("create.filePickerHint")}</span>
                 </button>
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => { if (e.target.files) handleAddFiles(e.target.files); e.target.value = ''; }} />
               </>
@@ -718,7 +775,7 @@ export function CreatePage() {
                 <textarea
                   value={clipText}
                   onChange={e => setClipText(e.target.value)}
-                  placeholder="암호화할 텍스트를 입력하거나 클립보드에서 붙여넣으세요 (Cmd/Ctrl+V)..."
+                  placeholder={t("create.textPlaceholder")}
                   className="w-full h-64 border border-zinc-200 rounded-lg p-3 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                 />
                 {(() => {
@@ -782,7 +839,7 @@ export function CreatePage() {
         {/* Step 1.5: 분석 — 텍스트 추출 + PII + 등급 + 정책 */}
         {step === 'analyze' && (
           <motion.div key="analyze" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-            <h2 className="text-lg font-bold mb-1">📊 문서 분석</h2>
+            <h2 className="text-lg font-bold mb-1">{t("create.analysis")}</h2>
             <p className="text-sm text-zinc-500 mb-4">
               파일 내용을 분석해 보안등급(C/S/O)을 판정하고, 사용 의도에 맞는 처리 옵션을 자동 추천합니다.
               <br />분석은 100% 브라우저에서 실행 — 텍스트가 서버로 전송되지 않습니다.
@@ -790,18 +847,18 @@ export function CreatePage() {
             {analyzing && (
               <div className="bg-white border border-zinc-200 rounded-xl p-6 flex items-center gap-3">
                 <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                <span className="text-sm">분석 중…</span>
+                <span className="text-sm">{t("create.analyzing")}</span>
               </div>
             )}
             {!analyzing && !analysisInitial && (
               <div className="bg-white border border-zinc-200 rounded-xl p-6">
-                <p className="text-sm text-zinc-600 mb-3">분석 결과가 없습니다.</p>
+                <p className="text-sm text-zinc-600 mb-3">{t("create.noAnalysis")}</p>
                 <button onClick={() => setStep('files')}
-                  className="text-sm bg-zinc-100 px-3 py-1.5 rounded">파일 다시 선택</button>
+                  className="text-sm bg-zinc-100 px-3 py-1.5 rounded">{t("create.retry")}</button>
               </div>
             )}
             <div className="flex justify-between mt-4">
-              <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">← 이전</button>
+              <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">← {t("common.back")}</button>
               <button onClick={goNext}
                 className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800">
                 분석 건너뛰기 →
@@ -813,8 +870,8 @@ export function CreatePage() {
         {/* Step 2: 옵션 */}
         {step === 'options' && (
           <motion.div key="options" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-            <h2 className="text-lg font-bold mb-1">CMS 타입 선택</h2>
-            <p className="text-sm text-zinc-500 mb-4">파일 보호 옵션을 선택하세요.</p>
+            <h2 className="text-lg font-bold mb-1">{t("create.cmsType")}</h2>
+            <p className="text-sm text-zinc-500 mb-4">{t("create.cmsTypeDesc")}</p>
 
             {anonReports.length > 0 && (
               <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 mb-3">
@@ -857,7 +914,7 @@ export function CreatePage() {
 
             {/* 암호 모드 선택 (최상단) */}
             <div className="bg-white border border-zinc-200 rounded-xl p-4 mb-3 space-y-2">
-              <label className="text-xs font-medium text-zinc-700">암호 알고리즘</label>
+              <label className="text-xs font-medium text-zinc-700">{t("create.cryptoAlgo")}</label>
               <div className="grid grid-cols-3 gap-2">
                 {([
                   { value: 'classic', label: 'Classic', desc: 'ECDSA / ECDH', color: 'zinc' },
@@ -886,16 +943,33 @@ export function CreatePage() {
             </div>
 
             <div className="space-y-3">
-              <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title="압축" desc="ZLIB/ZIP 압축" />
-              <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title="서명 (Signed)" desc={cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명' : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명' : 'ECDSA P-256 전자서명'} disabled={!hasAnyIdentity} />
-              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#175DDC]" />} title="공개키 암호화 (Enveloped)" desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
-              <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title="비밀번호 암호화 (Encrypted)" desc="AES-256-GCM 비밀번호" />
+              <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title={t("create.compress")} desc={t("create.compressDesc")} />
+              <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title={t("create.signed")} desc={cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명' : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명' : 'ECDSA P-256 전자서명'} disabled={!hasAnyIdentity} />
+              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#175DDC]" />} title={t("create.enveloped")} desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
+              <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title={t("create.encrypted")} desc={t("create.passwordAesGcm")} />
+              {(() => {
+                const convertibleCount = files.filter(f => isConvertibleToPdf(f.name)).length;
+                return (
+                  <OptionCard
+                    checked={pdfConvertEnabled}
+                    onChange={() => setPdfConvertEnabled(prev => !prev)}
+                    icon={<FileText className="w-5 h-5 text-violet-600" />}
+                    title={t("create.pdfWatermark")}
+                    desc={
+                      convertibleCount === 0
+                        ? '변환 대상 파일 없음 (xlsx/pptx/이미지/PDF 등은 변환 X)'
+                        : `${convertibleCount}개 파일을 PDF 로 변환 — 등급·카테고리 헤더·푸터 워터마크 모든 페이지`
+                    }
+                    disabled={convertibleCount === 0}
+                  />
+                );
+              })()}
             </div>
 
             {/* 서명 인증서 선택 */}
             {(options.sign || options.enveloped) && identities.length > 0 && (
               <div className="bg-white border border-zinc-200 rounded-xl p-4 mt-3 space-y-2">
-                <label className="text-xs font-medium text-zinc-700">서명에 사용할 인증서</label>
+                <label className="text-xs font-medium text-zinc-700">{t("create.certForSigning")}</label>
                 <div className="space-y-1.5">
                   {identities.map(id => {
                     const isSelected = (selectedIdentityId || activeIdentityId || identities[0]?.id) === id.id;
@@ -943,13 +1017,13 @@ export function CreatePage() {
                     placeholder={hasPinRegistered ? 'PIN 또는 비밀번호' : '키 비밀번호'}
                     className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                     autoFocus onKeyDown={e => e.key === 'Enter' && goNext()} />
-                  <button onClick={goNext} className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm">확인</button>
+                  <button onClick={goNext} className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm">{t("common.confirm")}</button>
                 </div>
               </div>
             )}
 
             <div className="flex justify-between mt-6">
-              <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">이전</button>
+              <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">{t("common.back")}</button>
               <button onClick={goNext} className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium">
                 {(options.encrypted || options.enveloped) ? '다음' : '생성'} <ChevronRight className="w-4 h-4" />
               </button>
@@ -962,20 +1036,20 @@ export function CreatePage() {
           <motion.div key="details" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
             {options.encrypted ? (
               <>
-                <h2 className="text-lg font-bold mb-1">비밀번호 설정</h2>
-                <p className="text-sm text-zinc-500 mb-4">수신자에게 비밀번호를 별도 전달하세요.</p>
+                <h2 className="text-lg font-bold mb-1">{t("create.passwordSetup")}</h2>
+                <p className="text-sm text-zinc-500 mb-4">{t("create.passwordSetupDesc")}</p>
                 <div className="space-y-3 max-w-sm">
-                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="비밀번호 (4자 이상)"
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={t("create.passwordMin4")}
                     className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" autoFocus />
-                  <input type="password" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} placeholder="비밀번호 확인"
+                  <input type="password" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} placeholder={t("create.passwordConfirm")}
                     className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                     onKeyDown={e => e.key === 'Enter' && goNext()} />
                 </div>
               </>
             ) : options.enveloped ? (
               <>
-                <h2 className="text-lg font-bold mb-1">수신자 선택</h2>
-                <p className="text-sm text-zinc-500 mb-4">암호화된 파일을 열 수 있는 수신자를 선택하세요. 본인도 선택해야 복호화 가능합니다.</p>
+                <h2 className="text-lg font-bold mb-1">{t("create.recipientSelect")}</h2>
+                <p className="text-sm text-zinc-500 mb-4">{t("create.recipientSelectDesc")}</p>
 
                 {recipientEntries.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
@@ -1006,7 +1080,7 @@ export function CreatePage() {
                             <div className="text-[10px] font-mono text-zinc-400 truncate">0x{entry.fingerprint}</div>
                           </div>
                           {entry.type === 'local' && (
-                            <span className="text-[9px] bg-[#175DDC]/10 text-[#175DDC] px-2 py-0.5 rounded-full font-medium shrink-0">나</span>
+                            <span className="text-[9px] bg-[#175DDC]/10 text-[#175DDC] px-2 py-0.5 rounded-full font-medium shrink-0">{t("create.me")}</span>
                           )}
                         </button>
                       );
@@ -1017,7 +1091,7 @@ export function CreatePage() {
               </>
             ) : null}
             <div className="flex justify-between mt-6">
-              <button onClick={() => setStep('options')} className="text-sm text-zinc-500">이전</button>
+              <button onClick={() => setStep('options')} className="text-sm text-zinc-500">{t("common.back")}</button>
               <button onClick={goNext} className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium">
                 생성 <ChevronRight className="w-4 h-4" />
               </button>
@@ -1039,19 +1113,19 @@ export function CreatePage() {
             <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
               <Check className="w-8 h-8 text-green-600" />
             </div>
-            <h2 className="text-lg font-bold mb-1">생성 완료</h2>
+            <h2 className="text-lg font-bold mb-1">{t("create.generationDone")}</h2>
             <p className="text-sm text-zinc-500 mb-6">{resultInfo}</p>
 
             <div className="bg-white border border-zinc-200 rounded-xl p-4 max-w-sm mx-auto text-sm space-y-1.5 text-left mb-6">
               <div className="flex justify-between items-center">
-                <span className="text-zinc-500">파일명</span>
+                <span className="text-zinc-500">{t("create.filename")}</span>
                 <span className="font-mono text-xs">{resultName}</span>
               </div>
-              <div className="flex justify-between"><span className="text-zinc-500">크기</span><span>{formatSize(resultData.length)}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">파일 수</span><span>{files.length}개</span></div>
+              <div className="flex justify-between"><span className="text-zinc-500">{t("create.size")}</span><span>{formatSize(resultData.length)}</span></div>
+              <div className="flex justify-between"><span className="text-zinc-500">{t("create.fileCount")}</span><span>{files.length}개</span></div>
               {resultAlgos.length > 0 && (
                 <div className="pt-1.5 border-t border-zinc-100">
-                  <span className="text-zinc-500 text-xs">적용 알고리즘</span>
+                  <span className="text-zinc-500 text-xs">{t("create.appliedAlgo")}</span>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {resultAlgos.map((a, i) => (
                       <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
@@ -1079,9 +1153,9 @@ export function CreatePage() {
                     📄 봉투 내용 미리보기 — 봉투 안에 들어간 텍스트 확인
                   </div>
                   <div className="text-[11px] text-zinc-500 mb-2 flex flex-wrap gap-3">
-                    <span>입력 <b className="text-zinc-700">{inputLen.toLocaleString()}</b>자</span>
+                    <span>{t('create.inputLen')} <b className="text-zinc-700">{inputLen.toLocaleString()}</b>{t('create.chars')}</span>
                     <span>→</span>
-                    <span>봉투 <b className="text-zinc-700">{envLen.toLocaleString()}</b>자</span>
+                    <span>{t('create.envLen')} <b className="text-zinc-700">{envLen.toLocaleString()}</b>{t('create.chars')}</span>
                     {diff !== 0 && (
                       <span className={diff < 0 ? 'text-emerald-700' : 'text-amber-700'}>
                         {diff > 0 ? '+' : ''}{diff.toLocaleString()}자
@@ -1110,7 +1184,7 @@ export function CreatePage() {
               <button onClick={handleDownload} className="flex items-center gap-2 bg-[#175DDC] text-white px-6 py-2.5 rounded-xl text-sm font-medium">
                 <Download className="w-4 h-4" /> 다운로드
               </button>
-              <button onClick={resetAll} className="text-sm text-zinc-500 hover:text-zinc-800 px-4 py-2.5">새로 만들기</button>
+              <button onClick={resetAll} className="text-sm text-zinc-500 hover:text-zinc-800 px-4 py-2.5">{t('create.newCreate')}</button>
             </div>
           </motion.div>
         )}

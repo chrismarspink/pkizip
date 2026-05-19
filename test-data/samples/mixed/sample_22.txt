@@ -1,0 +1,8 @@
+[명함 일괄 / Business Card Batch]
+1. 강민서 | (주)다온솔루션 | 010-1316-7309 | asmith44@globex.example
+2. 森 陽翔 | 株式会社未来情報 | 090-5944-8074 | ohara40@globex.example
+3. Thomas Gonzalez | Wayne Enterprises | +1 (540) 949-7370 | thomas.gonzalez24@corp.example.org
+4. 심예준 | 한국정보보호원 | 010-7675-7605
+5. 渡辺 結菜 | サイバーシールド | 090-9262-2304
+6. Nancy Johnson | Tyrell Corporation | +1 (591) 662-7910
+교환일 / Exchanged: 2026-04-18

@@ -1,0 +1,10 @@
+[국제 채용 / International Hiring]
+지원자 (응시언어: 다국어):
+  Name: John White / 한국명: 양주원 / 日本名: 青木 颯太
+  Phone (US): +1 (331) 529-2719
+  電話 (JP): 070-3509-6003
+  전화 (KR): 010-6491-4758
+  Email: john.white40@globex.example
+  Resident in: 〒671-4100 東京都港区恵比寿5-11-10
+  Previously at: Tyrell Corporation, ネクストイノベーション, 주식회사 한빛테크
+  Application date: 2023-11-09

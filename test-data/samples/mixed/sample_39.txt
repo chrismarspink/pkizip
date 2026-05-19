@@ -1,0 +1,12 @@
+[국제 회의록 / International Meeting Minutes]
+일시 / Date: 2023-09-02
+참석 / Attendees:
+  - 韓国: 허선우 (Director, 코어시스템즈) — 010-9147-4331
+  - 日本: 中村 ゆい (部長, 株式会社プロジェクトオメガ) — 080-9097-6964
+  - USA: Ruth Johnson (VP, Nakatomi Trading Co.) — +1 (788) 330-6279
+
+논의 / Discussion:
+  - ProjectAlpha 글로벌 확장
+  - プロジェクト雷鳥 との連携
+  - Operation Helios integration
+서버 IP: 39.254.175.135 / API: https://api.example.org/api/v2/resource/201

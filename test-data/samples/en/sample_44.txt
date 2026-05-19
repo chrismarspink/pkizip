@@ -1,0 +1,10 @@
+[Resume]
+Jessica Johnson
+1177 Main St, Portland, CA 89045
++1 (256) 358-9837 / jessica.johnson62@globex.example
+DOB: 2021-06-06
+Passport: D89376238
+
+Experience:
+  - Stark Industries (2024-03-21 – present)
+  - Cyberdyne Systems (2021-07-14 – 2020-09-26)

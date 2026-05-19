@@ -1,19 +1,20 @@
 import { useLocation, Link } from 'react-router-dom';
 import { Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch, FlaskConical } from 'lucide-react';
-
-const TABS = [
-  { path: '/', icon: Home, label: '홈' },
-  { path: '/create', icon: FilePlus, label: '생성' },
-  { path: '/files', icon: FileArchive, label: '파일' },
-  { path: '/explorer', icon: FolderSearch, label: '내 파일' },
-  { path: '/certs', icon: ShieldCheck, label: '인증서' },
-  { path: '/contacts', icon: BookUser, label: '주소록' },
-  { path: '/settings', icon: Settings, label: '설정' },
-  { path: '/policies', icon: FlaskConical, label: '정책-실험' },
-];
+import { useTranslation } from 'react-i18next';
 
 export function BottomTabBar() {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
+  const TABS = [
+    { path: '/', icon: Home, label: t('nav.home') },
+    { path: '/create', icon: FilePlus, label: t('nav.create') },
+    { path: '/files', icon: FileArchive, label: t('nav.files') },
+    { path: '/explorer', icon: FolderSearch, label: t('nav.explorer') },
+    { path: '/certs', icon: ShieldCheck, label: t('nav.certificates') },
+    { path: '/contacts', icon: BookUser, label: t('nav.contacts') },
+    { path: '/settings', icon: Settings, label: t('nav.settings') },
+    { path: '/policies', icon: FlaskConical, label: t('nav.policies') },
+  ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-zinc-200 pb-[env(safe-area-inset-bottom)]">

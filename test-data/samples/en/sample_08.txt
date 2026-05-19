@@ -1,0 +1,10 @@
+[Resume]
+William Jones
+645 Main Blvd, New York, NY 54376
++1 (346) 821-6255 / william.jones61@globex.example
+DOB: 2022-05-27
+Passport: C72535241
+
+Experience:
+  - Soylent Industries (2024-05-06 – present)
+  - Stark Industries (2019-04-06 – 2022-10-12)

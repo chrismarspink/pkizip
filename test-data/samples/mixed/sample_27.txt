@@ -1,0 +1,12 @@
+[국제 회의록 / International Meeting Minutes]
+일시 / Date: 2025-12-25
+참석 / Attendees:
+  - 韓国: 문서연 (Director, 리얼타임에이아이) — 010-7154-5809
+  - 日本: 青木 陽翔 (部長, 株式会社未来情報) — 070-8413-1082
+  - USA: Susan Smith (VP, Aperture Science) — +1 (823) 735-3612
+
+논의 / Discussion:
+  - ProjectAlpha 글로벌 확장
+  - 新規事業 桜花 との連携
+  - Project Atlas integration
+서버 IP: 189.58.156.12 / API: https://api.example.org/api/v4/resource/214

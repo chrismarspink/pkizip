@@ -1,0 +1,12 @@
+[고객 컴플레인 / Complaint #735141]
+Original report (English):
+  Customer Barbara Martin (SSN 346-88-5084, barbara.martin76@example.com) experienced data
+  exposure during cross-border sync.
+
+韓国側 follow-up:
+  담당 오지아, 010-8395-1775, 영향고객 주민번호 790609-3481519.
+
+日本側 confirmation:
+  対応 池田 心春, 090-1066-5398, 影響顧客のマイナンバー 2511 4976 8147.
+
+Processed: 2021-12-27

@@ -1,0 +1,9 @@
+[Security Incident Report #2495]
+Reporter: Andrew Lopez (+1 (396) 427-4881)
+Occurred: 2020-05-07
+Suspected leaked credentials:
+  - AWS Access Key: ASIAQWERTYUIOPASDFGH
+  - API_KEY = demo_FAKE_3xR8tYpHzLkMnVbQwErTyUiOpAsDfGhJkL
+Affected system: https://intranet.example.net/api/v4/resource/858
+Server IP: 124.159.203.208
+Owner: Anthony Anderson (anthony.anderson7@acme.test)

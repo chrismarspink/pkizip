@@ -1,0 +1,10 @@
+[보안 사고 (다국가) / Multi-Region Security Incident]
+Reporter: Lisa Thomas (+1 (970) 505-5471)
+영향 받은 지역:
+  - KR — 남우진, 주민번호 380308-1636849 누출 의심
+  - JP — 前田 翔, マイナンバー 4324 9177 4952 漏洩疑い
+  - US — Sharon Miller, SSN 322-36-1737 compromised
+
+AWS key rotated: AKIAIOSFODNN7EXAMPLE
+API key revoked: sk_test_4eC39HqLyjWDarjtT1zdp7dcabcdef1234567890
+Date: 2018-08-26

@@ -1,0 +1,14 @@
+[국제 결제 처리 로그 / International Payment Log]
+TXN-626654
+Buyer: 정서준 (넥스트브릿지), KRW account 110-617-745051
+Card on file: 3782-3606-8075-5323
+Email: bkim67@example.net
+Phone: 010-2357-7034
+
+Seller: デジタルブリッジ合同会社 (渡辺 太郎)
+銀行口座: 三菱UFJ銀行 渋谷支店 当座 7285775
+連絡先: 05-7625-9055
+
+Gateway: Stark Industries, IP 146.128.143.230, URL https://vpn.corp.example/api/v2/resource/532
+Reviewer: Charles Johnson (+1 (795) 807-6043)
+Settlement date: 2022-12-04

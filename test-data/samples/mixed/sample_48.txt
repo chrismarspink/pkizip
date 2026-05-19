@@ -1,0 +1,14 @@
+[국제 결제 처리 로그 / International Payment Log]
+TXN-845976
+Buyer: 서서윤 (코어시스템즈), KRW account 110-231-914715
+Card on file: 3782-8280-6374-1432
+Email: ipark33@example.net
+Phone: 010-4172-7818
+
+Seller: サイバーシールド (後藤 湊)
+銀行口座: みずほ銀行 梅田支店 普通 6153172
+連絡先: 04-4785-1726
+
+Gateway: Hooli Inc., IP 19.66.7.212, URL https://vpn.corp.example/api/v2/resource/118
+Reviewer: Michelle Thomas (+1 (355) 588-6850)
+Settlement date: 2020-09-23

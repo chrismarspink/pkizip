@@ -1,0 +1,10 @@
+[국제 채용 / International Hiring]
+지원자 (응시언어: 다국어):
+  Name: Patricia Lopez / 한국명: 홍수아 / 日本名: 加藤 ひなた
+  Phone (US): +1 (540) 437-6768
+  電話 (JP): 080-6268-9760
+  전화 (KR): 010-7481-8365
+  Email: patricia.lopez6@example.co.kr
+  Resident in: 〒313-8173 愛知県仙台市青葉区難波7-30-9
+  Previously at: Initech LLC, イノテック株式会社, 주식회사 한빛테크
+  Application date: 2022-03-27

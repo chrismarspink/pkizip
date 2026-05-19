@@ -1,0 +1,7 @@
+[글로벌 사용자 데이터 추출 결과 / Global User Export]
+Row 1: id=1001, name="박유진", rrn=120810-3731764, phone=010-8083-9808, country=KR
+Row 2: id=1002, name="森 翔", mynum="6213 5329 9339", phone=090-3155-7662, country=JP
+Row 3: id=1003, name="Michelle Wilson", ssn=881-16-5757, phone=+1 (718) 420-3496, country=US
+Row 4: id=1004, email=jdoe95@example.co.jp, country=KR
+Row 5: id=1005, email=htanaka4@example.com, country=JP
+Generated: 2019-11-20

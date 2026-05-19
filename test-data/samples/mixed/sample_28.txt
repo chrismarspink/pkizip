@@ -1,0 +1,10 @@
+[보안 사고 (다국가) / Multi-Region Security Incident]
+Reporter: Sandra Thompson (+1 (938) 705-6197)
+영향 받은 지역:
+  - KR — 임지후, 주민번호 340423-4292421 누출 의심
+  - JP — 近藤 あおい, マイナンバー 2677 2700 8735 漏洩疑い
+  - US — Barbara Hernandez, SSN 309-58-9530 compromised
+
+AWS key rotated: AKIAIOSFODNN7EXAMPLE
+API key revoked: api_key=secret_aZb9cYx8wVu7tS6rQpOnMlKjIhG5fEdC4bA3
+Date: 2026-07-28

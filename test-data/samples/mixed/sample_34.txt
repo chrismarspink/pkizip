@@ -1,0 +1,8 @@
+[명함 일괄 / Business Card Batch]
+1. 강우진 | 주식회사 한빛테크 | 010-8264-8966 | kyamada69@globex.example
+2. 林 太郎 | アジア情報セキュリティ機構 | 070-3422-3036 | dlee65@acme.test
+3. Kenneth Perez | Initech LLC | +1 (759) 409-9009 | kenneth.perez64@corp.example.org
+4. 남준우 | 에이스데이터랩 | 010-5419-8161
+5. 後藤 結翔 | アジア情報セキュリティ機構 | 090-4818-6955
+6. Sandra Jackson | Cyberdyne Systems | +1 (427) 963-6552
+교환일 / Exchanged: 2018-06-06

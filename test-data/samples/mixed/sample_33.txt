@@ -1,0 +1,14 @@
+[다국가 임원 명단 / Multi-Region Exec Roster]
+🇰🇷 Korea — 리얼타임에이아이
+  CEO: 안민재, 010-6938-4387, lsato23@example.net
+  Address: 광주광역시 달서구 여의대로 171-77
+
+🇯🇵 Japan — 株式会社シナジーラボ
+  代表取締役: 前田 大翔, 090-9242-5078, bkim88@acme.test
+  住所: 長野県福岡市博多区梅田5-6-15
+
+🇺🇸 USA — Aperture Science
+  CFO: Elizabeth Davis, +1 (752) 643-5834, elizabeth.davis44@example.net
+  Address: 4424 Elm St, London, FL 30344
+
+VIP 만찬: 2021-01-24

@@ -41,6 +41,44 @@ const KR_PATTERNS: Pattern[] = [
   { entityType: 'KR_CORP_REG_NUMBER', regex: /\b\d{6}-\d{7}\b/g, score: 0.85 },
 ];
 
+// ─────────────────────────────────────────────
+// 일본 PII 정규식 (HE-TEST custom_patterns.yaml JP 부분 포팅)
+// マイナンバー(個人番号) · 携帯/固定 · 郵便番号 · 旅券 · 運転免許 · 法人番号 · 銀行口座 · 住所
+// ─────────────────────────────────────────────
+const JP_PATTERNS: Pattern[] = [
+  // マイナンバー — 4-4-4 그룹 표기. 12자리 packed 패턴(JP_DRIVERS_LICENSE 와 충돌)은 별도 처리.
+  { entityType: 'JP_MY_NUMBER',
+    regex: /\b\d{4}[\s-]\d{4}[\s-]\d{4}\b/g, score: 0.85 },
+  // 携帯 (070/080/090) + 固定 (0X-XXXX-XXXX)
+  { entityType: 'JP_PHONE',
+    regex: /\b0[789]0[-.\s]?\d{4}[-.\s]?\d{4}\b/g, score: 0.85 },
+  { entityType: 'JP_PHONE',
+    regex: /\b0\d{1,3}[-.\s]?\d{2,4}[-.\s]?\d{4}\b/g, score: 0.7 },
+  // 郵便番号 〒XXX-XXXX
+  { entityType: 'JP_POSTAL_CODE',
+    regex: /〒\s*\d{3}[-]?\d{4}/g, score: 0.95 },
+  // 旅券 — 2글자 영문 + 7자리 숫자 (KR_PASSPORT MOSGRD 와 충돌 방지 위해 KR 패턴이 먼저 매치되면 dedup)
+  { entityType: 'JP_PASSPORT',
+    regex: /\b[A-Z]{2}\d{7}\b/g, score: 0.7 },
+  // 運転免許証番号 (12자리, 公安委員会発行) — context 의존도 높아 점수 낮음
+  { entityType: 'JP_DRIVERS_LICENSE',
+    regex: /\b\d{12}\b/g, score: 0.4 },
+  // 法人番号 (国税庁, 13자리)
+  { entityType: 'JP_CORPORATE_NUMBER',
+    regex: /\b\d{13}\b/g, score: 0.5 },
+  // 銀行口座 — 普通/当座/貯蓄/定期 + 6-8자리
+  { entityType: 'JP_BANK_ACCOUNT',
+    regex: /(?:普通|当座|貯蓄|定期)\s*\d{6,8}/g, score: 0.8 },
+  // 住所 — 都道府県 + 市/区/郡 + 본문 (긴 형식)
+  { entityType: 'JP_ADDRESS',
+    regex: /(?:東京都|京都府|大阪府|北海道|(?:[一-龥]{2,3})県)[一-龥ぁ-んァ-ヶー\s\d-]+?(?:町|村|丁目|番地|号|\d)/g,
+    score: 0.8 },
+  // 住所 — loose (都道府県만 명시)
+  { entityType: 'JP_ADDRESS',
+    regex: /(?:東京都|京都府|大阪府|北海道|(?:[一-龥]{2,3})県)[一-龥ぁ-んァ-ヶー\s\d-]+(?:市|区|郡)/g,
+    score: 0.6 },
+];
+
 const COMMON_PATTERNS: Pattern[] = [
   { entityType: 'CREDIT_CARD',     regex: /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g, score: 0.95,
     validate: validateLuhn },
@@ -119,6 +157,7 @@ function validateLuhn(text: string): boolean {
 
 export interface DetectOptions {
   includeKr?: boolean;
+  includeJp?: boolean;
   includeCommon?: boolean;
   includeDenyList?: boolean;
   customPatterns?: Pattern[];
@@ -132,6 +171,7 @@ export interface DetectOptions {
 export function detect(text: string, opts: DetectOptions = {}): Finding[] {
   const {
     includeKr = true,
+    includeJp = true,
     includeCommon = true,
     includeDenyList = true,
     customPatterns = [],
@@ -142,6 +182,7 @@ export function detect(text: string, opts: DetectOptions = {}): Finding[] {
   const findings: Finding[] = [];
   const patterns = [
     ...(includeKr ? KR_PATTERNS : []),
+    ...(includeJp ? JP_PATTERNS : []),
     ...(includeCommon ? COMMON_PATTERNS : []),
     ...customPatterns,
   ];
@@ -212,7 +253,7 @@ export function detect(text: string, opts: DetectOptions = {}): Finding[] {
  */
 export interface RecognizerInfo {
   entityType: string;
-  source: 'regex-kr' | 'regex-common' | 'denylist';
+  source: 'regex-kr' | 'regex-jp' | 'regex-common' | 'denylist';
   score: number;
   /** validate 함수가 있으면 후처리 검증 (Luhn / 가중합 / 옥텟 검증) */
   hasValidator: boolean;
@@ -224,6 +265,10 @@ export function listRecognizers(): RecognizerInfo[] {
   const out: RecognizerInfo[] = [];
   for (const p of KR_PATTERNS) {
     out.push({ entityType: p.entityType, source: 'regex-kr', score: p.score,
+               hasValidator: !!p.validate });
+  }
+  for (const p of JP_PATTERNS) {
+    out.push({ entityType: p.entityType, source: 'regex-jp', score: p.score,
                hasValidator: !!p.validate });
   }
   for (const p of COMMON_PATTERNS) {

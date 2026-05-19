@@ -1,0 +1,14 @@
+[다국가 임원 명단 / Multi-Region Exec Roster]
+🇰🇷 Korea — 스마트엔진
+  CEO: 신예린, 010-5910-6184, lsato93@acme.test
+  Address: 충청남도 천안시 광진구 잠실로 631-64
+
+🇯🇵 Japan — サイバーシールド
+  代表取締役: 斎藤 あおい, 090-2025-9128, syoo13@example.net
+  住所: 兵庫県広島市中区原宿6-6-16
+
+🇺🇸 USA — Initech LLC
+  CFO: Kenneth Clark, +1 (769) 806-9883, kenneth.clark33@example.co.kr
+  Address: 3709 Main Way, Philadelphia, CO 75279
+
+VIP 만찬: 2024-06-06

@@ -1,0 +1,8 @@
+[Time Off Request]
+Requester: Susan Miller
+Employee ID: EMP-65876
+SSN: 226-47-5891
+Period: 2026-03-23 to 2018-03-27
+Emergency contact: +1 (703) 837-4827
+Temporary address: 2925 Lake Blvd, Toronto, GA 88640
+Backup: Robert Perez, robert.perez80@example.com

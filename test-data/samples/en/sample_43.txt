@@ -1,0 +1,8 @@
+[Time Off Request]
+Requester: Donna Rodriguez
+Employee ID: EMP-22933
+SSN: 859-42-2818
+Period: 2022-08-18 to 2024-09-19
+Emergency contact: +1 (440) 584-9141
+Temporary address: 1231 Pine St, Melbourne, IL 49959
+Backup: Steven Davis, steven.davis45@example.net

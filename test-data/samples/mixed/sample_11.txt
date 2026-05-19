@@ -1,0 +1,7 @@
+[글로벌 사용자 데이터 추출 결과 / Global User Export]
+Row 1: id=1001, name="권수빈", rrn=220928-2753847, phone=010-5393-2325, country=KR
+Row 2: id=1002, name="渡辺 心春", mynum="7694 2508 1947", phone=090-7897-9079, country=JP
+Row 3: id=1003, name="Joshua Robinson", ssn=195-44-5145, phone=+1 (458) 399-4982, country=US
+Row 4: id=1004, email=rjeon33@example.net, country=KR
+Row 5: id=1005, email=kyamada51@acme.test, country=JP
+Generated: 2024-08-28

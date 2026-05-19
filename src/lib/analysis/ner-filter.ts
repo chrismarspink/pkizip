@@ -75,6 +75,74 @@ function isLikelyOrg(text: string): { ok: boolean; reason?: string } {
   return { ok: true };
 }
 
+// ─────────────────────────────────────────────
+// 일본어 휴리스틱 (HE-TEST _is_japanese_text 포팅)
+// 가나(히라가나·카타카나) OR (한자 + 한글 부재) → 일본어
+// ─────────────────────────────────────────────
+const JP_PARTICLE_SUFFIXES = [
+  // 助詞
+  'は','が','を','に','へ','で','と','の','も','や','か',
+  'から','まで','より','など','ばかり','だけ','しか','こそ',
+  // 用言活用
+  'です','ます','した','する','ました','ません','だった',
+  'ている','ています','なる','なって','ない','ある',
+];
+
+const JP_META_PREFIXES = [
+  'これ','それ','あれ','ここ','そこ','あそこ','どこ',
+  '今日','明日','昨日','今年','去年','来年',
+  '会社','部署','営業','経理','総務','人事','企画',
+  '確認','提出','発表','会議','議事録','資料','報告',
+  '管理','運営','検査','検討','評価','実施','対応',
+];
+
+// 일본 행정구역 접미사 — LOCATION 긍정 신호
+const JP_LOC_ADMIN_SUFFIX = ['県','府','都','道','市','区','町','村','郡','丁目','番地','号','駅','空港','港'];
+
+function isJapaneseText(s: string): boolean {
+  if (!s) return false;
+  // 히라가나 U+3040-309F · 카타카나 U+30A0-30FF
+  const hasKana = /[぀-ゟ゠-ヿ]/.test(s);
+  if (hasKana) return true;
+  // 한글 부재 + 한자 존재 → 일본어 (현대 한국어는 한자 단독 드묾)
+  const hasHangul = /[가-힯]/.test(s);
+  const hasKanji  = /[一-鿿]/.test(s);
+  return hasKanji && !hasHangul;
+}
+
+function isLikelyJpPerson(text: string): { ok: boolean; reason?: string } {
+  const t = text.trim();
+  if (t.length < 2)                            return { ok: false, reason: 'too_short' };
+  if (t.length > 8)                            return { ok: false, reason: 'too_long_for_person' };
+  if (startsWithAny(t, JP_META_PREFIXES))      return { ok: false, reason: 'jp_meta_prefix' };
+  if (endsWithAny(t, JP_PARTICLE_SUFFIXES))    return { ok: false, reason: 'jp_particle_ending' };
+  // 모두 히라가나 = 어휘/조사 가능성 高
+  if (/^[぀-ゟ\s]+$/.test(t))          return { ok: false, reason: 'jp_all_hiragana' };
+  return { ok: true };
+}
+
+function isLikelyJpLocation(text: string): { ok: boolean; reason?: string } {
+  const t = text.trim();
+  if (t.length < 2)                            return { ok: false, reason: 'too_short' };
+  if (t.length > 16)                           return { ok: false, reason: 'too_long_for_location' };
+  if (endsWithAny(t, JP_PARTICLE_SUFFIXES))    return { ok: false, reason: 'jp_particle_ending' };
+  // 행정구역 접미사 → 강한 통과
+  if (JP_LOC_ADMIN_SUFFIX.some(suf => t.endsWith(suf))) return { ok: true };
+  // 한자 2-4자 단독 (예: 渋谷, 東京) — 일반 지명 통과
+  if (t.length >= 2 && t.length <= 4 && /^[一-鿿]+$/.test(t)) return { ok: true };
+  return { ok: false, reason: 'jp_no_admin_suffix' };
+}
+
+function isLikelyJpOrg(text: string): { ok: boolean; reason?: string } {
+  const t = text.trim();
+  if (t.length < 2)                            return { ok: false, reason: 'too_short' };
+  if (t.length > 20)                           return { ok: false, reason: 'too_long_for_org' };
+  if (endsWithAny(t, JP_PARTICLE_SUFFIXES))    return { ok: false, reason: 'jp_particle_ending' };
+  // 株式会社/合同会社 등 명시 → 강한 통과
+  if (/(株式会社|合同会社|有限会社|社団法人|財団法人|Inc|Corp|Ltd)/.test(t)) return { ok: true };
+  return { ok: true };
+}
+
 export interface FilterResult {
   kept: Finding[];
   dropped: Array<Finding & { filterReason: string }>;
@@ -96,10 +164,16 @@ export function filterNerFindings(findings: Finding[]): FilterResult {
       continue;
     }
 
+    // 일본어 텍스트면 일본어 룰, 아니면 한국어 룰 (기본)
+    const isJp = isJapaneseText(f.text);
     let result: { ok: boolean; reason?: string };
-    if (f.entityType === 'PERSON')         result = isLikelyKrPerson(f.text);
-    else if (f.entityType === 'LOCATION')  result = isLikelyKrLocation(f.text);
-    else                                    result = isLikelyOrg(f.text);
+    if (f.entityType === 'PERSON') {
+      result = isJp ? isLikelyJpPerson(f.text) : isLikelyKrPerson(f.text);
+    } else if (f.entityType === 'LOCATION') {
+      result = isJp ? isLikelyJpLocation(f.text) : isLikelyKrLocation(f.text);
+    } else {
+      result = isJp ? isLikelyJpOrg(f.text) : isLikelyOrg(f.text);
+    }
 
     if (result.ok) kept.push(f);
     else dropped.push({ ...f, filterReason: result.reason || 'unknown' });

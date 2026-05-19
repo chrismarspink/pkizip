@@ -1,0 +1,7 @@
+[글로벌 사용자 데이터 추출 결과 / Global User Export]
+Row 1: id=1001, name="노연우", rrn=430615-4688874, phone=010-9707-7514, country=KR
+Row 2: id=1002, name="山田 陽斗", mynum="2805 4080 8122", phone=070-1632-7732, country=JP
+Row 3: id=1003, name="Joseph Gonzalez", ssn=743-87-3553, phone=+1 (539) 615-1200, country=US
+Row 4: id=1004, email=nyoon65@corp.example.org, country=KR
+Row 5: id=1005, email=qpark5@example.net, country=JP
+Generated: 2023-09-27

@@ -1,0 +1,14 @@
+[다국가 임원 명단 / Multi-Region Exec Roster]
+🇰🇷 Korea — 에이스데이터랩
+  CEO: 남서현, 010-2747-8639, bkim39@globex.example
+  Address: 경기도 수원시 유성구 분당내곡로 583-12
+
+🇯🇵 Japan — 合同会社グリーンテック
+  代表取締役: 鈴木 莉子, 080-5292-1398, syoo62@acme.test
+  住所: 広島県大阪市中央区丸の内9-22-11
+
+🇺🇸 USA — Nakatomi Trading Co.
+  CFO: Barbara Johnson, +1 (227) 774-7043, barbara.johnson82@corp.example.org
+  Address: 7878 Pine St, Dallas, FL 77401
+
+VIP 만찬: 2023-08-14

@@ -1,0 +1,10 @@
+[Resume]
+Jessica Martinez
+8224 Main Rd, Vancouver, NY 96671
++1 (618) 344-1061 / jessica.martinez79@globex.example
+DOB: 2022-01-10
+Passport: A18738610
+
+Experience:
+  - Aperture Science (2020-07-17 – present)
+  - Wayne Enterprises (2024-01-06 – 2018-05-26)

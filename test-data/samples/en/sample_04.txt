@@ -1,0 +1,9 @@
+[Security Incident Report #5798]
+Reporter: Michael Gonzalez (+1 (640) 366-2471)
+Occurred: 2021-05-02
+Suspected leaked credentials:
+  - AWS Access Key: ASIAQWERTYUIOPASDFGH
+  - API_KEY = demo_FAKE_3xR8tYpHzLkMnVbQwErTyUiOpAsDfGhJkL
+Affected system: https://api.example.org/api/v4/resource/961
+Server IP: 155.246.80.173
+Owner: Helen Anderson (helen.anderson99@globex.example)

@@ -1,0 +1,9 @@
+[HR File / Restricted]
+Employee ID: EMP-88675
+Name: Helen Wilson
+Last 4 of SSN: 1119
+Company: Globex Industries
+Address: 8857 Oak St, Sydney, OH 55359
+Phone: +1 (454) 551-2315
+Direct deposit: routing #713545027, acct #3640215
+Start date: 2026-09-25

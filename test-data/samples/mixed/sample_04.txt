@@ -1,0 +1,10 @@
+[보안 사고 (다국가) / Multi-Region Security Incident]
+Reporter: Jessica Robinson (+1 (265) 914-3822)
+영향 받은 지역:
+  - KR — 임윤서, 주민번호 010420-1509632 누출 의심
+  - JP — 渡辺 凛, マイナンバー 1743 1623 9224 漏洩疑い
+  - US — Sandra Clark, SSN 548-89-3874 compromised
+
+AWS key rotated: AKIAZXCVBNMASDFGHJKL
+API key revoked: demo_FAKE_3xR8tYpHzLkMnVbQwErTyUiOpAsDfGhJkL
+Date: 2019-11-27

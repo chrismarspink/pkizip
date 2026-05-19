@@ -67,6 +67,31 @@ export const DEFAULT_NEURAL: NeuralPrefs = {
   nerMinScore: 0.7,
 };
 
+/**
+ * 분류기/학습 관련 설정 (M3-M4 추가).
+ * Rule Mining · Drift Detection · Platt Calibration 토글.
+ */
+export interface ClassifierPrefs {
+  /** 한국어 전용 NER (ko-ner.ts) 활성 — 일반 neural-ner.ts 와 별도 옵트인 */
+  koNerEnabled: boolean;
+  /** Drift detection KL 임계값 — 초과 시 재학습 권장 알림 */
+  driftKlThreshold: number;
+  /** Platt calibration 적용 — false 면 raw confidence 사용 */
+  plattEnabled: boolean;
+  /** Rule mining 최소 등장 빈도 */
+  ruleMiningMinCount: number;
+  /** Per-stage 성능 측정 수집 여부 (IndexedDB 누적) */
+  perfCollect: boolean;
+}
+
+export const DEFAULT_CLASSIFIER: ClassifierPrefs = {
+  koNerEnabled: false,
+  driftKlThreshold: 0.3,
+  plattEnabled: false,
+  ruleMiningMinCount: 3,
+  perfCollect: true,
+};
+
 export interface ExplorerPrefs {
   layout: 'grid' | 'list';
   /** 카드 크기 */
@@ -188,9 +213,17 @@ export const prefs = {
       return cur;
     },
   },
+  classifier: {
+    get(): ClassifierPrefs { return load('classifier', DEFAULT_CLASSIFIER); },
+    set(p: Partial<ClassifierPrefs>): ClassifierPrefs {
+      const cur = { ...this.get(), ...p };
+      save('classifier', cur);
+      return cur;
+    },
+  },
   /** 모든 디폴트 초기화 (디버그용) */
   resetAll(): void {
-    for (const k of ['workflow', 'anonymization', 'policy', 'explorer']) {
+    for (const k of ['workflow', 'anonymization', 'policy', 'explorer', 'neural', 'classifier']) {
       try { localStorage.removeItem(KEY_PREFIX + k); } catch { /* ignore */ }
     }
   },

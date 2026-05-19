@@ -1,0 +1,8 @@
+[Time Off Request]
+Requester: Paul Taylor
+Employee ID: EMP-79868
+SSN: 603-36-1886
+Period: 2022-03-15 to 2024-02-09
+Emergency contact: +1 (966) 833-6001
+Temporary address: 6490 Oak Rd, Manchester, FL 91171
+Backup: Mary Thomas, mary.thomas76@example.co.jp

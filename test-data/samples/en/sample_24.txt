@@ -1,0 +1,9 @@
+[Customer Complaint Ticket]
+Ticket #: CC-838593
+Customer: Sarah Lee (+1 (829) 761-7876)
+Email: sarah.lee9@example.co.jp
+Address: 3043 Main Blvd, Austin, IL 67384
+SSN on file: 621-54-9699
+Refund card: 3782-2292-8873-9707
+Owner: Matthew Martin
+Processed: 2019-06-21

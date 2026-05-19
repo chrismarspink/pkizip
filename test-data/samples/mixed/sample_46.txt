@@ -1,0 +1,8 @@
+[명함 일괄 / Business Card Batch]
+1. 권준서 | 스마트엔진 | 010-4722-4864 | lsato55@acme.test
+2. 井上 陽斗 | 合同会社グリーンテック | 070-8497-5623 | ohara8@corp.example.org
+3. Andrew White | Acme Corporation | +1 (796) 617-8829 | andrew.white57@globex.example
+4. 문건우 | 한국정보보호원 | 010-8617-3328
+5. 加藤 悠真 | 合同会社グリーンテック | 090-8711-9459
+6. Helen Lee | Acme Corporation | +1 (599) 259-5732
+교환일 / Exchanged: 2019-03-03

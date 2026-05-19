@@ -11,6 +11,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Shield, ChevronDown, Star, Lock, Wifi, WifiOff, Package, Download,
   HardDrive, Cpu, Check, AlertCircle, Loader2, RefreshCw, X,
@@ -44,6 +45,7 @@ export function HeaderStatus() {
 // ─────────────────────────────────────────────
 
 function ActiveIdentityBadge() {
+  const { t } = useTranslation();
   const { identities, activeIdentityId, isKeyLoaded } = useAppStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -73,13 +75,13 @@ function ActiveIdentityBadge() {
         {!active ? (
           <>
             <Shield className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>인증서 없음</span>
+            <span>{t('header.noCertificate')}</span>
           </>
         ) : locked ? (
           <>
             <Lock className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="truncate">{active.name}</span>
-            <span className="text-[10px] opacity-80 flex-shrink-0">잠김</span>
+            <span className="text-[10px] opacity-80 flex-shrink-0">{t('header.locked')}</span>
           </>
         ) : (
           <>
@@ -94,14 +96,14 @@ function ActiveIdentityBadge() {
       {open && (
         <div className="absolute left-0 top-full mt-1 w-72 bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
           <div className="px-3 py-2 border-b text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-            활성 인증서
+            {t('header.activeCertificate')}
           </div>
           {identities.length === 0 ? (
             <div className="px-3 py-4 text-xs text-zinc-500">
-              등록된 인증서가 없습니다.
+              {t('header.noCertsRegistered')}
               <Link to="/certs" onClick={() => setOpen(false)}
                 className="block mt-1 text-blue-600 hover:underline">
-                인증서 페이지로 이동 →
+                {t('header.goToCerts')}
               </Link>
             </div>
           ) : (
@@ -130,7 +132,7 @@ function ActiveIdentityBadge() {
           )}
           <Link to="/certs" onClick={() => setOpen(false)}
             className="block px-3 py-2 text-center text-xs text-blue-600 hover:bg-blue-50 border-t border-zinc-200">
-            인증서 관리 →
+            {t('header.manageCerts')}
           </Link>
         </div>
       )}
@@ -143,6 +145,7 @@ function ActiveIdentityBadge() {
 // ─────────────────────────────────────────────
 
 function SystemStatus({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
   const [online, setOnline] = useState(navigator.onLine);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [storageMB, setStorageMB] = useState<number | null>(null);
@@ -174,7 +177,7 @@ function SystemStatus({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
-      <span title={online ? '온라인' : '오프라인 (PWA 캐시로 동작)'}>
+      <span title={online ? t('header.online') : t('header.offline')}>
         {online
           ? <Wifi className="w-3.5 h-3.5 text-emerald-600" />
           : <WifiOff className="w-3.5 h-3.5 text-amber-600" />}
@@ -188,16 +191,16 @@ function SystemStatus({ compact = false }: { compact?: boolean }) {
       {updateAvailable && (
         <button
           onClick={() => window.pkizipUpdate?.(true)}
-          title="새 버전 사용 가능 — 클릭하여 업데이트"
+          title={t('header.updateAvailable')}
           className={`inline-flex items-center gap-0.5 text-blue-600 hover:bg-blue-50 px-1 py-0.5 rounded animate-pulse ${
             compact ? '' : 'text-[10px]'
           }`}>
           <Download className="w-3 h-3" />
-          {!compact && <span className="text-[10px]">업데이트</span>}
+          {!compact && <span className="text-[10px]">{t('header.update')}</span>}
         </button>
       )}
       {!compact && storageMB !== null && (
-        <Link to="/settings" title={`IndexedDB + 캐시: ${storageMB}MB · 클릭 시 설정`}
+        <Link to="/settings" title={t('header.storageTitle', { mb: storageMB })}
           className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 px-1 py-0.5 rounded">
           <HardDrive className="w-3 h-3" /> {storageMB}MB
         </Link>
@@ -211,18 +214,19 @@ function SystemStatus({ compact = false }: { compact?: boolean }) {
 // ─────────────────────────────────────────────
 
 function PqcModeBadge({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
   const { pqcConfig } = useAppStore();
   const enabled = pqcConfig.kemEnabled || pqcConfig.dsaEnabled;
   const mode = pqcConfig.kemMode || pqcConfig.dsaMode || 'classic';
 
   const label = enabled
     ? mode === 'pqc-only' ? 'PQC Only'
-    : mode === 'hybrid' ? 'PQC 하이브리드'
+    : mode === 'hybrid' ? t('header.pqcHybrid')
     : `PQC ${mode}`
-    : '단순 (Classic)';
+    : t('header.pqcClassic');
 
   return (
-    <Link to="/settings" title={`현재 암호 모드: ${label} · 클릭 시 설정 변경`}
+    <Link to="/settings" title={t('header.pqcCurrent', { label })}
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border flex-shrink-0 transition ${
         enabled
           ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
@@ -239,6 +243,7 @@ function PqcModeBadge({ compact = false }: { compact?: boolean }) {
 // ─────────────────────────────────────────────
 
 function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [results, setResults] = useState<TsaHealthCache[]>([]);
@@ -295,7 +300,7 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
   return (
     <div ref={ref} className="relative flex-shrink-0">
       <button onClick={() => setOpen(s => !s)}
-        title={`TSA 서버 도달 ${reachable.length}/${results.length} · 클릭 시 상세`}
+        title={t('header.tsaReach', { ok: reachable.length, total: results.length })}
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition hover:opacity-80 ${color}`}>
         <Icon className={`w-3 h-3 ${spin ? 'animate-spin' : ''}`} />
         {!compact && <span className="text-[10px]">{label}</span>}
@@ -305,9 +310,9 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
         <div className="absolute right-0 top-full mt-1 w-[420px] bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
           <div className="px-3 py-2 border-b flex items-center justify-between bg-zinc-50">
             <div>
-              <div className="text-xs font-semibold text-zinc-700">TSA 서버 상태 (RFC 3161)</div>
+              <div className="text-xs font-semibold text-zinc-700">{t('header.tsaStatus')}</div>
               <div className="text-[10px] text-zinc-500 mt-0.5">
-                서명 시 우선순위순 시도 — 첫 응답 사용. 모두 실패 시 signingTime 폴백.
+                {t('header.tsaPolicy')}
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="p-0.5 hover:bg-zinc-200 rounded">
@@ -331,32 +336,32 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-semibold text-xs">{srv.name}</span>
-                        <span className="text-[10px] text-zinc-400">우선 {srv.priority}</span>
-                        {!srv.enabled && <span className="text-[10px] text-zinc-400">· 비활성</span>}
-                        {blacklisted && <span className="text-[10px] text-amber-600">· 일시 차단</span>}
-                        {mixedContent && <span className="text-[10px] text-zinc-500">· HTTP (확인 불가)</span>}
+                        <span className="text-[10px] text-zinc-400">{t('header.priority', { n: srv.priority })}</span>
+                        {!srv.enabled && <span className="text-[10px] text-zinc-400">{t('header.inactive')}</span>}
+                        {blacklisted && <span className="text-[10px] text-amber-600">{t('header.rateLimited')}</span>}
+                        {mixedContent && <span className="text-[10px] text-zinc-500">{t('header.httpOnly')}</span>}
                       </div>
                       <div className="text-[10px] text-zinc-500 font-mono break-all mt-0.5">
                         {srv.url}
                       </div>
                       <div className="text-[10px] mt-0.5">
                         {!r ? (
-                          <span className="text-zinc-400">미확인</span>
+                          <span className="text-zinc-400">{t('header.unknown')}</span>
                         ) : mixedContent ? (
                           <span className="text-zinc-500">
-                            HTTPS 페이지에서 HTTP 직접 호출 차단 (Mixed Content) — 실제 서명 시 Edge 프록시 경유로 동작
+                            {t('header.mixedContent')}
                           </span>
                         ) : ok ? (
                           <span className="text-emerald-700">
-                            응답 {r.responseMs.toFixed(0)}ms · 확인 {timeAgo(r.lastChecked)}
+                            {t('header.respondedMs', { ms: r.responseMs.toFixed(0), ago: timeAgoT(t, r.lastChecked) })}
                           </span>
                         ) : blacklisted ? (
                           <span className="text-amber-700">
-                            ~{timeAgo(r.blacklistedUntil!)} 까지 일시 차단 — 사용 안 함
+                            {t('header.blocked', { ago: timeAgoT(t, r.blacklistedUntil!) })}
                           </span>
                         ) : (
                           <span className="text-red-600">
-                            응답 없음 · 마지막 시도 {timeAgo(r.lastChecked)}
+                            {t('header.noResponse', { ago: timeAgoT(t, r.lastChecked) })}
                           </span>
                         )}
                       </div>
@@ -368,13 +373,13 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
           </div>
           <div className="px-3 py-2 border-t flex items-center justify-between bg-zinc-50 text-[10px]">
             <div className="text-zinc-500">
-              {lastCheck ? `최종 ${new Date(lastCheck).toLocaleTimeString()}` : '확인 전'}
-              {' · CORS 차단 시 Edge Function 프록시 경유'}
+              {lastCheck ? t('header.lastCheck', { time: new Date(lastCheck).toLocaleTimeString() }) : t('header.neverChecked')}
+              {t('header.edgeProxyNote')}
             </div>
             <button onClick={() => void runCheck()} disabled={checking}
               className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-zinc-300">
               <RefreshCw className={`w-3 h-3 ${checking ? 'animate-spin' : ''}`} />
-              {checking ? '확인 중' : '재확인'}
+              {checking ? t('header.checking') : t('header.recheck')}
             </button>
           </div>
         </div>
@@ -387,11 +392,12 @@ function isBlacklisted(r: TsaHealthCache): boolean {
   return !!r.blacklistedUntil && r.blacklistedUntil > Date.now();
 }
 
-function timeAgo(ts: number): string {
+type TFn = (key: string, opts?: Record<string, unknown>) => string;
+function timeAgoT(t: TFn, ts: number): string {
   const sec = Math.round((Date.now() - ts) / 1000);
-  if (sec < 60) return `${sec}초 전`;
+  if (sec < 60) return t('header.secondsAgo', { n: sec });
   const min = Math.round(sec / 60);
-  if (min < 60) return `${min}분 전`;
+  if (min < 60) return t('header.minutesAgo', { n: min });
   const hr = Math.round(min / 60);
-  return `${hr}시간 전`;
+  return t('header.hoursAgo', { n: hr });
 }

@@ -1,0 +1,9 @@
+[セキュリティ事故報告書 #8836]
+報告者: 田中 花子 (070-1359-9620)
+発生日時: 2022年11月3日
+漏洩疑いの認証情報:
+  - AWS Access Key: AKIAZXCVBNMASDFGHJKL
+  - API_KEY = demo_FAKE_3xR8tYpHzLkMnVbQwErTyUiOpAsDfGhJkL
+対象システム: https://api.example.org/api/v5/resource/295
+サーバーIP: 185.216.17.128
+即時対応責任者: 鈴木 悠真 (kyamada62@globex.example)

@@ -1,0 +1,9 @@
+[보안 사고 보고서 #6860]
+신고자: 장지호 (010-4703-5093)
+발생일시: 2018년 7월 10일
+유출 의심 자격증명:
+  - AWS Access Key: ASIAQWERTYUIOPASDFGH
+  - API_KEY = api_key=secret_aZb9cYx8wVu7tS6rQpOnMlKjIhG5fEdC4bA3
+대상 시스템: https://api.example.org/api/v5/resource/660
+서버 IP: 71.73.162.152
+즉시 조치 책임자: 신서준 (pkang90@example.net)

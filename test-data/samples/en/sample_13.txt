@@ -1,0 +1,11 @@
+[Monthly Operations Meeting Minutes]
+Date: 2019-04-11 at 10:00 AM
+Location: Massive Dynamic HQ, Vancouver
+Attendees: Robert Clark (Director), Matthew Davis (Manager), Jessica Perez (Lead)
+Contact: +1 (568) 348-3622 (Robert Clark)
+Email: robert.clark37@example.com
+
+Agenda:
+1. Q4 revenue review
+2. Project Atlas status update
+3. Vendor settlement

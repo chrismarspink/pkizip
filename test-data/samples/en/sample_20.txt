@@ -1,0 +1,10 @@
+[Resume]
+Jessica Robinson
+9377 Lake Rd, Toronto, VA 29140
++1 (784) 641-2698 / jessica.robinson12@globex.example
+DOB: 2020-02-14
+Passport: G26394798
+
+Experience:
+  - Umbrella Holdings (2018-04-12 – present)
+  - Acme Corporation (2018-03-13 – 2024-03-13)

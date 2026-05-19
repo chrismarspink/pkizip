@@ -1,0 +1,14 @@
+[국제 결제 처리 로그 / International Payment Log]
+TXN-561145
+Buyer: 백민서 (스마트엔진), KRW account 110-137-104803
+Card on file: 5500-2608-5014-8246
+Email: nyoon8@globex.example
+Phone: 010-2131-7004
+
+Seller: アジア情報セキュリティ機構 (渡辺 次郎)
+銀行口座: ゆうちょ銀行 横浜支店 当座 6012468
+連絡先: 03-8991-7698
+
+Gateway: Acme Corporation, IP 38.29.53.174, URL https://vpn.corp.example/api/v3/resource/643
+Reviewer: Thomas Harris (+1 (700) 894-2521)
+Settlement date: 2024-01-18

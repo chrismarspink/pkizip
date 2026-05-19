@@ -1,0 +1,9 @@
+[HR File / Restricted]
+Employee ID: EMP-50242
+Name: Barbara Brown
+Last 4 of SSN: 5943
+Company: Nakatomi Trading Co.
+Address: 7153 Oak Way, Manchester, CO 60048
+Phone: +1 (350) 754-9030
+Direct deposit: routing #134923540, acct #2366858
+Start date: 2020-12-09

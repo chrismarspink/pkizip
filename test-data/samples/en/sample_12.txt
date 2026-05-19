@@ -1,0 +1,9 @@
+[Customer Complaint Ticket]
+Ticket #: CC-223492
+Customer: Joseph Garcia (+1 (450) 919-7141)
+Email: joseph.garcia72@globex.example
+Address: 4637 Pine Rd, San Jose, WA 33658
+SSN on file: 528-64-7427
+Refund card: 4111-2659-1979-3279
+Owner: Mary Martin
+Processed: 2025-04-19

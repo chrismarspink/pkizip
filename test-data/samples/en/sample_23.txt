@@ -1,0 +1,8 @@
+[Interview Evaluation]
+Candidate: Carol Taylor
+Phone/Email: +1 (751) 501-7814 / carol.taylor2@example.net
+Address: 7778 Park St, Birmingham, NY 26530
+Role: Backend Engineer
+Interviewers: Sharon Hernandez, Donald Smith
+Date: 2024-07-18
+Prefers Project Phoenix experience

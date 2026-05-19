@@ -7,6 +7,10 @@
  * TaskStream UI로 실시간 표시한다.
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
+// helper 함수 (hook 외부) 용 — singleton t
+const t = (key: string, opts?: Record<string, unknown>): string => i18n.t(key, opts) as string;
 import { TaskStream, useTaskStream, type StreamItem } from '@/components/TaskStream';
 import { FolderOpen, Trash2 } from 'lucide-react';
 import { takePendingFile } from '@/lib/store/pending-file';
@@ -20,7 +24,8 @@ import { decryptWithPassword } from '@/lib/crypto/encryption';
 import { verifyAllSignatures, computeHash, type SignedPackage } from '@/lib/crypto/signing';
 import { deserializeEntries } from '@/lib/compression/compressor';
 import { unpackInnerPayload } from '@/lib/container/inner-payload';
-import { open as openPki } from '@/lib/container/pki-operations';
+import { open as openPki, verifyContainerTimestamp } from '@/lib/container/pki-operations';
+import type { TstVerifyResult } from '@/lib/tsa-verify';
 import { getCertificate } from '@/lib/crypto/key-manager';
 import { useAppStore } from '@/lib/store/app-store';
 
@@ -29,6 +34,7 @@ function sleep(ms: number) {
 }
 
 export function FilesTempPage() {
+  const { t } = useTranslation();
   const { keyIdentity, activeIdentityId, setActiveIdentityId } = useAppStore();
   const { items, push, update, reset } = useTaskStream();
   const [fileName, setFileName] = useState<string | null>(null);
@@ -40,7 +46,7 @@ export function FilesTempPage() {
   // === 파일 선택 ===
   const handleOpen = useCallback(async (file: File) => {
     const data = new Uint8Array(await file.arrayBuffer());
-    if (!isPkiFile(data)) { alert('유효한 .pki 파일이 아닙니다.'); return; }
+    if (!isPkiFile(data)) { alert(t('filesOpen.invalidFile')); return; }
 
     rawDataRef.current = data;
     setFileName(file.name);
@@ -85,12 +91,42 @@ export function FilesTempPage() {
 
     const id = () => crypto.randomUUID();
 
+    // TSA 결과 표시 — 모든 분기 공통 (push 와 id 클로저 접근)
+    // i18n 4언어 적용 — date locale 도 사용자 언어 따름
+    const pushTimestampResult = (tv: TstVerifyResult) => {
+      // i18next 의 현재 언어를 navigator-style locale 로 (ko/en/ja/zh → ko-KR/en-US/ja-JP/zh-CN)
+      const langMap: Record<string, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', zh: 'zh-CN' };
+      const dateLocale = langMap[(typeof window !== 'undefined' && localStorage.getItem('pkizip_lang')) || 'ko'] || 'en-US';
+      if (tv.method === 'tst' && tv.valid) {
+        push({
+          type: 'text', id: id(),
+          content: `${t('filesOpen.tsaValid')}${tv.genTime ? ' · ' + tv.genTime.toLocaleString(dateLocale) : ''}${tv.tsaName ? ' (' + tv.tsaName + ')' : ''}`,
+          tone: 'success',
+        });
+      } else if (tv.method === 'tst' && !tv.valid) {
+        push({
+          type: 'text', id: id(),
+          content: `${t('filesOpen.tsaInvalid')}: ${tv.errors.map(e => e.message).join(', ')}`,
+          tone: 'error',
+        });
+      } else if (tv.method === 'signingTime') {
+        push({
+          type: 'text', id: id(),
+          content: `${t('filesOpen.tsaSigningTime')}${tv.genTime ? ' · ' + tv.genTime.toLocaleString(dateLocale) : ''} ${t('filesOpen.tsaSigningTimeUnreliable')}`,
+          tone: 'warning',
+        });
+      }
+      if (tv.warnings.length > 0) {
+        push({ type: 'text', id: id(), content: tv.warnings.join('; '), tone: 'muted' });
+      }
+    };
+
     // Step 1: 파일 분석
     const analyzeId = id();
-    push({ type: 'step', id: analyzeId, label: '.pki 파일 분석', status: 'active' });
+    push({ type: 'step', id: analyzeId, label: t('filesOpen.analyzeLabel'), status: 'active' });
     await sleep(500);
-    push({ type: 'text', id: id(), content: `파일 크기: ${formatSize(rawData.length)}`, tone: 'muted' });
-    push({ type: 'text', id: id(), content: `플래그: ${[isComp && '압축', isSig && '서명', isEnc && '암호화'].filter(Boolean).join(', ')}`, tone: 'muted' });
+    push({ type: 'text', id: id(), content: `${t('filesOpen.fileSize')}: ${formatSize(rawData.length)}`, tone: 'muted' });
+    push({ type: 'text', id: id(), content: `${t('filesOpen.flags')}: ${[isComp && t('filesOpen.flagsCompress'), isSig && t('filesOpen.flagsSigned'), isEnc && t('filesOpen.flagsEncrypted')].filter(Boolean).join(', ')}`, tone: 'muted' });
 
     // 감지된 알고리즘 표시 (헤더 내용 기반)
     const detectedAlgos: string[] = [];
@@ -108,18 +144,25 @@ export function FilesTempPage() {
     // 암호화되어 있는데 ECDH도 ML-KEM도 없으면 AES-GCM만 표시
     if (isEnc && !isPw && ecdhRecipients.length === 0 && !pqcKemPresent) detectedAlgos.push('AES-256-GCM');
 
-    push({ type: 'text', id: id(), content: `알고리즘: ${detectedAlgos.join(', ')}`, tone: 'muted' });
+    push({ type: 'text', id: id(), content: `${t('filesOpen.algorithms')}: ${detectedAlgos.join(', ')}`, tone: 'muted' });
 
     update(analyzeId, { status: 'done' });
+
+    // TSA 타임스탬프 검증 — 모든 분기 공통 (password / enveloped / signed / compressed 무관)
+    // container.payload 는 변형 전 raw payload (TSA 발급 대상)
+    const tsv = await verifyContainerTimestamp(h, container.payload);
+    if (tsv) {
+      pushTimestampResult(tsv);
+    }
 
     await sleep(300);
 
     // Step 2: 암호화 해제
     if (isEnc) {
       const encId = id();
-      const encLabel = isPw ? '비밀번호 복호화'
+      const encLabel = isPw ? t('filesOpen.decryptPassword')
         : h.pqcKemRecipientInfo && (h.encryption?.recipients ?? []).length === 0
-          ? '개인키 복호화 (ML-KEM)' : '개인키 복호화 (ECDH)';
+          ? t('filesOpen.decryptKem') : t('filesOpen.decryptEcdh');
       push({ type: 'step', id: encId, label: encLabel, status: 'active' });
 
       if (isPw) {
@@ -128,8 +171,8 @@ export function FilesTempPage() {
         await new Promise<void>((resolve) => {
           push({
             type: 'input', id: pwId, kind: 'password',
-            prompt: '비밀번호를 입력하세요',
-            placeholder: '비밀번호',
+            prompt: t('filesOpen.enterPassword'),
+            placeholder: t('filesOpen.passwordPlaceholder'),
             onSubmit: async (pw) => {
               try {
                 const iv = new Uint8Array(base64ToArrayBuffer(h.encryption!.iv));
@@ -139,13 +182,13 @@ export function FilesTempPage() {
                 const decrypted = await decryptWithPassword(payloadBuf, pw, iv, salt);
 
                 update(encId, { status: 'done' });
-                push({ type: 'text', id: id(), content: `✓ 복호화 성공 (${formatSize(decrypted.byteLength)})`, tone: 'success' });
+                push({ type: 'text', id: id(), content: `${t('filesOpen.decryptSuccess')} (${formatSize(decrypted.byteLength)})`, tone: 'success' });
 
                 // Inner payload 파싱 → 서명 발견 여부
                 try {
                   const inner = unpackInnerPayload(decrypted);
                   if (inner.signatures?.length) {
-                    push({ type: 'text', id: id(), content: `내부에 ${inner.signatures.length}개의 서명이 포함되어 있습니다`, tone: 'warning' });
+                    push({ type: 'text', id: id(), content: t('filesOpen.innerSignatures', { n: inner.signatures.length }), tone: 'warning' });
                     await verifyInnerSignatures(inner.signatures, inner.data, push, update);
                     let files = deserializeEntries(inner.data);
                     files = restoreFileNames(files, h);
@@ -163,13 +206,13 @@ export function FilesTempPage() {
                 resolve();
               } catch {
                 update(encId, { status: 'error' });
-                push({ type: 'text', id: id(), content: '✗ 비밀번호가 틀렸습니다', tone: 'error' });
+                push({ type: 'text', id: id(), content: t('filesOpen.pwWrong'), tone: 'error' });
                 push({
                   type: 'options', id: id(),
-                  question: '다시 시도하시겠습니까?',
+                  question: t('filesOpen.retryQuestion'),
                   options: [
-                    { label: '다시 입력', variant: 'primary', onClick: () => { reset(); runAnalysis(rawData); } },
-                    { label: '취소', onClick: () => setProcessing(false) },
+                    { label: t('filesOpen.retryAgain'), variant: 'primary', onClick: () => { reset(); runAnalysis(rawData); } },
+                    { label: t('filesOpen.cancel'), onClick: () => setProcessing(false) },
                   ],
                 });
                 resolve();
@@ -184,9 +227,9 @@ export function FilesTempPage() {
         const isPqcOnly = hasPqcKem && recipients.length === 0;
 
         if (isPqcOnly) {
-          push({ type: 'text', id: id(), content: 'PQC Only 암호화 (ML-KEM-1024)', tone: 'muted' });
+          push({ type: 'text', id: id(), content: t('filesOpen.pqcOnly'), tone: 'muted' });
         } else {
-          push({ type: 'text', id: id(), content: `이 파일은 ${recipients.length}명의 수신자 공개키로 암호화되었습니다.`, tone: 'muted' });
+          push({ type: 'text', id: id(), content: t('filesOpen.recipientList', { n: recipients.length }), tone: 'muted' });
         }
 
         const { getAllKeyRingEntries, getAllIdentityMetas, loadIdentitySeed } = await import('@/lib/crypto/key-manager');
@@ -208,7 +251,7 @@ export function FilesTempPage() {
 
           push({
             type: 'cert', id: id(),
-            name: (cert?.commonName || entry?.label || r.label || '알 수 없는 수신자') + (isMe ? ' (나)' : ''),
+            name: (cert?.commonName || entry?.label || r.label || t('filesOpen.recipientUnknown')) + (isMe ? ' ' + t('filesOpen.me') + '' : ''),
             email: cert?.email,
             fingerprint: r.fingerprint,
             issuedAt: cert?.notBefore,
@@ -232,7 +275,7 @@ export function FilesTempPage() {
             const cert = await getCertificate(activeMeta.signingFingerprint).catch(() => null);
             push({
               type: 'cert', id: id(),
-              name: (cert?.commonName || activeMeta.name) + ' (나)',
+              name: (cert?.commonName || activeMeta.name) + ' ' + t('filesOpen.me') + '',
               email: cert?.email,
               fingerprint: activeMeta.signingFingerprint,
               issuedAt: cert?.notBefore,
@@ -246,7 +289,7 @@ export function FilesTempPage() {
         // 수신자 중 내 키가 없음
         if (!myMatch) {
           update(encId, { status: 'error' });
-          push({ type: 'text', id: id(), content: '✗ 이 파일의 수신자 목록에 본인의 키가 없습니다.', tone: 'error' });
+          push({ type: 'text', id: id(), content: t('filesOpen.noMatchingKey'), tone: 'error' });
           setProcessing(false);
           return;
         }
@@ -267,37 +310,24 @@ export function FilesTempPage() {
                 const dsaPub = new Uint8Array(base64ToArrayBuffer(h.pqcSignerInfo.dsaPublicKey));
                 pqcOpts = { signer: PQCSigner.fromBundle({ publicKey: dsaPub, secretKey: new Uint8Array(0) }) };
               } catch {
-                push({ type: 'text', id: id(), content: 'PQC 서명 검증 모듈 로드 실패 — 양자 서명은 검증되지 않습니다', tone: 'warning' });
+                push({ type: 'text', id: id(), content: t('filesOpen.pqcLoadFail'), tone: 'warning' });
               }
             }
 
             const result = await openPki(rawData, activeKey.encryptionKey.privateKey, activeKey.encryptionKey.fingerprint, pqcOpts);
             update(encId, { status: 'done' });
-            push({ type: 'text', id: id(), content: `✓ "${myMatch!.name}" 개인키로 복호화 성공`, tone: 'success' });
+            push({ type: 'text', id: id(), content: `✓ "${myMatch!.name}" — ${t('filesOpen.keyDecryptSuccess')}`, tone: 'success' });
             if (result.pqcVerification) {
               push({ type: 'text', id: id(), content: result.pqcVerification.valid
-                ? `✓ ML-DSA-87 양자 서명 유효`
-                : `✗ ML-DSA-87 양자 서명 무효`, tone: result.pqcVerification.valid ? 'success' : 'error' });
+                ? t('filesOpen.pqcVerifyOk')
+                : t('filesOpen.pqcVerifyFail'), tone: result.pqcVerification.valid ? 'success' : 'error' });
             } else if (h.pqcSignerInfo) {
-              push({ type: 'text', id: id(), content: 'ML-DSA 서명이 포함되어 있지만 PQC 키가 없어 검증하지 못했습니다', tone: 'warning' });
+              push({ type: 'text', id: id(), content: t('filesOpen.pqcKeyMissing'), tone: 'warning' });
             }
             if (h.pqcKemRecipientInfo && !pqcOpts?.shield) {
-              push({ type: 'text', id: id(), content: 'ML-KEM 암호화가 포함되어 있지만 PQC 키가 없어 검증하지 못했습니다', tone: 'warning' });
+              push({ type: 'text', id: id(), content: t('filesOpen.pqcKemKeyMissing'), tone: 'warning' });
             }
-            // TST 검증 결과
-            if (result.timestampVerification) {
-              const tv = result.timestampVerification;
-              if (tv.method === 'tst' && tv.valid) {
-                push({ type: 'text', id: id(), content: `✓ TSA 타임스탬프 유효${tv.genTime ? ' · ' + tv.genTime.toLocaleString('ko-KR') : ''}${tv.tsaName ? ' (' + tv.tsaName + ')' : ''}`, tone: 'success' });
-              } else if (tv.method === 'tst' && !tv.valid) {
-                push({ type: 'text', id: id(), content: `✗ 타임스탬프 검증 실패: ${tv.errors.map(e => e.message).join(', ')}`, tone: 'error' });
-              } else if (tv.method === 'signingTime') {
-                push({ type: 'text', id: id(), content: `서명자 주장 시각${tv.genTime ? ' · ' + tv.genTime.toLocaleString('ko-KR') : ''} (신뢰도 낮음)`, tone: 'warning' });
-              }
-              if (tv.warnings.length > 0) {
-                push({ type: 'text', id: id(), content: tv.warnings.join('; '), tone: 'muted' });
-              }
-            }
+            // TST 검증은 runAnalysis 초입에서 이미 표시 — 중복 제거
             if (result.verification.length > 0) {
               await showVerificationResults(result.verification, push);
             }
@@ -305,7 +335,7 @@ export function FilesTempPage() {
             return true;
           } catch (err) {
             update(encId, { status: 'error' });
-            push({ type: 'text', id: id(), content: `✗ ${err instanceof Error ? err.message : '복호화 실패'}`, tone: 'error' });
+            push({ type: 'text', id: id(), content: `✗ ${err instanceof Error ? err.message : t('filesOpen.decryptFailFallback')}`, tone: 'error' });
             return false;
           }
         };
@@ -320,18 +350,18 @@ export function FilesTempPage() {
         // 2. 생체 인증 자동 시도
         const bioAvailable = await hasBiometric(myMatch.id);
         if (bioAvailable) {
-          push({ type: 'text', id: id(), content: `🔐 "${myMatch.name}"의 생체 인증을 시도합니다...`, tone: 'muted' });
+          push({ type: 'text', id: id(), content: t('filesOpen.biometricTryingFor', { name: myMatch.name }), tone: 'muted' });
           try {
             const seed = await unlockWithBiometric(myMatch.id);
             const activeKey = await deriveKeyIdentity(seed);
             useAppStore.getState().setKeyIdentity(activeKey);
             useAppStore.getState().setActiveIdentityId(myMatch.id);
-            push({ type: 'text', id: id(), content: '✓ 생체 인증 성공', tone: 'success' });
+            push({ type: 'text', id: id(), content: t('filesOpen.biometricOk'), tone: 'success' });
             await runDecrypt(activeKey);
             setProcessing(false);
             return;
           } catch {
-            push({ type: 'text', id: id(), content: '생체 인증 취소 — PIN/비밀번호로 진행합니다', tone: 'muted' });
+            push({ type: 'text', id: id(), content: t('filesOpen.biometricCancel'), tone: 'muted' });
           }
         }
 
@@ -344,9 +374,9 @@ export function FilesTempPage() {
             type: 'input', id: inputId,
             kind: pinAvailable ? 'pin' : 'password',
             prompt: pinAvailable
-              ? `"${myMatch!.name}"의 PIN(4~6자리) 또는 비밀번호를 입력하세요`
-              : `"${myMatch!.name}"의 비밀번호를 입력하세요`,
-            placeholder: pinAvailable ? 'PIN 또는 비밀번호' : '비밀번호',
+              ? t('filesOpen.enterPinOrPasswordFor', { name: myMatch!.name })
+              : t('filesOpen.enterPasswordFor', { name: myMatch!.name }),
+            placeholder: pinAvailable ? t('filesOpen.pinOrPwdPlaceholder') : '비밀번호',
             onSubmit: async (value) => {
               try {
                 let seed: Uint8Array;
@@ -374,17 +404,17 @@ export function FilesTempPage() {
                   } catch { /* PQC 번들 없음 */ }
                 }
 
-                push({ type: 'text', id: id(), content: '✓ 키 잠금 해제 완료', tone: 'success' });
+                push({ type: 'text', id: id(), content: t('filesOpen.keyUnlocked'), tone: 'success' });
                 await runDecrypt(activeKey);
                 resolve();
               } catch (err) {
-                push({ type: 'text', id: id(), content: `✗ ${err instanceof Error ? err.message : '잠금 해제 실패'}`, tone: 'error' });
+                push({ type: 'text', id: id(), content: `✗ ${err instanceof Error ? err.message : t('filesOpen.unlockFailFallback')}`, tone: 'error' });
                 push({
                   type: 'options', id: id(),
-                  question: '다시 시도하시겠습니까?',
+                  question: t('filesOpen.retryQuestion'),
                   options: [
-                    { label: '다시 입력', variant: 'primary', onClick: () => { reset(); runAnalysis(rawData); } },
-                    { label: '취소', onClick: () => setProcessing(false) },
+                    { label: t('filesOpen.retryAgain'), variant: 'primary', onClick: () => { reset(); runAnalysis(rawData); } },
+                    { label: t('filesOpen.cancel'), onClick: () => setProcessing(false) },
                   ],
                 });
                 resolve();
@@ -398,7 +428,7 @@ export function FilesTempPage() {
     } else if (isSig) {
       // 서명만
       const sigId = id();
-      push({ type: 'step', id: sigId, label: '서명 검증', status: 'active' });
+      push({ type: 'step', id: sigId, label: t('filesOpen.signedOnlyStep'), status: 'active' });
       if (h.signatures?.length) {
         const signerInfos = deserializeSignerInfos(h.signatures);
         const contentHash = computeHash(container.payload);
@@ -430,18 +460,18 @@ export function FilesTempPage() {
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold">PKIZIP 파일 열기</h1>
-          <p className="text-sm text-zinc-500">.pki 파일을 열어 단계별로 분석합니다.</p>
+          <h1 className="text-xl font-bold">{t('filesOpen.title')}</h1>
+          <p className="text-sm text-zinc-500">{t('filesOpen.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           {items.length > 0 && (
             <button onClick={clearAll} className="flex items-center gap-1.5 text-sm border border-zinc-200 rounded-xl px-3 py-2 hover:bg-zinc-50">
-              <Trash2 className="w-4 h-4" /> 초기화
+              <Trash2 className="w-4 h-4" /> {t('filesOpen.reset')}
             </button>
           )}
           <button onClick={() => fileInputRef.current?.click()} disabled={processing}
             className="flex items-center gap-1.5 text-sm bg-zinc-900 text-white rounded-xl px-4 py-2 disabled:opacity-50">
-            <FolderOpen className="w-4 h-4" /> .pki 열기
+            <FolderOpen className="w-4 h-4" /> {t('filesOpen.openPki')}
           </button>
         </div>
       </div>
@@ -463,8 +493,8 @@ export function FilesTempPage() {
           className="w-full border-2 border-dashed border-zinc-200 rounded-xl py-12 text-center text-zinc-400 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
           <FolderOpen className="w-10 h-10 mx-auto mb-2 opacity-50" />
-          <p className="text-sm font-medium">.pki 파일을 선택하거나 드래그하세요</p>
-          <p className="text-xs mt-1 opacity-70">파일을 열면 단계별로 분석합니다</p>
+          <p className="text-sm font-medium">{t('filesOpen.pickerHint')}</p>
+          <p className="text-xs mt-1 opacity-70">{t('filesOpen.pickerSubHint')}</p>
         </button>
       ) : (
         <div className="bg-white border border-zinc-200 rounded-2xl p-6">
@@ -489,7 +519,7 @@ export function FilesTempPage() {
 function showFiles(files: { name: string; data: Uint8Array; size: number; type: string }[],
   push: (item: StreamItem) => void, _update: (id: string, patch: Partial<StreamItem>) => void) {
   const id = () => crypto.randomUUID();
-  push({ type: 'step', id: id(), label: '파일 추출 완료', status: 'done', detail: `${files.length}개 파일` });
+  push({ type: 'step', id: id(), label: t('filesOpen.filesExtracted'), status: 'done', detail: t('filesOpen.fileCount', { n: files.length }) });
   for (const f of files) {
     push({ type: 'text', id: id(), content: `• ${f.name}  (${formatSize(f.size)})` });
   }
@@ -514,12 +544,12 @@ async function showVerificationResults(
   push: (item: StreamItem) => void,
 ) {
   const id = () => crypto.randomUUID();
-  push({ type: 'step', id: id(), label: '서명자 인증서', status: 'done' });
+  push({ type: 'step', id: id(), label: t('filesOpen.signerCert'), status: 'done' });
   for (const v of results) {
     const cert = await getCertificate(v.fingerprint).catch(() => null);
     push({
       type: 'cert', id: id(),
-      name: cert?.commonName || v.label || '알 수 없는 서명자',
+      name: cert?.commonName || v.label || t('filesOpen.unknownSigner'),
       email: cert?.email,
       fingerprint: v.fingerprint,
       valid: v.valid,
@@ -535,7 +565,7 @@ async function verifyInnerSignatures(signatures: NonNullable<import('@/lib/conta
   data: Uint8Array, push: (item: StreamItem) => void, update: (id: string, patch: Partial<StreamItem>) => void) {
   const id = () => crypto.randomUUID();
   const sigId = id();
-  push({ type: 'step', id: sigId, label: '서명 검증', status: 'active' });
+  push({ type: 'step', id: sigId, label: t('filesOpen.signedOnlyStep'), status: 'active' });
   try {
     const signerInfos = deserializeSignerInfos(signatures);
     const contentHash = computeHash(data);
@@ -545,7 +575,7 @@ async function verifyInnerSignatures(signatures: NonNullable<import('@/lib/conta
     await showVerificationResults(results, push);
   } catch {
     update(sigId, { status: 'error' });
-    push({ type: 'text', id: id(), content: '서명 검증 실패', tone: 'error' });
+    push({ type: 'text', id: id(), content: t('filesOpen.signatureVerifyFailed'), tone: 'error' });
   }
 }
 
@@ -553,7 +583,7 @@ async function verifyInnerSignatures(signatures: NonNullable<import('@/lib/conta
 async function runDemo(push: (item: StreamItem) => void, update: (id: string, patch: Partial<StreamItem>) => void) {
   const id = () => crypto.randomUUID();
   const step1 = id();
-  push({ type: 'step', id: step1, label: '파일 분석 중...', status: 'active' });
+  push({ type: 'step', id: step1, label: t('filesOpen.analyzing'), status: 'active' });
   await sleep(800);
   push({ type: 'text', id: id(), content: '파일 크기: 2.4 MB', tone: 'muted' });
   push({ type: 'text', id: id(), content: '플래그: 압축 + 서명 + 암호화', tone: 'muted' });
@@ -567,14 +597,14 @@ async function runDemo(push: (item: StreamItem) => void, update: (id: string, pa
   push({
     type: 'input', id: id(), kind: 'password',
     prompt: '파일 비밀번호를 입력하세요 (데모: 아무 값)',
-    placeholder: '비밀번호',
+    placeholder: t('filesOpen.passwordPlaceholder'),
     onSubmit: async (_v) => {
       update(step2, { status: 'done' });
       push({ type: 'text', id: id(), content: '✓ 복호화 성공', tone: 'success' });
 
       await sleep(400);
       const step3 = id();
-      push({ type: 'step', id: step3, label: '서명 검증', status: 'active' });
+      push({ type: 'step', id: step3, label: t('filesOpen.signedOnlyStep'), status: 'active' });
       await sleep(600);
       update(step3, { status: 'done' });
 

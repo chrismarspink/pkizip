@@ -1,0 +1,14 @@
+[다국가 임원 명단 / Multi-Region Exec Roster]
+🇰🇷 Korea — 주식회사 한빛테크
+  CEO: 장민준, 010-8690-4809, ohara71@corp.example.org
+  Address: 서울특별시 동래구 강남대로 245-28
+
+🇯🇵 Japan — 株式会社プロジェクトオメガ
+  代表取締役: 遠藤 あおい, 080-7436-8578, qpark88@globex.example
+  住所: 北海道川崎市幸区自由が丘2-6-7
+
+🇺🇸 USA — Initech LLC
+  CFO: Helen Johnson, +1 (269) 797-3521, helen.johnson76@example.net
+  Address: 8755 Oak Ave, Toronto, NC 84729
+
+VIP 만찬: 2026-05-22

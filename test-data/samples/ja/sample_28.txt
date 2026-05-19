@@ -1,0 +1,9 @@
+[セキュリティ事故報告書 #2873]
+報告者: 森 誠 (090-6313-5439)
+発生日時: 2025年5月1日
+漏洩疑いの認証情報:
+  - AWS Access Key: AKIAJABCDEFGHIJKLMNO
+  - API_KEY = demo_FAKE_3xR8tYpHzLkMnVbQwErTyUiOpAsDfGhJkL
+対象システム: https://intranet.example.net/api/v5/resource/760
+サーバーIP: 182.215.242.164
+即時対応責任者: 佐藤 さくら (ohara24@example.com)

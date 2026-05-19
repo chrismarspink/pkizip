@@ -540,24 +540,45 @@ export async function open(
     }));
   }
 
-  // TST 검증 (헤더에 타임스탬프가 있을 때)
-  let timestampVerification: TstVerifyResult | undefined;
+  // TST 검증 (헤더에 타임스탬프가 있을 때) — 공용 헬퍼 호출
+  const timestampVerification = await verifyContainerTimestamp(header, onDiskPayload);
+
+  return { files, header, verification, pqcVerification, timestampVerification, isEncrypted, isSigned };
+}
+
+/**
+ * 헤더 + on-disk payload 로 TSA 타임스탬프 검증.
+ *
+ * `open()` 의 enveloped 분기뿐 아니라 password / signed-only / compressed-only
+ * 분기에서도 동일하게 호출 가능하도록 분리한 헬퍼.
+ *
+ * @param header     readPkiContainer 의 header
+ * @param onDiskPayload  변형 (복호화/압축해제) 전 raw payload
+ * @returns TstVerifyResult 또는 undefined (timestamp 필드 자체가 없으면)
+ */
+export async function verifyContainerTimestamp(
+  header: { timestamp?: { method?: string; token?: string; signingTime?: number | string } },
+  onDiskPayload: Uint8Array,
+): Promise<TstVerifyResult | undefined> {
   if (header.timestamp?.method === 'tst' && header.timestamp.token) {
     try {
       const tstDer = new Uint8Array(
         atob(header.timestamp.token).split('').map(c => c.charCodeAt(0))
       );
-      // seal()은 암호화 후 payload로 TST 발급 → 검증도 같은 raw payload여야 함
-      timestampVerification = await verifyTimestampToken(tstDer, onDiskPayload);
-      console.log('[PKIZIP] TST 검증:', timestampVerification.valid ? '유효' : '무효');
+      const result = await verifyTimestampToken(tstDer, onDiskPayload);
+      console.log('[PKIZIP] TST 검증:', result.valid ? '유효' : '무효');
+      return result;
     } catch (err) {
       console.warn('[PKIZIP] TST 검증 실패:', err);
-      timestampVerification = {
-        valid: false, method: 'tst', errors: [{ step: 'tst_parse', message: String(err), fatal: true }], warnings: [],
+      return {
+        valid: false, method: 'tst',
+        errors: [{ step: 'tst_parse', message: String(err), fatal: true }],
+        warnings: [],
       };
     }
-  } else if (header.timestamp?.method === 'signingTime') {
-    timestampVerification = {
+  }
+  if (header.timestamp?.method === 'signingTime') {
+    return {
       valid: true,
       genTime: header.timestamp.signingTime ? new Date(header.timestamp.signingTime) : undefined,
       method: 'signingTime',
@@ -565,8 +586,7 @@ export async function open(
       warnings: ['TST 없음. signingTime은 서명자 주장 시각으로 신뢰도가 낮습니다.'],
     };
   }
-
-  return { files, header, verification, pqcVerification, timestampVerification, isEncrypted, isSigned };
+  return undefined;
 }
 
 /**

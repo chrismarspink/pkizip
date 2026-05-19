@@ -1,0 +1,9 @@
+[보안 사고 보고서 #1115]
+신고자: 임수아 (010-4034-6754)
+발생일시: 2018년 11월 11일
+유출 의심 자격증명:
+  - AWS Access Key: AKIAZXCVBNMASDFGHJKL
+  - API_KEY = api_key=secret_aZb9cYx8wVu7tS6rQpOnMlKjIhG5fEdC4bA3
+대상 시스템: https://git.internal.example/api/v4/resource/576
+서버 IP: 136.160.24.78
+즉시 조치 책임자: 박다은 (mhong36@example.net)

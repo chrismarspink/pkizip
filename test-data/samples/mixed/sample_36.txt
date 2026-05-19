@@ -1,0 +1,14 @@
+[국제 결제 처리 로그 / International Payment Log]
+TXN-660151
+Buyer: 서윤서 (코어시스템즈), KRW account 110-705-883434
+Card on file: 3782-7235-8043-3144
+Email: fchen18@example.com
+Phone: 010-1119-5403
+
+Seller: 合同会社グリーンテック (池田 結菜)
+銀行口座: みずほ銀行 渋谷支店 当座 9028434
+連絡先: 05-3097-4844
+
+Gateway: Tyrell Corporation, IP 145.225.129.244, URL https://vpn.corp.example/api/v1/resource/935
+Reviewer: James Thompson (+1 (924) 617-6824)
+Settlement date: 2018-05-13

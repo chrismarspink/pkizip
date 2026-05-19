@@ -1,0 +1,17 @@
+[월경 데이터 이전 평가서 / Cross-Border Transfer Assessment]
+대상 데이터: 고객 PII (한국 본사 → 일본·미국 자회사)
+
+한국 측 담당:
+  - 남현준 (010-8759-3119 / rjeon94@globex.example)
+  - 회사: 이노시스코리아, 사업자번호 274-79-60629
+
+日本側 担当者:
+  - 田中 次郎 (090-4997-2026)
+  - 会社: 株式会社未来情報, 法人番号 3528591212222
+  - マイナンバー含有: 否
+
+US Counterparty:
+  - Sarah White (+1 (704) 628-8797 / sarah.white26@corp.example.org)
+  - Company: Umbrella Holdings
+
+GDPR/APPI/PIPA all apply. Effective 2025-03-05.

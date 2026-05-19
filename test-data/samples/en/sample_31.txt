@@ -1,0 +1,8 @@
+[Time Off Request]
+Requester: Nancy Robinson
+Employee ID: EMP-57708
+SSN: 178-42-9748
+Period: 2023-04-13 to 2018-12-09
+Emergency contact: +1 (389) 978-6748
+Temporary address: 6848 Lake Blvd, Melbourne, MI 82040
+Backup: Jennifer Lopez, jennifer.lopez25@example.co.kr

@@ -1,0 +1,12 @@
+[국제 회의록 / International Meeting Minutes]
+일시 / Date: 2019-10-12
+참석 / Attendees:
+  - 韓国: 신예원 (Director, (주)다온솔루션) — 010-6743-1407
+  - 日本: 高橋 颯太 (部長, 株式会社シナジーラボ) — 090-9859-8557
+  - USA: Linda Martin (VP, Massive Dynamic) — +1 (850) 863-6065
+
+논의 / Discussion:
+  - Project Lighthouse 글로벌 확장
+  - Operation Sakura との連携
+  - Operation Helios integration
+서버 IP: 182.56.109.237 / API: https://intranet.example.net/api/v5/resource/815

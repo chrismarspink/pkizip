@@ -1,0 +1,9 @@
+[Security Incident Report #1790]
+Reporter: William Brown (+1 (339) 271-5024)
+Occurred: 2020-01-07
+Suspected leaked credentials:
+  - AWS Access Key: ASIAQWERTYUIOPASDFGH
+  - API_KEY = api_key=secret_aZb9cYx8wVu7tS6rQpOnMlKjIhG5fEdC4bA3
+Affected system: https://vpn.corp.example/api/v3/resource/576
+Server IP: 87.76.32.30
+Owner: Donna Perez (donna.perez81@acme.test)

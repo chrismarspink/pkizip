@@ -1,0 +1,17 @@
+[월경 데이터 이전 평가서 / Cross-Border Transfer Assessment]
+대상 데이터: 고객 PII (한국 본사 → 일본·미국 자회사)
+
+한국 측 담당:
+  - 신건우 (010-9736-9699 / bkim18@acme.test)
+  - 회사: 퓨처인사이트, 사업자번호 302-69-59140
+
+日本側 担当者:
+  - 青木 陽翔 (080-2604-5401)
+  - 会社: アジア情報セキュリティ機構, 法人番号 1138128187791
+  - マイナンバー含有: 否
+
+US Counterparty:
+  - Linda Martin (+1 (566) 755-9875 / linda.martin17@example.net)
+  - Company: Nakatomi Trading Co.
+
+GDPR/APPI/PIPA all apply. Effective 2026-12-26.

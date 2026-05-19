@@ -1,0 +1,7 @@
+[글로벌 사용자 데이터 추출 결과 / Global User Export]
+Row 1: id=1001, name="송유진", rrn=851226-4979079, phone=010-6240-6670, country=KR
+Row 2: id=1002, name="小林 一郎", mynum="9155 9232 8670", phone=080-8662-2613, country=JP
+Row 3: id=1003, name="Kenneth Williams", ssn=859-92-7921, phone=+1 (715) 841-2363, country=US
+Row 4: id=1004, email=ipark71@example.co.jp, country=KR
+Row 5: id=1005, email=syoo61@example.co.kr, country=JP
+Generated: 2026-11-21

@@ -1,0 +1,9 @@
+[Security Incident Report #4609]
+Reporter: Sarah Taylor (+1 (881) 922-7912)
+Occurred: 2025-02-11
+Suspected leaked credentials:
+  - AWS Access Key: AKIAZXCVBNMASDFGHJKL
+  - API_KEY = sk_test_4eC39HqLyjWDarjtT1zdp7dcabcdef1234567890
+Affected system: https://git.internal.example/api/v1/resource/799
+Server IP: 108.77.8.50
+Owner: Nancy Perez (nancy.perez57@acme.test)

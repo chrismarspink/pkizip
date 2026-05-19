@@ -1,0 +1,9 @@
+[セキュリティ事故報告書 #9907]
+報告者: 後藤 蓮 (070-2507-3228)
+発生日時: 2022年4月26日
+漏洩疑いの認証情報:
+  - AWS Access Key: AKIAIOSFODNN7EXAMPLE
+  - API_KEY = api_key=secret_aZb9cYx8wVu7tS6rQpOnMlKjIhG5fEdC4bA3
+対象システム: https://git.internal.example/api/v1/resource/673
+サーバーIP: 140.207.64.73
+即時対応責任者: 田中 一郎 (jdoe18@acme.test)

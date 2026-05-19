@@ -435,6 +435,32 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               </summary>
               <div className="px-3 pb-3 space-y-3">
 
+            {/* NER 비활성 안내 — 사람 이름·조직·장소 검출 누락 가능성 */}
+            {(() => {
+              const nerPrefs = prefs.ner.get();
+              const hasNerEntity = initialResult.findings.some(f =>
+                ['PERSON', 'LOCATION', 'ORGANIZATION'].includes(f.entityType));
+              if (nerPrefs.enabled || hasNerEntity) return null;
+              const isKorean = initialResult.language.detected === 'ko';
+              if (!isKorean || initialResult.text.length < 50) return null;
+              return (
+                <section className="border border-amber-200 bg-amber-50/50 rounded-lg p-3 text-xs">
+                  <div className="font-semibold text-amber-800 mb-1">
+                    💡 NER 비활성 — 사람 이름·조직·장소 검출 누락 가능성
+                  </div>
+                  <div className="text-amber-700 leading-relaxed">
+                    한국어 문서지만 PERSON/ORGANIZATION/LOCATION 검출 결과가 없습니다.
+                    설정 → "NER 자동 로드" 활성화 시 신경망 모델 (~50MB) 다운로드 후
+                    홍길동·박과장 같은 이름이 자동 검출됩니다 (다음 분석부터 적용).
+                  </div>
+                  <a href="/pkizip/settings" target="_blank" rel="noreferrer"
+                     className="inline-block mt-1.5 text-amber-700 underline hover:text-amber-900">
+                    설정에서 활성화 →
+                  </a>
+                </section>
+              );
+            })()}
+
             {/* 3-pre. DPV 표준 분류 — 봉투 메타에 자동 부착될 IRI 미리보기 */}
             {dpvCategories.length > 0 && (
               <section className="border rounded-lg p-3 bg-violet-50/30">

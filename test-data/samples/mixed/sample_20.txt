@@ -1,0 +1,12 @@
+[고객 컴플레인 / Complaint #722890]
+Original report (English):
+  Customer Ruth Anderson (SSN 651-41-1544, ruth.anderson22@example.co.kr) experienced data
+  exposure during cross-border sync.
+
+韓国側 follow-up:
+  담당 안지민, 010-3517-5741, 영향고객 주민번호 300515-2388844.
+
+日本側 confirmation:
+  対応 橋本 太郎, 070-3952-6586, 影響顧客のマイナンバー 6096 3730 3289.
+
+Processed: 2024-05-17

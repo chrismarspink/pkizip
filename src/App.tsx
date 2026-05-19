@@ -9,6 +9,7 @@ import { CertsPage } from '@/pages/CertsPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { PoliciesPage } from '@/pages/PoliciesPage';
+import { CompliancePage } from '@/pages/CompliancePage';
 import { StatsPage } from '@/pages/StatsPage';
 import { MePage } from '@/pages/MePage';
 import { AdminPage } from '@/pages/AdminPage';
@@ -39,6 +40,7 @@ export function App() {
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
+          <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/me" element={<MePage />} />
           <Route path="/admin" element={<AdminPage />} />

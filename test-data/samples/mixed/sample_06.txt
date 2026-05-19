@@ -1,0 +1,10 @@
+[국제 채용 / International Hiring]
+지원자 (응시언어: 다국어):
+  Name: John Taylor / 한국명: 신하은 / 日本名: 高橋 さくら
+  Phone (US): +1 (857) 759-1127
+  電話 (JP): 090-3522-9224
+  전화 (KR): 010-2317-9589
+  Email: john.taylor36@example.com
+  Resident in: 〒625-3489 兵庫県仙台市青葉区代官山2-1-2
+  Previously at: Aperture Science, 株式会社未来情報, 코어시스템즈
+  Application date: 2026-11-21

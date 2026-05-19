@@ -1,0 +1,17 @@
+[월경 데이터 이전 평가서 / Cross-Border Transfer Assessment]
+대상 데이터: 고객 PII (한국 본사 → 일본·미국 자회사)
+
+한국 측 담당:
+  - 조지윤 (010-5194-7773 / pkang69@example.co.jp)
+  - 회사: 한국정보보호원, 사업자번호 122-70-35776
+
+日本側 担当者:
+  - 松本 結菜 (070-5135-2229)
+  - 会社: ジャパンクラウド株式会社, 法人番号 6999625599109
+  - マイナンバー含有: 否
+
+US Counterparty:
+  - Sarah Davis (+1 (635) 897-6820 / sarah.davis47@example.com)
+  - Company: Cyberdyne Systems
+
+GDPR/APPI/PIPA all apply. Effective 2020-04-22.

@@ -1,0 +1,10 @@
+[보안 사고 (다국가) / Multi-Region Security Incident]
+Reporter: Mark Martin (+1 (331) 420-3553)
+영향 받은 지역:
+  - KR — 신다은, 주민번호 340503-1761309 누출 의심
+  - JP — 木村 健, マイナンバー 8736 3814 7317 漏洩疑い
+  - US — Andrew Jackson, SSN 296-39-6163 compromised
+
+AWS key rotated: ASIAQWERTYUIOPASDFGH
+API key revoked: sk_test_4eC39HqLyjWDarjtT1zdp7dcabcdef1234567890
+Date: 2020-01-04

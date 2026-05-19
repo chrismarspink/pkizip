@@ -1,0 +1,9 @@
+[HR File / Restricted]
+Employee ID: EMP-23548
+Name: Donna Brown
+Last 4 of SSN: 9623
+Company: Stark Industries
+Address: 9822 Lake St, Seattle, GA 89490
+Phone: +1 (765) 913-1440
+Direct deposit: routing #789708331, acct #5044211
+Start date: 2024-03-24
