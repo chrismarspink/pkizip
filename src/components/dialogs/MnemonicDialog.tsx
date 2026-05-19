@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { KeyRound, User, Mail, Eye, EyeOff, Copy, AlertTriangle, ShieldCheck, X, ChevronRight, Check } from 'lucide-react';
 import { generateNewMnemonic, recoverFromMnemonic, isValidMnemonic } from '@/lib/crypto/mnemonic';
 import { deriveKeyIdentity, exportPublicKeyJWK } from '@/lib/crypto/hd-key';
@@ -26,6 +27,11 @@ interface Props {
 type Step = 'profile' | 'mnemonic-input' | 'mnemonic-show' | 'password' | 'done';
 
 export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language?.startsWith('ko') ? 'ko-KR'
+    : i18n.language?.startsWith('ja') ? 'ja-JP'
+    : i18n.language?.startsWith('zh') ? 'zh-CN'
+    : 'en-US';
   const [step, setStep] = useState<Step>('profile');
   const [identityName, setIdentityName] = useState('');
   const [commonName, setCommonName] = useState('');
@@ -61,9 +67,9 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   const { setKeyIdentity, setCertificate, setIdentities, setActiveIdentityId } = useAppStore();
 
   const handleProfileNext = () => {
-    if (!identityName.trim()) { setError('아이덴티티 이름을 입력하세요.'); return; }
-    if (!commonName.trim()) { setError('이름을 입력하세요.'); return; }
-    if (!email.trim() || !email.includes('@')) { setError('유효한 이메일을 입력하세요.'); return; }
+    if (!identityName.trim()) { setError(t('mnemonicDialog.errIdentityName')); return; }
+    if (!commonName.trim()) { setError(t('mnemonicDialog.errCommonName')); return; }
+    if (!email.trim() || !email.includes('@')) { setError(t('mnemonicDialog.errEmail')); return; }
     setError('');
     if (mode === 'generate') {
       const result = generateNewMnemonic();
@@ -79,7 +85,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
   };
 
   const handleMnemonicInputNext = () => {
-    if (!isValidMnemonic(mnemonicInput)) { setError('유효하지 않은 니모닉입니다.'); return; }
+    if (!isValidMnemonic(mnemonicInput)) { setError(t('mnemonicDialog.errInvalidMnemonic')); return; }
     setMnemonic(mnemonicInput.trim().toLowerCase());
     setError('');
     setStep('password');
@@ -92,30 +98,30 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
     try {
       const recovered = await restoreMnemonic(restorePw, selectedBackupId, authUser.id);
       if (!isValidMnemonic(recovered)) {
-        setError('복구된 니모닉이 유효하지 않습니다.');
+        setError(t('mnemonicDialog.errRestoredInvalid'));
         return;
       }
       setMnemonic(recovered.trim().toLowerCase());
-      toast.success('서버 백업에서 니모닉 복구 성공');
+      toast.success(t('mnemonicDialog.toastRestoreOk'));
       setStep('password');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '복구 실패');
+      setError(err instanceof Error ? err.message : t('mnemonicDialog.errRecoverFail'));
     } finally {
       setRestoring(false);
     }
   };
 
   const handleSaveKey = async () => {
-    if (password.length < 8) { setError('비밀번호는 8자 이상'); return; }
-    if (password !== passwordConfirm) { setError('비밀번호 불일치'); return; }
-    setLoadingMsg('키 파생 중...');
+    if (password.length < 8) { setError(t('mnemonicDialog.errPwLength')); return; }
+    if (password !== passwordConfirm) { setError(t('mnemonicDialog.errPwMismatch')); return; }
+    setLoadingMsg(t('mnemonicDialog.loadingDeriveKey'));
     setLoading(true); setError('');
 
     try {
       const { seed } = recoverFromMnemonic(mnemonic);
       const identity = await deriveKeyIdentity(seed);
 
-      setLoadingMsg('인증서 생성 중...');
+      setLoadingMsg(t('mnemonicDialog.loadingCertGen'));
       const cert = await generateSelfSignedCertificate({
         commonName: commonName.trim(), email: email.trim(),
         signingPrivateKey: identity.signingKey.privateKey,
@@ -132,7 +138,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       }, { commonName: commonName.trim(), email: email.trim() });
 
       // PQC 번들 항상 생성
-      setLoadingMsg('PQC 키 생성 중...');
+      setLoadingMsg(t('mnemonicDialog.loadingPqcGen'));
       let pqcCerts: { kem?: string; dsa?: string } | undefined;
       let pqcKeyId: string | undefined;
       try {
@@ -163,11 +169,11 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
         });
       } catch (pqcErr) {
         console.error('[PKIZIP] PQC 생성 실패:', pqcErr);
-        toast.error('PQC 인증서/키 생성 실패 — classic 인증서만 생성되었습니다.');
+        toast.error(t('mnemonicDialog.toastPqcFail'));
       }
 
       // 인증서 저장
-      setLoadingMsg('인증서 저장 중...');
+      setLoadingMsg(t('mnemonicDialog.loadingCertSave'));
       console.log('[PKIZIP] 인증서 저장 시작');
       const storedCert: StoredCertificate = {
         fingerprint: identity.signingKey.fingerprint,
@@ -183,7 +189,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       await saveCertificate(storedCert);
       console.log('[PKIZIP] 인증서 저장 완료');
 
-      setLoadingMsg('키링 등록 중...');
+      setLoadingMsg(t('mnemonicDialog.loadingKeyring'));
       const signingJWK = await exportPublicKeyJWK(identity.signingKey.publicKey);
       const encryptionJWK = await exportPublicKeyJWK(identity.encryptionKey.publicKey);
       await addToKeyRing({
@@ -200,7 +206,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       setCertInfo(cert);
 
       // 아이덴티티 목록 갱신
-      setLoadingMsg('아이덴티티 갱신 중...');
+      setLoadingMsg(t('mnemonicDialog.loadingIdentityRefresh'));
       const { getAllIdentityMetas, getActiveIdentityId, setActiveIdentityId: sai } = await import('@/lib/crypto/key-manager');
       await sai(id);
       setActiveIdentityId(id);
@@ -216,28 +222,28 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
       // 서버 백업 (opt-in, 로그인 시만)
       console.log('[PKIZIP] 백업 조건:', { backupEnabled, hasAuth: !!authUser, hasPw: !!backupPw });
       if (backupEnabled && authUser && backupPw) {
-        setLoadingMsg('서버 백업 암호화 중...');
+        setLoadingMsg(t('mnemonicDialog.loadingBackup'));
         console.log('[PKIZIP] 백업 시작...');
         if (backupPw !== backupPwConfirm) {
-          toast.error('백업 패스워드가 일치하지 않습니다.');
+          toast.error(t('mnemonicDialog.toastBackupPwMismatch'));
         } else if (backupPw.length < 8) {
-          toast.error('백업 패스워드는 8자 이상이어야 합니다.');
+          toast.error(t('mnemonicDialog.toastBackupPwShort'));
         } else {
           try {
             console.log('[PKIZIP] backupMnemonic 호출...');
             await backupMnemonic(mnemonic, backupPw, id, backupHint || undefined, authUser.id);
             console.log('[PKIZIP] 백업 완료');
-            toast.success('니모닉 암호화 백업 저장 완료');
+            toast.success(t('mnemonicDialog.toastBackupSaved'));
           } catch (backupErr) {
             console.error('[PKIZIP] 백업 에러:', backupErr);
-            toast.error(`백업 실패: ${backupErr instanceof Error ? backupErr.message : '오류'}`);
+            toast.error(t('mnemonicDialog.toastBackupFail', { msg: backupErr instanceof Error ? backupErr.message : t('mnemonicDialog.backupErr') }));
           }
         }
       }
 
       setStep('done');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '키 생성 실패');
+      setError(err instanceof Error ? err.message : t('mnemonicDialog.errKeyGenFail'));
     } finally {
       setLoading(false);
     }
@@ -265,51 +271,51 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <KeyRound className="w-5 h-5 text-[#175DDC]" />
             <Dialog.Title className="text-lg font-bold">
-              {mode === 'generate' ? '새 키 및 인증서 생성' : '기존 니모닉으로 복구'}
+              {mode === 'generate' ? t('mnemonicDialog.titleGenerate') : t('mnemonicDialog.titleRecover')}
             </Dialog.Title>
           </div>
           <Dialog.Description className="text-sm text-zinc-500 mb-5">
-            {mode === 'generate' ? '이름/이메일로 자체서명 인증서를 발급합니다.' : '12단어 니모닉과 이름/이메일로 복구합니다.'}
+            {mode === 'generate' ? t('mnemonicDialog.subGenerate') : t('mnemonicDialog.subRecover')}
           </Dialog.Description>
 
           <AnimatePresence mode="wait">
             {/* Profile */}
             {step === 'profile' && (
               <motion.div key="profile" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
-                <Field icon={<KeyRound className="w-3.5 h-3.5" />} label="아이덴티티 이름" value={identityName} onChange={setIdentityName} placeholder="개인 키, 회사 키 등" autoFocus />
-                <Field icon={<User className="w-3.5 h-3.5" />} label="이름 (CN)" value={commonName} onChange={setCommonName} placeholder="홍길동" />
-                <Field icon={<Mail className="w-3.5 h-3.5" />} label="이메일" value={email} onChange={setEmail} placeholder="user@example.com" type="email" />
+                <Field icon={<KeyRound className="w-3.5 h-3.5" />} label={t('mnemonicDialog.identityName')} value={identityName} onChange={setIdentityName} placeholder={t('mnemonicDialog.identityNamePh')} autoFocus />
+                <Field icon={<User className="w-3.5 h-3.5" />} label={t('mnemonicDialog.cnLabel')} value={commonName} onChange={setCommonName} placeholder={t('mnemonicDialog.cnPh')} />
+                <Field icon={<Mail className="w-3.5 h-3.5" />} label={t('mnemonicDialog.emailLabel')} value={email} onChange={setEmail} placeholder={t('mnemonicDialog.emailPh')} type="email" />
 
                 {/* 로고타입 (선택) */}
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
-                    <ShieldCheck className="w-3.5 h-3.5" /> 로고 이미지 <span className="text-zinc-400">(선택)</span>
+                    <ShieldCheck className="w-3.5 h-3.5" /> {t('mnemonicDialog.logoLabel')} <span className="text-zinc-400">{t('mnemonicDialog.logoOptional')}</span>
                   </label>
                   <div className="flex items-center gap-3">
                     <div className="w-14 h-14 rounded-xl border border-zinc-200 bg-zinc-50 flex items-center justify-center overflow-hidden shrink-0">
                       {logotype ? (
                         <img src={logotype} alt="logo" className="max-w-full max-h-full object-contain" />
                       ) : (
-                        <span className="text-[9px] text-zinc-400">Identicon<br />(기본)</span>
+                        <span className="text-[9px] text-zinc-400 text-center px-1">{t('mnemonicDialog.identiconBase')}</span>
                       )}
                     </div>
                     <button type="button" onClick={() => setShowLogoCrop(true)}
                       className="flex-1 text-xs border border-zinc-200 rounded-xl py-2.5 px-3 hover:bg-zinc-50 transition-colors text-zinc-600">
-                      {logotype ? '로고 변경' : '로고 업로드 및 크롭'}
+                      {logotype ? t('mnemonicDialog.logoChange') : t('mnemonicDialog.logoUpload')}
                     </button>
                     {logotype && (
                       <button type="button" onClick={() => setLogotype(null)}
                         className="text-xs text-zinc-400 hover:text-red-500 px-2">
-                        제거
+                        {t('mnemonicDialog.logoRemove')}
                       </button>
                     )}
                   </div>
-                  <p className="text-[10px] text-zinc-400">로고가 없으면 핑거프린트 기반 Identicon이 표시됩니다.</p>
+                  <p className="text-[10px] text-zinc-400">{t('mnemonicDialog.logoFallback')}</p>
                 </div>
 
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-end pt-2">
-                  <Btn onClick={handleProfileNext}>다음 <ChevronRight className="w-4 h-4" /></Btn>
+                  <Btn onClick={handleProfileNext}>{t('mnemonicDialog.next')} <ChevronRight className="w-4 h-4" /></Btn>
                 </div>
               </motion.div>
             )}
@@ -322,24 +328,24 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
                   <div className="flex gap-1 bg-zinc-100 rounded-lg p-0.5 mb-2">
                     <button onClick={() => setRestoreMode('manual')}
                       className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${restoreMode === 'manual' ? 'bg-white shadow text-zinc-800' : 'text-zinc-500'}`}>
-                      직접 입력
+                      {t('mnemonicDialog.tabManual')}
                     </button>
                     <button onClick={() => setRestoreMode('server')}
                       className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${restoreMode === 'server' ? 'bg-white shadow text-zinc-800' : 'text-zinc-500'}`}>
-                      서버 백업 ({backupList.length})
+                      {t('mnemonicDialog.tabServerBackup', { n: backupList.length })}
                     </button>
                   </div>
                 )}
 
                 {restoreMode === 'manual' ? (
                   <>
-                    <label className="text-xs font-medium text-zinc-700">기존 니모닉 12단어</label>
-                    <textarea value={mnemonicInput} onChange={e => { setMnemonicInput(e.target.value); setError(''); }} rows={3} placeholder="word1 word2 ... word12"
+                    <label className="text-xs font-medium text-zinc-700">{t('mnemonicDialog.mnemonic12Label')}</label>
+                    <textarea value={mnemonicInput} onChange={e => { setMnemonicInput(e.target.value); setError(''); }} rows={3} placeholder={t('mnemonicDialog.mnemonicPh')}
                       className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#175DDC] resize-none" autoFocus />
                   </>
                 ) : (
                   <>
-                    <label className="text-xs font-medium text-zinc-700">백업 선택</label>
+                    <label className="text-xs font-medium text-zinc-700">{t('mnemonicDialog.backupSelect')}</label>
                     <div className="space-y-1.5">
                       {backupList.map(b => (
                         <button key={b.identity_id} onClick={() => setSelectedBackupId(b.identity_id)}
@@ -347,13 +353,13 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
                             selectedBackupId === b.identity_id ? 'border-[#175DDC] bg-[#175DDC]/5' : 'border-zinc-100 hover:border-zinc-300'
                           }`}>
                           <div className="text-xs font-medium">{b.hint || b.identity_id.slice(0, 8)}</div>
-                          <div className="text-[10px] text-zinc-400">{new Date(b.updated_at).toLocaleDateString('ko-KR')}</div>
+                          <div className="text-[10px] text-zinc-400">{new Date(b.updated_at).toLocaleDateString(dateLocale)}</div>
                         </button>
                       ))}
                     </div>
                     {selectedBackupId && (
                       <input type="password" value={restorePw} onChange={e => setRestorePw(e.target.value)}
-                        placeholder="백업 패스워드"
+                        placeholder={t('mnemonicDialog.backupPwPh')}
                         className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                         onKeyDown={e => e.key === 'Enter' && handleServerRestore()} />
                     )}
@@ -362,12 +368,12 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
 
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-between pt-2">
-                  <BtnGhost onClick={() => setStep('profile')}>이전</BtnGhost>
+                  <BtnGhost onClick={() => setStep('profile')}>{t('mnemonicDialog.prev')}</BtnGhost>
                   {restoreMode === 'manual' ? (
-                    <Btn onClick={handleMnemonicInputNext}>다음 <ChevronRight className="w-4 h-4" /></Btn>
+                    <Btn onClick={handleMnemonicInputNext}>{t('mnemonicDialog.next')} <ChevronRight className="w-4 h-4" /></Btn>
                   ) : (
                     <Btn onClick={handleServerRestore} disabled={restoring || !selectedBackupId || !restorePw}>
-                      {restoring ? '복구 중...' : '백업에서 복구'}
+                      {restoring ? t('mnemonicDialog.restoring') : t('mnemonicDialog.restoreFromBackup')}
                     </Btn>
                   )}
                 </div>
@@ -379,12 +385,12 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
               <motion.div key="mnshow" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                 <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium">니모닉 12단어</span>
+                    <span className="text-sm font-medium">{t('mnemonicDialog.mnemonic12Show')}</span>
                     <div className="flex gap-1">
                       <button onClick={() => setShowMnemonic(!showMnemonic)} className="p-1.5 rounded-lg hover:bg-zinc-200">
                         {showMnemonic ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
-                      <button onClick={() => { navigator.clipboard.writeText(mnemonic); toast.success('복사됨'); }} className="p-1.5 rounded-lg hover:bg-zinc-200">
+                      <button onClick={() => { navigator.clipboard.writeText(mnemonic); toast.success(t('mnemonicDialog.toastCopied')); }} className="p-1.5 rounded-lg hover:bg-zinc-200">
                         <Copy className="w-4 h-4" />
                       </button>
                     </div>
@@ -398,15 +404,15 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-8 text-zinc-400 text-sm">눈 아이콘을 클릭하여 확인</div>
+                    <div className="text-center py-8 text-zinc-400 text-sm">{t('mnemonicDialog.eyeHint')}</div>
                   )}
                 </div>
                 <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>이 12단어를 안전한 곳에 보관하세요. 분실 시 복구 불가.</span>
+                  <span>{t('mnemonicDialog.dangerNote')}</span>
                 </div>
                 <div className="flex justify-end pt-2">
-                  <Btn onClick={() => setStep('password')} disabled={!showMnemonic}>안전하게 보관했습니다</Btn>
+                  <Btn onClick={() => setStep('password')} disabled={!showMnemonic}>{t('mnemonicDialog.savedSafelyBtn')}</Btn>
                 </div>
               </motion.div>
             )}
@@ -414,10 +420,10 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
             {/* Password + Backup Option */}
             {step === 'password' && (
               <motion.div key="pw" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
-                <p className="text-sm text-zinc-500">키를 안전하게 저장할 비밀번호를 설정하세요.</p>
-                <input type="password" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} placeholder="비밀번호 (8자 이상)"
+                <p className="text-sm text-zinc-500">{t('mnemonicDialog.pwHint')}</p>
+                <input type="password" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} placeholder={t('mnemonicDialog.pwPh')}
                   className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" autoFocus />
-                <input type="password" value={passwordConfirm} onChange={e => { setPasswordConfirm(e.target.value); setError(''); }} placeholder="비밀번호 확인"
+                <input type="password" value={passwordConfirm} onChange={e => { setPasswordConfirm(e.target.value); setError(''); }} placeholder={t('mnemonicDialog.pwConfirmPh')}
                   className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                   onKeyDown={e => e.key === 'Enter' && handleSaveKey()} />
 
@@ -426,20 +432,20 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
                   <label className="flex items-center gap-2 text-xs cursor-pointer">
                     <input type="checkbox" checked={backupEnabled} onChange={e => setBackupEnabled(e.target.value !== '' && e.target.checked)}
                       disabled={!authUser} className="rounded border-zinc-300 accent-[#175DDC]" />
-                    <span className={authUser ? 'text-zinc-700' : 'text-zinc-400'}>서버에 암호화 백업 저장</span>
+                    <span className={authUser ? 'text-zinc-700' : 'text-zinc-400'}>{t('mnemonicDialog.serverBackupOpt')}</span>
                   </label>
-                  {!authUser && <p className="text-[10px] text-zinc-400 mt-1 ml-5">로그인 후 사용 가능합니다</p>}
+                  {!authUser && <p className="text-[10px] text-zinc-400 mt-1 ml-5">{t('mnemonicDialog.loginRequired')}</p>}
 
                   {backupEnabled && authUser && (
                     <div className="mt-2 space-y-2 pl-5">
-                      <input type="password" value={backupPw} onChange={e => setBackupPw(e.target.value)} placeholder="백업 패스워드 (키 패스워드와 다른 것 권장)"
+                      <input type="password" value={backupPw} onChange={e => setBackupPw(e.target.value)} placeholder={t('mnemonicDialog.backupPw1Ph')}
                         className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
-                      <input type="password" value={backupPwConfirm} onChange={e => setBackupPwConfirm(e.target.value)} placeholder="백업 패스워드 확인"
+                      <input type="password" value={backupPwConfirm} onChange={e => setBackupPwConfirm(e.target.value)} placeholder={t('mnemonicDialog.backupPw2Ph')}
                         className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
-                      <input type="text" value={backupHint} onChange={e => setBackupHint(e.target.value)} placeholder="힌트 (선택, 패스워드 자체 입력 금지)"
+                      <input type="text" value={backupHint} onChange={e => setBackupHint(e.target.value)} placeholder={t('mnemonicDialog.backupHintPh')}
                         className="w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]" />
                       <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[10px] text-amber-700">
-                        백업 패스워드를 잊으면 복구 불가. 서버에는 암호화된 데이터만 저장됩니다.
+                        {t('mnemonicDialog.backupWarn')}
                       </div>
                     </div>
                   )}
@@ -447,7 +453,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
 
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <div className="flex justify-end pt-2">
-                  <Btn onClick={handleSaveKey} disabled={loading}>{loading ? (loadingMsg || '생성 중...') : '키 저장 및 인증서 발급'}</Btn>
+                  <Btn onClick={handleSaveKey} disabled={loading}>{loading ? (loadingMsg || t('mnemonicDialog.generating')) : t('mnemonicDialog.saveBtn')}</Btn>
                 </div>
               </motion.div>
             )}
@@ -458,20 +464,20 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
                 <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
                   <ShieldCheck className="w-8 h-8 text-green-600" />
                 </div>
-                <h3 className="text-lg font-bold">키 및 인증서 생성 완료</h3>
+                <h3 className="text-lg font-bold">{t('mnemonicDialog.doneTitle')}</h3>
 
                 <div className="flex justify-center">
                   <Identicon value={fingerprint} size={64} className="rounded-2xl overflow-hidden" />
                 </div>
 
                 <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-sm space-y-1.5 text-left">
-                  <div className="flex justify-between"><span className="text-zinc-500">이름</span><span className="font-medium">{certInfo.commonName}</span></div>
-                  <div className="flex justify-between"><span className="text-zinc-500">이메일</span><span>{certInfo.email}</span></div>
-                  <div className="flex justify-between"><span className="text-zinc-500">핑거프린트</span><code className="text-xs font-mono">0x{fingerprint}</code></div>
-                  <div className="flex justify-between"><span className="text-zinc-500">유효기간</span><span className="text-xs">{certInfo.notBefore.toLocaleDateString('ko-KR')} ~ {certInfo.notAfter.toLocaleDateString('ko-KR')}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-500">{t('mnemonicDialog.doneName')}</span><span className="font-medium">{certInfo.commonName}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-500">{t('mnemonicDialog.doneEmail')}</span><span>{certInfo.email}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-500">{t('mnemonicDialog.doneFp')}</span><code className="text-xs font-mono">0x{fingerprint}</code></div>
+                  <div className="flex justify-between"><span className="text-zinc-500">{t('mnemonicDialog.doneValidity')}</span><span className="text-xs">{certInfo.notBefore.toLocaleDateString(dateLocale)} ~ {certInfo.notAfter.toLocaleDateString(dateLocale)}</span></div>
                 </div>
 
-                <Btn onClick={handleClose}>확인</Btn>
+                <Btn onClick={handleClose}>{t('mnemonicDialog.confirm')}</Btn>
               </motion.div>
             )}
           </AnimatePresence>
@@ -486,9 +492,9 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
             <Dialog.Close className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-800 z-10">
               <X className="w-5 h-5" />
             </Dialog.Close>
-            <Dialog.Title className="text-lg font-bold mb-1">로고 이미지 크롭</Dialog.Title>
+            <Dialog.Title className="text-lg font-bold mb-1">{t('mnemonicDialog.logoCropTitle')}</Dialog.Title>
             <Dialog.Description className="text-sm text-zinc-500 mb-4">
-              인증서에 사용할 이미지를 업로드하고 영역을 선택하세요.
+              {t('mnemonicDialog.logoCropSub')}
             </Dialog.Description>
             <LogoCrop
               onCropComplete={(dataUrl) => setLogotype(dataUrl)}
@@ -498,7 +504,7 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
               previewEmail={email || undefined}
             />
             <div className="flex justify-end mt-4 pt-4 border-t border-zinc-100">
-              <Btn onClick={() => setShowLogoCrop(false)}>완료</Btn>
+              <Btn onClick={() => setShowLogoCrop(false)}>{t('mnemonicDialog.complete')}</Btn>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

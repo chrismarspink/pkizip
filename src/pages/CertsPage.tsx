@@ -237,14 +237,14 @@ export function CertsPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 lg:py-10">
-      <h1 className="text-xl font-bold mb-2">내 인증서</h1>
-      <p className="text-sm text-zinc-500 mb-6">스와이프하여 상세 정보와 설정을 확인하세요.</p>
+      <h1 className="text-xl font-bold mb-2">{t('certificates.title')}</h1>
+      <p className="text-sm text-zinc-500 mb-6">{t('certificates.subtitle')}</p>
 
       {cardProps.length === 0 ? (
         <div className="text-center py-20">
           <Shield className="w-16 h-16 mx-auto mb-4 text-zinc-200" />
-          <p className="text-zinc-500 mb-4">등록된 인증서가 없습니다</p>
-          <p className="text-xs text-zinc-400 mb-6">아래에서 새 니모닉을 생성하거나 기존 니모닉을 복구하세요.</p>
+          <p className="text-zinc-500 mb-4">{t('certificates.noneRegistered')}</p>
+          <p className="text-xs text-zinc-400 mb-6">{t('mnemonicDialog.helpText')}</p>
         </div>
       ) : (
         <div className="space-y-6">
@@ -282,7 +282,7 @@ export function CertsPage() {
               const active = cardProps.find(p => p.isActive);
               const cert = active?.cert ?? cardProps[0]?.cert;
               if (cert) setQrFor(cert);
-              else toast.error('인증서가 없습니다');
+              else toast.error(t('certificates.noneRegistered'));
             }}
             className="flex items-center gap-1.5 text-sm text-[#175DDC] border border-[#175DDC]/30 hover:bg-[#175DDC]/5 rounded-lg px-4 py-2"
           >
@@ -297,13 +297,13 @@ export function CertsPage() {
           onClick={() => setMnemonicDialog('generate')}
           className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
-          <Plus className="w-4 h-4" /> 새 니모닉 생성
+          <Plus className="w-4 h-4" /> {t('mnemonicDialog.newGenerate')}
         </button>
         <button
           onClick={() => setMnemonicDialog('recover')}
           className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
-          <Import className="w-4 h-4" /> 기존 니모닉 복구
+          <Import className="w-4 h-4" /> {t('mnemonicDialog.recoverExisting')}
         </button>
       </div>
 

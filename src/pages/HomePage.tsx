@@ -4,9 +4,11 @@
  */
 import { useState } from 'react';
 import { Plus, Import } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { MnemonicDialog } from '@/components/dialogs/MnemonicDialog';
 
 export function HomePage() {
+  const { t } = useTranslation();
   const [mnemonicDialog, setMnemonicDialog] = useState<'generate' | 'recover' | null>(null);
   const base = import.meta.env.BASE_URL;
 
@@ -36,13 +38,13 @@ export function HomePage() {
           onClick={() => setMnemonicDialog('generate')}
           className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
-          <Plus className="w-4 h-4" /> 새 니모닉 생성
+          <Plus className="w-4 h-4" /> {t('mnemonicDialog.newGenerate')}
         </button>
         <button
           onClick={() => setMnemonicDialog('recover')}
           className="flex items-center justify-center gap-2 border-2 border-dashed border-zinc-200 rounded-xl py-3 text-sm text-zinc-500 hover:border-[#175DDC] hover:text-[#175DDC] transition-colors"
         >
-          <Import className="w-4 h-4" /> 기존 니모닉 복구
+          <Import className="w-4 h-4" /> {t('mnemonicDialog.recoverExisting')}
         </button>
       </div>
 
