@@ -28,6 +28,15 @@ export interface ExtractResult {
   warnings?: string[];
 }
 
+export interface ExtractOpts {
+  /** 앱 i18n 언어 — OCR 모델 자동 선택 (ko→kor/eng, ja→jpn/eng, zh→chi_sim/eng, 그 외 eng) */
+  appLanguage?: string;
+  /** 사용자가 명시한 Tesseract traineddata 코드 — 지정 시 appLanguage 무시 */
+  ocrLanguages?: string[];
+  /** OCR 진행률 콜백 (0..1) */
+  onOcrProgress?: (info: { file: string; progress: number; status: string }) => void;
+}
+
 // ─────────────────────────────────────────────
 // 포맷 판별
 // ─────────────────────────────────────────────
@@ -314,9 +323,12 @@ function fallbackHwp(_input: ExtractInput, reason: string): ExtractResult {
 // 이미지 — Tesseract.js (lazy)
 // ─────────────────────────────────────────────
 
-async function extractImage(input: ExtractInput): Promise<ExtractResult> {
-  const { ocrImage } = await import('./ocr');
-  const r = await ocrImage(input.data, ['kor', 'eng']);
+async function extractImage(input: ExtractInput, opts?: ExtractOpts): Promise<ExtractResult> {
+  const { ocrImage, tesseractLanguagesFor } = await import('./ocr');
+  const langs = opts?.ocrLanguages ?? tesseractLanguagesFor(opts?.appLanguage);
+  const r = await ocrImage(input.data, langs, (progress, status) => {
+    opts?.onOcrProgress?.({ file: input.name, progress, status });
+  });
   return {
     text: r.text,
     source: 'ocr',
@@ -339,7 +351,7 @@ const EXT_DISPATCH: Record<string, (i: ExtractInput) => Promise<ExtractResult>> 
   hwp:  extractHwp,
 };
 
-export async function extractText(input: ExtractInput): Promise<ExtractResult> {
+export async function extractText(input: ExtractInput, opts?: ExtractOpts): Promise<ExtractResult> {
   // 1) 평문 텍스트 — 가장 빠른 경로
   if (isPlainText(input)) {
     return { text: decodeText(input.data), source: 'text' };
@@ -347,7 +359,7 @@ export async function extractText(input: ExtractInput): Promise<ExtractResult> {
 
   // 2) 이미지 → OCR
   if (isImage(input)) {
-    return extractImage(input);
+    return extractImage(input, opts);
   }
 
   // 3) 확장자 dispatch
@@ -384,7 +396,7 @@ export async function extractText(input: ExtractInput): Promise<ExtractResult> {
  * 다중 파일 → 단일 텍스트 + 메타 통합.
  * UI 흐름에서 한 번에 호출.
  */
-export async function extractAll(files: ExtractInput[]): Promise<{
+export async function extractAll(files: ExtractInput[], opts?: ExtractOpts): Promise<{
   text: string;
   perFile: Array<{ name: string } & ExtractResult>;
   ocrApplied: boolean;
@@ -395,7 +407,7 @@ export async function extractAll(files: ExtractInput[]): Promise<{
 }> {
   const perFile: Array<{ name: string } & ExtractResult> = [];
   for (const f of files) {
-    const r = await extractText(f);
+    const r = await extractText(f, opts);
     perFile.push({ name: f.name, ...r });
   }
   const text = perFile.map(p => p.text).filter(t => t.length > 0).join('\n\n');

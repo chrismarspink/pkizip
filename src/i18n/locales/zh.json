@@ -236,7 +236,9 @@
     "inputLen": "输入",
     "envLen": "信封",
     "chars": " 字符",
-    "newCreate": "新建"
+    "newCreate": "新建",
+    "ocrRunning": "OCR 处理中 — {{file}}",
+    "ocrFirstRunNote": "首次使用时下载语言模型(约 10–30MB)。之后从缓存即时启动。"
   },
   "filesOpen": {
     "title": "打开 PKIZIP 文件",

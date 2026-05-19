@@ -101,7 +101,7 @@ function decisionToSealMeta(d: AnalysisDecision, fingerprint?: string) {
 }
 
 export function CreatePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { keyIdentity, isKeyLoaded, identities, activeIdentityId, setIdentities, setActiveIdentityId } = useAppStore();
   // IndexedDB에서 아이덴티티 로드
   useEffect(() => {
@@ -155,6 +155,7 @@ export function CreatePage() {
   const [analysisDecision, setAnalysisDecision] = useState<AnalysisDecision | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisSkipped, setAnalysisSkipped] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<{ file: string; progress: number; status: string } | null>(null);
   const [selectedIdentityId, setSelectedIdentityId] = useState<string | null>(null);
   const [resultData, setResultData] = useState<Uint8Array | null>(null);
   const [resultName, setResultName] = useState('');
@@ -315,9 +316,13 @@ export function CreatePage() {
    */
   const enterAnalyzeStep = async () => {
     setAnalyzing(true);
+    setOcrProgress(null);
     setStep('analyze');   // analyzing 표시 위해 step 먼저 전환
     try {
-      const extracted = await extractAll(files);
+      const extracted = await extractAll(files, {
+        appLanguage: i18n.language,
+        onOcrProgress: (info) => setOcrProgress(info),
+      });
       const text = extracted.text;
       const warningCount = extracted.warnings.length;
 
@@ -368,6 +373,7 @@ export function CreatePage() {
       setStep('options');
     } finally {
       setAnalyzing(false);
+      setOcrProgress(null);
     }
   };
 
@@ -845,9 +851,27 @@ export function CreatePage() {
               <br />분석은 100% 브라우저에서 실행 — 텍스트가 서버로 전송되지 않습니다.
             </p>
             {analyzing && (
-              <div className="bg-white border border-zinc-200 rounded-xl p-6 flex items-center gap-3">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                <span className="text-sm">{t("create.analyzing")}</span>
+              <div className="bg-white border border-zinc-200 rounded-xl p-6">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">
+                      {ocrProgress ? t('create.ocrRunning', { file: ocrProgress.file }) : t('create.analyzing')}
+                    </div>
+                    {ocrProgress && (
+                      <>
+                        <div className="text-[11px] text-zinc-500 mt-1 truncate">
+                          {ocrProgress.status} · {Math.round(ocrProgress.progress * 100)}%
+                        </div>
+                        <div className="mt-1.5 h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-500 transition-all"
+                            style={{ width: `${Math.round(ocrProgress.progress * 100)}%` }} />
+                        </div>
+                        <p className="text-[10px] text-zinc-400 mt-1.5">{t('create.ocrFirstRunNote')}</p>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
             {!analyzing && !analysisInitial && (

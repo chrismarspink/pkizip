@@ -8,11 +8,20 @@
  */
 import type { OcrResult } from './types';
 
-let _worker: Awaited<ReturnType<typeof createWorker>> | null = null;
-let _languages: string[] = [];
-
 type CreateWorkerFn = (typeof import('tesseract.js'))['createWorker'];
+type Worker = Awaited<ReturnType<NonNullable<CreateWorkerFn>>>;
+
+let _worker: Worker | null = null;
+let _languages: string[] = [];
+let _logger: ((m: TesseractLog) => void) | null = null;
+
 let createWorker: CreateWorkerFn | null = null;
+
+export interface TesseractLog {
+  status: string;
+  progress?: number;
+  jobId?: string;
+}
 
 async function ensureLoaded(): Promise<CreateWorkerFn> {
   if (createWorker) return createWorker;
@@ -23,40 +32,64 @@ async function ensureLoaded(): Promise<CreateWorkerFn> {
 }
 
 /**
+ * 앱 i18n 언어 → Tesseract traineddata 언어 배열.
+ * 항상 영어 fallback 포함.
+ */
+export function tesseractLanguagesFor(appLang: string | undefined): string[] {
+  const lang = (appLang || 'en').toLowerCase();
+  if (lang.startsWith('ko')) return ['kor', 'eng'];
+  if (lang.startsWith('ja')) return ['jpn', 'eng'];
+  if (lang.startsWith('zh')) return ['chi_sim', 'eng'];
+  return ['eng'];
+}
+
+/**
  * Tesseract worker 적재. 한 번만 호출되면 캐시.
  */
 async function getWorker(languages: string[] = ['kor', 'eng']) {
   const create = await ensureLoaded();
-  // 이미 같은 언어로 로드돼 있으면 재사용
+  // 같은 언어 + logger 미사용이면 재사용 (logger는 매 호출마다 다를 수 있음 → 갱신은 별도 콜백 변수로)
   if (_worker && _languages.join(',') === languages.join(',')) return _worker;
   if (_worker) {
     try { await _worker.terminate(); } catch { /* ignore */ }
   }
-  _worker = await create(languages);
+  // tesseract.js v5+: createWorker(langs, oem, options)
+  _worker = await create(languages, undefined, {
+    logger: (m: TesseractLog) => { _logger?.(m); },
+  } as any);
   _languages = languages;
   return _worker;
 }
 
 /**
  * 이미지 파일 (Blob/File/Uint8Array) → 텍스트.
+ * onProgress(0..1, status) — UI 진행률 표시 용.
  */
 export async function ocrImage(
   image: Blob | File | Uint8Array | string,
   languages: string[] = ['kor', 'eng'],
+  onProgress?: (progress: number, status: string) => void,
 ): Promise<OcrResult> {
-  const w = await getWorker(languages);
-  const src = image instanceof Uint8Array
-    ? new Blob([image as BlobPart])
-    : image;
-  const { data } = await w.recognize(src);
-  return {
-    text: data.text || '',
-    applied: true,
-    engine: 'tesseract.js',
-    languages,
-    confidence: (data.confidence || 0) / 100,
-    pages: 1,
-  };
+  _logger = onProgress
+    ? (m) => { if (typeof m.progress === 'number') onProgress(m.progress, m.status); }
+    : null;
+  try {
+    const w = await getWorker(languages);
+    const src = image instanceof Uint8Array
+      ? new Blob([image as BlobPart])
+      : image;
+    const { data } = await w.recognize(src);
+    return {
+      text: data.text || '',
+      applied: true,
+      engine: 'tesseract.js',
+      languages,
+      confidence: (data.confidence || 0) / 100,
+      pages: 1,
+    };
+  } finally {
+    _logger = null;
+  }
 }
 
 /**

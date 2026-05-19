@@ -236,7 +236,9 @@
     "inputLen": "Input",
     "envLen": "Envelope",
     "chars": " chars",
-    "newCreate": "New"
+    "newCreate": "New",
+    "ocrRunning": "OCR running — {{file}}",
+    "ocrFirstRunNote": "On first use the language model (~10–30MB) downloads once. Cached after."
   },
   "filesOpen": {
     "title": "Open PKIZIP File",

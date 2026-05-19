@@ -236,7 +236,9 @@
     "inputLen": "入力",
     "envLen": "エンベロープ",
     "chars": " 文字",
-    "newCreate": "新規作成"
+    "newCreate": "新規作成",
+    "ocrRunning": "OCR 処理中 — {{file}}",
+    "ocrFirstRunNote": "初回は言語モデル(約 10–30MB)をダウンロードします。以後はキャッシュから即起動。"
   },
   "filesOpen": {
     "title": "PKIZIP ファイルを開く",

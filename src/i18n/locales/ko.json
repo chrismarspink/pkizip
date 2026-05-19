@@ -236,7 +236,9 @@
     "inputLen": "입력",
     "envLen": "봉투",
     "chars": "자",
-    "newCreate": "새로 만들기"
+    "newCreate": "새로 만들기",
+    "ocrRunning": "OCR 처리 중 — {{file}}",
+    "ocrFirstRunNote": "첫 실행 시 언어 모델(약 10–30MB)을 다운로드합니다. 이후엔 캐시되어 즉시 시작."
   },
   "filesOpen": {
     "title": "PKIZIP 파일 열기",
