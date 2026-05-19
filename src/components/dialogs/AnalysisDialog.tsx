@@ -437,10 +437,10 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
 
             {/* NER 비활성 안내 — 사람 이름·조직·장소 검출 누락 가능성 */}
             {(() => {
-              const nerPrefs = prefs.ner.get();
+              const nerPrefs = prefs.neural.get();
               const hasNerEntity = initialResult.findings.some(f =>
                 ['PERSON', 'LOCATION', 'ORGANIZATION'].includes(f.entityType));
-              if (nerPrefs.enabled || hasNerEntity) return null;
+              if (nerPrefs.nerEnabled || hasNerEntity) return null;
               const isKorean = initialResult.language.detected === 'ko';
               if (!isKorean || initialResult.text.length < 50) return null;
               return (
