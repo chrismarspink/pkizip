@@ -6,7 +6,7 @@
  *
  * 모델은 첫 호출 시 lazy 다운로드 (~30MB per language, CDN unpkg).
  */
-import type { OcrResult } from './types';
+import type { OcrResult, OcrWord } from './types';
 
 type CreateWorkerFn = (typeof import('tesseract.js'))['createWorker'];
 type Worker = Awaited<ReturnType<NonNullable<CreateWorkerFn>>>;
@@ -78,18 +78,61 @@ export async function ocrImage(
     const src = image instanceof Uint8Array
       ? new Blob([image as BlobPart])
       : image;
-    const { data } = await w.recognize(src);
+    // blocks: true 옵션으로 word-level bbox 트리 반환 (마스킹용)
+    const { data } = await w.recognize(src, undefined, { blocks: true });
+    const text = data.text || '';
+    const words = flattenWords(data, text);
     return {
-      text: data.text || '',
+      text,
       applied: true,
       engine: 'tesseract.js',
       languages,
       confidence: (data.confidence || 0) / 100,
       pages: 1,
+      words,
     };
   } finally {
     _logger = null;
   }
+}
+
+/**
+ * Tesseract Page.blocks 트리를 평탄한 Word[] 로 변환하면서 각 word 의 textStart/textEnd
+ * (concatenated page text 내 offset) 을 계산한다.
+ *
+ * Tesseract 의 `data.text` 는 word 들을 공백/개행으로 합친 결과이므로, indexOf 로 위치를
+ * 찾되 같은 단어가 여러 번 등장하면 직전 매칭 다음부터 검색해 충돌을 막는다.
+ */
+function flattenWords(data: { text?: string; blocks?: any[] | null }, fullText: string): OcrWord[] {
+  if (!data.blocks || data.blocks.length === 0) return [];
+  const out: OcrWord[] = [];
+  let cursor = 0;
+  for (const block of data.blocks) {
+    for (const para of (block.paragraphs ?? [])) {
+      for (const line of (para.lines ?? [])) {
+        for (const w of (line.words ?? [])) {
+          const wText: string = w.text ?? '';
+          if (!wText) continue;
+          const idx = fullText.indexOf(wText, cursor);
+          if (idx < 0) continue; // text 와 word 가 어긋난 경우 (라이언화/이모지) → 스킵
+          out.push({
+            text: wText,
+            textStart: idx,
+            textEnd: idx + wText.length,
+            bbox: {
+              x0: w.bbox?.x0 ?? 0,
+              y0: w.bbox?.y0 ?? 0,
+              x1: w.bbox?.x1 ?? 0,
+              y1: w.bbox?.y1 ?? 0,
+            },
+            confidence: (w.confidence ?? 0) / 100,
+          });
+          cursor = idx + wText.length;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**

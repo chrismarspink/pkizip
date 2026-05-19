@@ -12,7 +12,7 @@
  *   - unsupported: 메타에 사유 명시. 사용자에게 안내 (다른 포맷 권장).
  */
 import type { FileEntry } from '../compression/compressor';
-import type { Replacement } from './types';
+import type { Finding, OcrWord, Replacement } from './types';
 
 export type AnonymizeMethod = 'inline' | 'sidecar' | 'unsupported';
 
@@ -253,6 +253,8 @@ export interface PerFileExtract {
   text: string;
   source: string;
   warnings?: string[];
+  /** OCR 적용된 파일의 word-level bbox (이미지 마스킹용) */
+  ocrWords?: OcrWord[];
 }
 
 /**
@@ -261,10 +263,18 @@ export interface PerFileExtract {
  * @param replacements   AnonymizationResult.replacements
  * @param perFileExtract 각 파일의 추출 결과 (sidecar 모드에서 가명화된 텍스트 생성용)
  */
+export interface AnonymizeOpts {
+  /** PII findings (start/end offset) — 이미지 마스킹용. 비어 있으면 이미지는 sidecar fallback. */
+  findingsByFile?: Map<string, Finding[]>;
+  /** 마스킹 스타일 — 'box' (기본, 검정 사각형) 또는 'blur' (보수적, 일부 복원 가능) */
+  imageMaskStyle?: 'box' | 'blur';
+}
+
 export async function anonymizeAllFiles(
   files: FileEntry[],
   replacements: Replacement[],
   perFileExtract: PerFileExtract[],
+  opts: AnonymizeOpts = {},
 ): Promise<AnonymizeFilesResult> {
   const out: FileEntry[] = [];
   const reports: FileAnonymizationReport[] = [];
@@ -306,11 +316,44 @@ export async function anonymizeAllFiles(
           'HWPX (한컴 2014+ 신 포맷) 로 저장하시면 가명화가 직접 적용됩니다.');
         out.push(...r.files); reports.push(r.report);
       } else if (extractInfo?.source === 'ocr' || /^(jpe?g|png|gif|bmp|tiff?|webp)$/i.test(e)) {
-        // 이미지 — OCR 결과 가명화 후 동봉. 원본 이미지 보존.
+        // 이미지 — OCR 좌표 + finding offset 으로 PII 픽셀 영역만 마스킹.
+        // OCR words 또는 findings 가 없으면 sidecar fallback.
         const original = extractInfo?.text || '';
+        const findings = opts.findingsByFile?.get(file.name) ?? [];
+        const words = extractInfo?.ocrWords ?? [];
+        if (findings.length > 0 && words.length > 0) {
+          try {
+            const { findingsToMaskBoxes, applyMasksToImage } = await import('./ocr-mask');
+            const boxes = findingsToMaskBoxes(findings, words);
+            if (boxes.length > 0) {
+              const masked = await applyMasksToImage(file.data, boxes, {
+                style: opts.imageMaskStyle ?? 'box',
+                mimeType: file.type,
+              });
+              // PNG 로 재인코딩되므로 확장자 통일
+              const newName = file.name.replace(/\.(jpe?g|gif|bmp|tiff?|webp)$/i, '.png');
+              out.push({ ...file, data: masked, size: masked.byteLength, name: newName, type: 'image/png' });
+              reports.push({
+                filename: file.name,
+                method: 'inline',
+                note: `${boxes.length}개 영역에 PII 마스킹 적용 (${boxes.reduce((s, b) => s + b.entityTypes.length, 0)}개 entity, PNG 로 재저장)`,
+                suggestion: words.length > 0 && boxes.length < findings.length
+                  ? 'OCR 정확도 한계로 일부 PII 가 인식되지 않았을 수 있습니다 — 결과를 시각적으로 확인하세요.'
+                  : undefined,
+              });
+              break;
+            }
+          } catch (maskErr) {
+            // 마스킹 실패 시 sidecar 로 폴백
+            console.warn('image masking failed, falling back to sidecar:', maskErr);
+          }
+        }
+        // Fallback: OCR words 또는 findings 없음 — 가명화된 텍스트만 동봉
         const { out: anonText } = applyMapping(original, replacements);
         const r = buildSidecar(file, anonText,
-          '이미지 파일은 픽셀 위 텍스트 교체 불가 — OCR 결과를 가명화하여 별도 동봉.',
+          words.length === 0
+            ? 'OCR word 좌표 정보 없음 — 픽셀 마스킹 불가. 가명화된 텍스트만 동봉.'
+            : '검출된 PII 가 없거나 좌표 매핑 실패 — 가명화된 텍스트만 동봉.',
           '편집 가능한 원본 문서 (DOCX/HWPX 등) 가 있다면 그것을 봉투로 만드는 것이 정확합니다.');
         out.push(...r.files); reports.push(r.report);
       } else {

@@ -89,6 +89,18 @@ export interface OcrResult {
   confidence: number;
   pages?: number;
   warnings?: string[];
+  /** Word-level bbox — 가명/익명화 마스킹용. text 의 어느 부분이 어느 픽셀 영역인지. */
+  words?: OcrWord[];
+}
+
+export interface OcrWord {
+  text: string;
+  /** OCR 텍스트 내에서의 시작 offset (concatenated text 기준) */
+  textStart: number;
+  /** end offset (exclusive) */
+  textEnd: number;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+  confidence: number;
 }
 
 /**

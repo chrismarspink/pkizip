@@ -10,6 +10,7 @@
  *   - HWPX: ZIP + XML 직접 파싱 (fflate)
  */
 import { unzipSync, strFromU8 } from 'fflate';
+import type { OcrWord } from './types';
 
 export interface ExtractInput {
   name: string;
@@ -25,6 +26,8 @@ export interface ExtractResult {
   ocrApplied?: boolean;
   ocrConfidence?: number;
   ocrLanguages?: string[];
+  /** OCR 적용 시 word-level bbox — 이미지 마스킹용. */
+  ocrWords?: OcrWord[];
   warnings?: string[];
 }
 
@@ -335,6 +338,7 @@ async function extractImage(input: ExtractInput, opts?: ExtractOpts): Promise<Ex
     ocrApplied: true,
     ocrConfidence: r.confidence,
     ocrLanguages: r.languages,
+    ocrWords: r.words,
   };
 }
 

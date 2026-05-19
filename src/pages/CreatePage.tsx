@@ -22,7 +22,7 @@ import { convertConvertibleFilesToPdf, isConvertibleToPdf, type PdfConversionRep
 import { findingsToDpvCategories } from '@/lib/policy/standards/dpv-data-category';
 import { deriveDpvMeasures } from '@/lib/policy/standards/dpv-applied-measure';
 import { createMipLabel } from '@/lib/mip/mip-label';
-import type { AnalysisResult } from '@/lib/analysis/types';
+import type { AnalysisResult, Finding } from '@/lib/analysis/types';
 
 type Step = 'files' | 'analyze' | 'options' | 'details' | 'processing' | 'done';
 
@@ -357,9 +357,10 @@ export function CreatePage() {
       }).catch(() => baseResult);
       setAnalysisInitial(result);
       setAnalysisSkipped(false);
-      // 추출 결과 보존 — 가/익명화 sidecar 모드에서 재사용
+      // 추출 결과 보존 — 가/익명화 sidecar 모드 + 이미지 마스킹에서 재사용
       setPerFileExtract(extracted.perFile.map(p => ({
         filename: p.name, text: p.text, source: p.source, warnings: p.warnings,
+        ocrWords: p.ocrWords,
       })));
       // 추출 경로 정보 안내
       const sources = Array.from(new Set(extracted.perFile.map(p => p.source))).join(', ');
@@ -406,7 +407,18 @@ export function CreatePage() {
     const anon = decision.result.anonymization;
     if (anon && decision.anonymizationAction !== 'skip' && anon.result.replacements.length > 0) {
       try {
-        const r = await anonymizeAllFiles(files, anon.result.replacements, perFileExtract);
+        // 이미지 마스킹용 per-file findings — 이미지(OCR) 파일에 대해서만 file-local 좌표로 재탐지
+        const { detect } = await import('@/lib/analysis/pii-detector');
+        const findingsByFile = new Map<string, Finding[]>();
+        for (const p of perFileExtract) {
+          if (p.source === 'ocr' && p.ocrWords && p.ocrWords.length > 0 && p.text) {
+            findingsByFile.set(p.filename, detect(p.text, { minScore: 0.3 }));
+          }
+        }
+        const r = await anonymizeAllFiles(files, anon.result.replacements, perFileExtract, {
+          findingsByFile,
+          imageMaskStyle: 'box',
+        });
         setFiles(r.files);
         setAnonReports(r.reports);
         const inlineCount = r.reports.filter(x => x.method === 'inline').length;
