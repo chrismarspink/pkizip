@@ -259,11 +259,22 @@ export function MnemonicDialog({ open, onOpenChange, mode }: Props) {
     onOpenChange(false);
   };
 
+  // 입력 도중 실수로 닫히는 사고 방지:
+  //  - onOpenChange 는 새 open 상태(boolean) 를 받는다 — false 일 때만 닫는다.
+  //    이전 코드는 `onOpenChange={handleClose}` 라 라이브러리가 어떤 이유로 (true) 를
+  //    호출해도 다이얼로그가 그대로 닫혀버렸다.
+  //  - mnemonic-show / password / mnemonic-input 단계는 outside click 으로 닫히면
+  //    사용자가 작성한 패스워드·니모닉이 사라진다. 명시 액션(X 버튼·ESC·취소·완료) 으로만 닫게.
+  const sensitiveStep = step === 'password' || step === 'mnemonic-show' || step === 'mnemonic-input';
   return (
-    <Dialog.Root open={open} onOpenChange={handleClose}>
+    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/40 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-2xl w-[90vw] max-w-[480px] max-h-[85vh] overflow-y-auto p-6">
+        <Dialog.Content
+          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl shadow-2xl w-[90vw] max-w-[480px] max-h-[85vh] overflow-y-auto p-6"
+          onPointerDownOutside={(e) => { if (sensitiveStep) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (sensitiveStep) e.preventDefault(); }}
+        >
           <Dialog.Close className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-800">
             <X className="w-5 h-5" />
           </Dialog.Close>
