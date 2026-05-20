@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { UpdateBanner } from '@/components/UpdateBanner';
+import { useEmbedHost } from '@/lib/embed/use-embed-host';
 import { HomePage } from '@/pages/HomePage';
 import { CreatePage } from '@/pages/CreatePage';
 import { FilesTempPage } from '@/pages/FilesTempPage';
@@ -26,6 +27,8 @@ import { TeamSettingsPage } from '@/pages/team/TeamSettingsPage';
 export function App() {
   // GitHub Pages: /pkizip/ 서브 경로 지원
   const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+  // iframe 임베드 모드 — postMessage 호스트 통신 활성화 (외부 호스트 X 시 no-op)
+  useEmbedHost();
 
   return (
     <BrowserRouter basename={basename}>

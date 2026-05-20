@@ -367,6 +367,30 @@ export function CreatePage() {
       toast(`분석 준비 완료 — 추출 경로: ${sources}${extracted.ocrApplied ? ' (OCR 적용)' : ''}`, {
         icon: '🔍',
       });
+
+      // iframe 임베드 호스트에 분석 결과 자동 전송
+      try {
+        const { emitToHost } = await import('@/lib/embed/use-embed-host');
+        emitToHost({
+          type: 'pkizip:classified',
+          result: {
+            grade: result.classification.grade,
+            score: result.classification.score,
+            rationale: result.classification.reasons?.map(r => r.label).join(' · '),
+            findings: result.findings.map(f => ({
+              entityType: f.entityType,
+              original: f.text,
+              start: f.start,
+              end: f.end,
+              score: f.score,
+            })),
+            language: result.language?.detected,
+            ocrApplied: extracted.ocrApplied,
+          },
+        });
+      } catch (e) {
+        console.debug('embed emit (classified) skipped:', e);
+      }
     } catch (e) {
       console.error('analysis failed:', e);
       toast.error(`분석 실패 — ${(e as Error).message || '옵션 단계로 이동'}`);
@@ -677,11 +701,35 @@ export function CreatePage() {
       }
 
       const baseName = files.length === 1 ? files[0].name.replace(/\.[^.]+$/, '') : 'archive';
+      const finalName = `${baseName}.${suffix}.pki`;
       setResultData(pkiData);
-      setResultName(`${baseName}.${suffix}.pki`);
+      setResultName(finalName);
       setResultInfo(info);
       setResultAlgos(algos);
       setStep('done');
+
+      // iframe 임베드 호스트(HE-TEST 등) 에 봉투 결과 자동 전송
+      try {
+        const { emitToHost } = await import('@/lib/embed/use-embed-host');
+        const b64 = btoa(String.fromCharCode(...Array.from(pkiData)));
+        emitToHost({
+          type: 'pkizip:sealed',
+          envelope: { name: finalName, base64: b64, mime: 'application/octet-stream' },
+          meta: {
+            fileName: finalName,
+            fileSize: pkiData.byteLength,
+            grade: analysisDecision?.result?.classification?.grade,
+            algorithm: algos.join(' + '),
+            pqcApplied: cryptoMode !== 'classic',
+            signed: !!options.sign,
+            encrypted: !!options.encrypted,
+            enveloped: !!options.enveloped,
+            createdAt: Date.now(),
+          },
+        });
+      } catch (e) {
+        console.debug('embed emit (sealed) skipped:', e);
+      }
     } catch (err) {
       toast.error(`실패: ${err instanceof Error ? err.message : '오류'}`);
       setStep('options');
