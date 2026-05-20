@@ -1028,7 +1028,20 @@ export function CreatePage() {
 
             <div className="space-y-3">
               <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title={t("create.compress")} desc={t("create.compressDesc")} />
-              <OptionCard checked={options.sign} onChange={() => toggleOption('sign')} icon={<PenTool className="w-5 h-5" />} title={t("create.signed")} desc={cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명' : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명' : 'ECDSA P-256 전자서명'} disabled={!hasAnyIdentity} />
+              <OptionCard
+                checked={options.sign}
+                onChange={() => toggleOption('sign')}
+                icon={<PenTool className="w-5 h-5" />}
+                title={t("create.signed")}
+                desc={
+                  options.enveloped
+                    ? 'Enveloped 포함 — 서명 강제 (Enveloped 해제 시 변경 가능)'
+                    : cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명'
+                    : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명'
+                    : 'ECDSA P-256 전자서명'
+                }
+                disabled={!hasAnyIdentity || options.enveloped}
+              />
               <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#175DDC]" />} title={t("create.enveloped")} desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
               <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title={t("create.encrypted")} desc={t("create.passwordAesGcm")} />
               {(() => {
