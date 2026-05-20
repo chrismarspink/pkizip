@@ -202,10 +202,13 @@ export function CreatePage() {
         if (next.enveloped) { next.encrypted = false; next.sign = true; }
       } else if (key === 'encrypted') {
         next.encrypted = !prev.encrypted;
-        if (next.encrypted) { next.enveloped = false; }
+        if (next.encrypted) { next.enveloped = false; next.sign = false; }
       } else if (key === 'sign') {
-        if (prev.enveloped) return prev;
+        // sign 토글은 항상 허용. 단 enveloped 가 켜져 있을 때 sign 을 끄면
+        // enveloped 도 함께 끄기 (RFC 5652 EnvelopedData 안의 SignedData 가
+        // PKIZIP 의 봉투 정책 — 서명 없는 봉투는 의도하지 않은 상태).
         next.sign = !prev.sign;
+        if (!next.sign && prev.enveloped) next.enveloped = false;
       } else {
         next[key] = !prev[key];
       }
@@ -413,9 +416,13 @@ export function CreatePage() {
                 : 'hybrid');                  // hybrid 또는 pqc-he 모두 hybrid 로 (HE는 별도)
 
     // 2) 등급별 옵션 분기 (사용자 명세 (6))
+    //    인증서 없는 사용자(iframe 임베드에서 처음 사용 등) 는 sign/enveloped 불가
+    //    → 비밀번호 암호화 또는 압축만 추천.
     const grade = decision.result.classification.grade;
     const isExternal = decision.intent.purpose === 'external';
-    if (grade === 'O') {
+    if (!hasAnyIdentity) {
+      setOptions({ compress: true, sign: false, enveloped: false, encrypted: grade !== 'O' });
+    } else if (grade === 'O') {
       setOptions({ compress: true, sign: true, enveloped: false, encrypted: false });
     } else if (isExternal) {
       // S/C 외부 전송 → enveloped (수신자 지정 암호화 + 서명)
@@ -1035,12 +1042,12 @@ export function CreatePage() {
                 title={t("create.signed")}
                 desc={
                   options.enveloped
-                    ? 'Enveloped 포함 — 서명 강제 (Enveloped 해제 시 변경 가능)'
+                    ? 'Enveloped 포함 중 — 끄면 Enveloped 도 함께 해제됩니다'
                     : cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명'
                     : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명'
                     : 'ECDSA P-256 전자서명'
                 }
-                disabled={!hasAnyIdentity || options.enveloped}
+                disabled={!hasAnyIdentity}
               />
               <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#175DDC]" />} title={t("create.enveloped")} desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
               <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title={t("create.encrypted")} desc={t("create.passwordAesGcm")} />
