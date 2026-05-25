@@ -152,14 +152,16 @@ export async function detectNer(
   text: string,
   opts: { minScore?: number; maxLength?: number } = {},
 ): Promise<Finding[]> {
-  if (!_state.loaded || !_state.pipeline) return [];
+  // 로컬 캡처 — await 중 dispose() 가 _state.pipeline 을 null 로 만들어도 안전
+  const pipeline = _state.pipeline;
+  if (!_state.loaded || !pipeline) return [];
   const minScore = opts.minScore ?? 0.7;
   const maxLength = opts.maxLength ?? 4000;
 
   const sample = text.length > maxLength ? text.slice(0, maxLength) : text;
   let raw: any;
   try {
-    raw = await _state.pipeline(sample);
+    raw = await pipeline(sample);
   } catch (e) {
     console.warn('[neural-ner] inference failed:', e);
     return [];

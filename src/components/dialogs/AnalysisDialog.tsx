@@ -26,6 +26,10 @@ import { evaluate, REASON_MESSAGES, ACTION_MESSAGES, type PolicyDecision } from 
 import { findingsToDpvCategories } from '@/lib/policy/standards/dpv-data-category';
 import { dpvLabel, dpvIcon, dpvRisk, dpvChipClass } from '@/lib/policy/standards/dpv-labels';
 import { prefs, type CryptoKind, type Purpose } from '@/lib/store/preferences';
+import { buildHighlight } from '@/lib/analysis/highlight';
+import { ScoreBar } from '@/components/analysis/ScoreBar';
+import { WizardProgress } from '@/components/analysis/WizardProgress';
+import { ProcessingChoiceCard } from '@/components/analysis/ProcessingChoiceCard';
 
 interface Props {
   open: boolean;
@@ -113,7 +117,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   // 활성 인식기 — 정규식 / denylist + 신경망 NER 상태
   const recognizers = useMemo<RecognizerInfo[]>(() => listRecognizers(), []);
   const nerStatus = useMemo(() => neuralNer.status(), [decisionSaved]);
-  const neuralPrefs = useMemo(() => prefs.neural?.get?.() ?? { nerEnabled: false, nerAutoLoad: false, nerMinScore: 0.5 }, []);
+  const neuralPrefs = useMemo(() => prefs.neuralNer?.get?.() ?? { nerEnabled: false, nerAutoLoad: false, nerMinScore: 0.5 }, []);
 
   // 분석 결과 (가명/익명화 후 갱신될 수 있음)
   const [current, setCurrent] = useState<AnalysisResult>(initialResult);
@@ -437,7 +441,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
 
             {/* NER 비활성 안내 — 사람 이름·조직·장소 검출 누락 가능성 */}
             {(() => {
-              const nerPrefs = prefs.neural.get();
+              const nerPrefs = prefs.neuralNer.get();
               const hasNerEntity = initialResult.findings.some(f =>
                 ['PERSON', 'LOCATION', 'ORGANIZATION'].includes(f.entityType));
               if (nerPrefs.nerEnabled || hasNerEntity) return null;
@@ -1248,55 +1252,6 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
   );
 }
 
-/**
- * Score bar — O(0~S) / S(S~C) / C(C~) 그라데이션 + 임계 마커 + 현재 score 위치.
- * HE-TEST 의 그라데이션 게이지 동등.
- */
-function ScoreBar({ score, sThreshold, cThreshold }: {
-  score: number; sThreshold: number; cThreshold: number;
-}) {
-  // 표시 범위 — score 가 cThreshold 보다 높으면 그만큼 늘림
-  const max = Math.max(cThreshold * 1.5, score * 1.1, cThreshold + 1);
-  const pct = (v: number) => Math.max(0, Math.min(100, (v / max) * 100));
-  const sPct = pct(sThreshold);
-  const cPct = pct(cThreshold);
-  const scorePct = pct(score);
-
-  return (
-    <div className="mt-3 pt-3 border-t border-current/10">
-      <div className="relative h-3 rounded-full overflow-hidden"
-        style={{
-          background: `linear-gradient(to right,
-            #10b981 0%, #10b981 ${sPct}%,
-            #f59e0b ${sPct}%, #f59e0b ${cPct}%,
-            #ef4444 ${cPct}%, #ef4444 100%)`,
-        }}
-      >
-        {/* 현재 score 마커 */}
-        <div
-          className="absolute top-0 h-full w-0.5 bg-zinc-900 shadow"
-          style={{ left: `calc(${scorePct}% - 1px)` }}
-        />
-      </div>
-      <div className="relative h-4 mt-1 text-[10px] text-current/70">
-        <span style={{ position: 'absolute', left: '0%' }}>0</span>
-        <span style={{ position: 'absolute', left: `${sPct}%`, transform: 'translateX(-50%)' }}>
-          S={sThreshold}
-        </span>
-        <span style={{ position: 'absolute', left: `${cPct}%`, transform: 'translateX(-50%)' }}>
-          C={cThreshold}
-        </span>
-        <span
-          className="font-bold"
-          style={{ position: 'absolute', left: `${scorePct}%`, transform: 'translateX(-50%)' }}
-        >
-          ▲ {score}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 /** 타임스탬프 → "MM-DD HH:MM" 한국 시각 */
 function formatTs(ts: number): string {
   const d = new Date(ts);
@@ -1321,66 +1276,6 @@ function ActionButton({ active, onClick, children }: {
   );
 }
 
-/** 위자드 진행 표시 — 1 / 2 / 3 단계 인디케이터 */
-function WizardProgress({ step, onStepClick }: {
-  step: 1 | 2 | 3; onStepClick: (s: 1 | 2 | 3) => void;
-}) {
-  const labels = ['원본 분석', '처리 방식', '최종 결정'];
-  return (
-    <div className="flex items-center gap-1 mb-2">
-      {labels.map((label, i) => {
-        const n = (i + 1) as 1 | 2 | 3;
-        const isActive = step === n;
-        const isPast = step > n;
-        const isFuture = step < n;
-        return (
-          <div key={n} className="flex-1 flex items-center gap-1 min-w-0">
-            <button
-              onClick={() => isPast && onStepClick(n)}
-              disabled={!isPast}
-              className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition min-w-0 ${
-                isActive ? 'bg-blue-600 text-white'
-                : isPast ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
-                : 'bg-zinc-100 text-zinc-400'
-              }`}
-              title={isPast ? '이 단계로 돌아가기' : undefined}
-            >
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
-                isActive ? 'bg-white text-blue-600'
-                : isPast ? 'bg-blue-600 text-white'
-                : 'bg-zinc-300 text-zinc-500'
-              }`}>
-                {isPast ? '✓' : n}
-              </span>
-              <span className="truncate">{label}</span>
-            </button>
-            {i < 2 && <span className={`text-xs ${isFuture ? 'text-zinc-300' : 'text-blue-400'}`}>→</span>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Step 2 처리 방식 카드 */
-function ProcessingChoiceCard({ selected, title, desc, onClick }: {
-  selected: boolean; title: string; desc: string; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`text-left p-3 rounded-lg border-2 transition ${
-        selected
-          ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-          : 'border-zinc-200 bg-white hover:border-blue-300'
-      }`}
-    >
-      <div className="font-semibold text-sm">{title}</div>
-      <div className="text-[11px] mt-1 text-zinc-600 leading-relaxed">{desc}</div>
-    </button>
-  );
-}
-
 function renderMarkdownBold(text: string): React.ReactNode {
   const parts = text.split(/(\*\*.+?\*\*)/g);
   return parts.map((p, i) =>
@@ -1388,68 +1283,4 @@ function renderMarkdownBold(text: string): React.ReactNode {
       ? <b key={i}>{p.slice(2, -2)}</b>
       : <span key={i}>{p}</span>
   );
-}
-
-/**
- * 본문 + findings + 키워드 → HTML (mark 태그로 강조).
- * - PII findings: 빨강 mark, title=entityType
- * - 등급 키워드: 노랑 mark, title=label (가중치)
- * - 길이 4000자 초과 시 자른 후 "..." 표시
- */
-function buildHighlight(
-  text: string,
-  findings: Array<{ start: number; end: number; entityType: string }>,
-  keywords: Array<{ start: number; end: number; keyword: string; label: string; weight: number }>,
-  maxChars = 4000,
-): string {
-  if (!text) return '<span class="text-zinc-400">본문 없음</span>';
-  const truncated = text.length > maxChars;
-  const sliced = truncated ? text.slice(0, maxChars) : text;
-
-  type Marker = { start: number; end: number; kind: 'pii' | 'kw'; title: string };
-  const markers: Marker[] = [];
-  for (const f of findings) {
-    if (f.start >= sliced.length) continue;
-    markers.push({
-      start: f.start,
-      end: Math.min(f.end, sliced.length),
-      kind: 'pii',
-      title: f.entityType,
-    });
-  }
-  for (const k of keywords) {
-    if (k.start >= sliced.length) continue;
-    markers.push({
-      start: k.start,
-      end: Math.min(k.end, sliced.length),
-      kind: 'kw',
-      title: `등급 키워드: ${k.label} (+${k.weight})`,
-    });
-  }
-  // 시작순 정렬 + 겹침 제거 (먼저 매칭된 것 우선)
-  markers.sort((a, b) => a.start - b.start || b.end - a.end);
-  const placed: Marker[] = [];
-  let lastEnd = -1;
-  for (const m of markers) {
-    if (m.start < lastEnd) continue;
-    placed.push(m);
-    lastEnd = m.end;
-  }
-
-  const escape = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
-  let out = '', cur = 0;
-  for (const m of placed) {
-    out += escape(sliced.slice(cur, m.start));
-    const cls = m.kind === 'pii'
-      ? 'background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:0 2px;border-radius:3px;font-weight:600'
-      : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:0 2px;border-radius:3px;font-weight:600';
-    out += `<mark style="${cls}" title="${escape(m.title)}">${escape(sliced.slice(m.start, m.end))}</mark>`;
-    cur = m.end;
-  }
-  out += escape(sliced.slice(cur));
-  if (truncated) out += '<span style="color:#9ca3af">…(잘림)</span>';
-  return out;
 }

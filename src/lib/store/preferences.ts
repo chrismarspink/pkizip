@@ -52,8 +52,14 @@ export interface PolicyPrefs {
   showReason: boolean;
 }
 
-export interface NeuralPrefs {
-  /** 신경망 NER 사용 (transformers.js 클라이언트 추론) — opt-in */
+/**
+ * 신경망 NER 설정 (transformers.js 다국어 BERT 추론).
+ *
+ * `ClassifierPrefs.koNerEnabled` (한국어 전용 NER, ko-ner.ts) 와 별도 옵트인.
+ * 두 기능은 독립적이며 동시에 활성화 가능 — 결과는 pipeline 에서 머지된다.
+ */
+export interface NeuralNerPrefs {
+  /** 신경망 NER 사용 — opt-in */
   nerEnabled: boolean;
   /** 첫 분석 시 자동 다운로드/로드 (false 면 사용자가 수동 클릭) */
   nerAutoLoad: boolean;
@@ -61,7 +67,7 @@ export interface NeuralPrefs {
   nerMinScore: number;
 }
 
-export const DEFAULT_NEURAL: NeuralPrefs = {
+export const DEFAULT_NEURAL_NER: NeuralNerPrefs = {
   nerEnabled: false,
   nerAutoLoad: false,
   nerMinScore: 0.7,
@@ -205,9 +211,9 @@ export const prefs = {
       return cur;
     },
   },
-  neural: {
-    get(): NeuralPrefs { return load('neural', DEFAULT_NEURAL); },
-    set(p: Partial<NeuralPrefs>): NeuralPrefs {
+  neuralNer: {
+    get(): NeuralNerPrefs { return load('neural', DEFAULT_NEURAL_NER); },
+    set(p: Partial<NeuralNerPrefs>): NeuralNerPrefs {
       const cur = { ...this.get(), ...p };
       save('neural', cur);
       return cur;

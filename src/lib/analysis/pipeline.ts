@@ -83,10 +83,11 @@ export async function analyzeAsync(
 ): Promise<AnalysisResult> {
   const base = analyze(text, opts);
 
-  const neuralPrefs = prefs.neural?.get?.();
+  const neuralPrefs = prefs.neuralNer?.get?.();
   if (!neuralPrefs?.nerEnabled) return base;
 
-  // 모델 로드 시도 — 자동 로드 옵션 또는 이미 로드된 상태일 때만
+  // 모델 로드 시도 — 자동 로드 옵션 또는 이미 로드된 상태일 때만.
+  // 동시 분석 진입 시 loadModel() 내부의 _loadPromise 가 mutex 역할 → 중복 로드 없음.
   if (!neuralNer.isLoaded()) {
     if (!neuralPrefs.nerAutoLoad) return base;   // 사용자가 수동 로드 안 했으면 skip
     try {
