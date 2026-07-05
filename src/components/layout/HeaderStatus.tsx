@@ -14,7 +14,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Shield, ChevronDown, Star, Lock, Wifi, WifiOff, Package, Download,
-  HardDrive, Cpu, Check, AlertCircle, Loader2, RefreshCw, X,
+  Cpu, Check, AlertCircle, Loader2, RefreshCw, X,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store/app-store';
 import { useIsMobile } from '@/hooks/useMediaQuery';
@@ -148,7 +148,6 @@ function SystemStatus({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation();
   const [online, setOnline] = useState(navigator.onLine);
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [storageMB, setStorageMB] = useState<number | null>(null);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -162,14 +161,6 @@ function SystemStatus({ compact = false }: { compact?: boolean }) {
       window.removeEventListener('offline', off);
       document.removeEventListener('pkizip:sw-need-refresh', refresh);
     };
-  }, []);
-
-  useEffect(() => {
-    if ('storage' in navigator && 'estimate' in navigator.storage) {
-      navigator.storage.estimate().then(e => {
-        if (e.usage) setStorageMB(Math.round(e.usage / 1024 / 1024));
-      }).catch(() => {});
-    }
   }, []);
 
   const version = (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?');
@@ -198,12 +189,6 @@ function SystemStatus({ compact = false }: { compact?: boolean }) {
           <Download className="w-3 h-3" />
           {!compact && <span className="text-[10px]">{t('header.update')}</span>}
         </button>
-      )}
-      {!compact && storageMB !== null && (
-        <Link to="/settings" title={t('header.storageTitle', { mb: storageMB })}
-          className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 px-1 py-0.5 rounded">
-          <HardDrive className="w-3 h-3" /> {storageMB}MB
-        </Link>
       )}
     </div>
   );

@@ -1,19 +1,17 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Home, FilePlus, FileArchive, ShieldCheck, BookUser, Settings, FolderSearch, FlaskConical } from 'lucide-react';
+import { Home, FilePlus, FileArchive, BookUser, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export function BottomTabBar() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  // 모바일 하단 탭은 thumb-zone 5개로 제한 — 탐색기/인증서/정책은 설정·URL로 접근
   const TABS = [
     { path: '/', icon: Home, label: t('nav.home') },
     { path: '/create', icon: FilePlus, label: t('nav.create') },
     { path: '/files', icon: FileArchive, label: t('nav.files') },
-    { path: '/explorer', icon: FolderSearch, label: t('nav.explorer') },
-    { path: '/certs', icon: ShieldCheck, label: t('nav.certificates') },
     { path: '/contacts', icon: BookUser, label: t('nav.contacts') },
     { path: '/settings', icon: Settings, label: t('nav.settings') },
-    { path: '/policies', icon: FlaskConical, label: t('nav.policies') },
   ];
 
   return (
