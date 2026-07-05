@@ -65,12 +65,15 @@ export interface NeuralNerPrefs {
   nerAutoLoad: boolean;
   /** NER finding minScore */
   nerMinScore: number;
+  /** T3 — mDeBERTa zero-shot 신경망 등급 판정 사용 (opt-in, 첫 사용 시 모델 다운로드) */
+  neuralGradeEnabled: boolean;
 }
 
 export const DEFAULT_NEURAL_NER: NeuralNerPrefs = {
   nerEnabled: false,
   nerAutoLoad: false,
   nerMinScore: 0.7,
+  neuralGradeEnabled: false,
 };
 
 /**

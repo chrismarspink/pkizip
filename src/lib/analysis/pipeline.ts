@@ -84,52 +84,82 @@ export async function analyzeAsync(
   const base = analyze(text, opts);
 
   const neuralPrefs = prefs.neuralNer?.get?.();
-  if (!neuralPrefs?.nerEnabled) return base;
+  if (!neuralPrefs) return base;
 
-  // 모델 로드 시도 — 자동 로드 옵션 또는 이미 로드된 상태일 때만.
-  // 동시 분석 진입 시 loadModel() 내부의 _loadPromise 가 mutex 역할 → 중복 로드 없음.
-  if (!neuralNer.isLoaded()) {
-    if (!neuralPrefs.nerAutoLoad) return base;   // 사용자가 수동 로드 안 했으면 skip
+  const language = base.language;
+  let findings = base.findings;
+  let classification = base.classification;
+  let changed = false;
+
+  const reclassify = (fs: Finding[]) => {
+    let c = classify(fs, text);
+    if (opts.applyLanguageFloor !== false) {
+      c = applyLanguageFloor(c, language.detected, {
+        textLength: text.length, languageConfidence: language.confidence,
+      });
+    }
+    return c;
+  };
+
+  // ── T2: 신경망 NER (opt-in) — findings 보강 후 규칙 분류기 재실행 ──
+  if (neuralPrefs.nerEnabled) {
     try {
-      await neuralNer.loadModel();
+      let loaded = neuralNer.isLoaded();
+      if (!loaded && neuralPrefs.nerAutoLoad) {
+        await neuralNer.loadModel();
+        loaded = true;
+      }
+      if (loaded) {
+        const nerFindings = await neuralNer.detectNer(text, { minScore: neuralPrefs.nerMinScore });
+        if (nerFindings.length > 0) {
+          const { kept, dropped } = filterNerFindings(nerFindings);
+          if (dropped.length > 0) {
+            console.debug('[pipeline] NER 휴리스틱 필터로 거부:',
+              dropped.length, '건 →', dropped.map(d => `${d.text}(${d.filterReason})`).slice(0, 10));
+          }
+          findings = mergeFindings([...base.findings, ...kept]);
+          classification = reclassify(findings);
+          changed = true;
+        }
+      }
     } catch (e) {
-      console.warn('[pipeline] neural NER load failed, fallback:', e);
-      return base;
+      console.warn('[pipeline] neural NER failed, fallback:', e);
     }
   }
 
-  // NER 추론
-  let nerFindings: Finding[] = [];
-  try {
-    nerFindings = await neuralNer.detectNer(text, { minScore: neuralPrefs.nerMinScore });
-  } catch (e) {
-    console.warn('[pipeline] neural NER inference failed:', e);
-    return base;
+  // ── T3: 신경망 등급 판정 (mDeBERTa zero-shot, opt-in) — escalate: 규칙 등급을 올릴 수만 ──
+  if (neuralPrefs.neuralGradeEnabled) {
+    try {
+      const [{ createZeroShotInfer }, { classifyWindowed }] = await Promise.all([
+        import('../classify/neural'),
+        import('../classify/windowing'),
+      ]);
+      const zsLocale = ({ ko: 'ko', ja: 'ja', en: 'en', 'zh-CN': 'zh-CN', zh: 'zh-CN' } as Record<string, string>)[language.detected] ?? 'ko';
+      const zs = await classifyWindowed(text, createZeroShotInfer({ locale: zsLocale }));
+      const toOSC: Record<string, Grade> = { OPEN: 'O', SENSITIVE: 'S', CONFIDENTIAL: 'C' };
+      const GLABEL: Record<Grade, string> = { C: '위험 (Critical)', S: '민감 (Sensitive)', O: '공개 (Open)' };
+      const nGrade = toOSC[zs.grade];
+      const ruleGrade = classification.grade;
+      const raise = !!nGrade && zs.confidence >= 0.55 && GRADE_RANK[nGrade] > GRADE_RANK[ruleGrade];
+      classification = {
+        ...classification,
+        grade: raise ? nGrade : ruleGrade,
+        gradeLabel: raise ? `${GLABEL[nGrade]} · AI(mDeBERTa) 상향` : classification.gradeLabel,
+        confidence: raise ? Math.max(classification.confidence, zs.confidence) : classification.confidence,
+        ensemble: { ruleGrade, neuralGrade: nGrade, finalGrade: raise ? nGrade : ruleGrade, alpha: raise ? 0 : 1 },
+      };
+      changed = true;
+    } catch (e) {
+      console.warn('[pipeline] neural grade (mDeBERTa) failed:', e);
+    }
   }
-  if (nerFindings.length === 0) return base;
 
-  // 휴리스틱 필터 — 한국어 NER false positive 차단 (HE-TEST 의 ner_filter 포팅)
-  const { kept: filteredNer, dropped } = filterNerFindings(nerFindings);
-  if (dropped.length > 0) {
-    console.debug('[pipeline] NER 휴리스틱 필터로 거부:',
-      dropped.length, '건 →', dropped.map(d => `${d.text}(${d.filterReason})`).slice(0, 10));
-  }
-
-  // 합치고 dedup — 같은 (start, end, entityType) 중 최고 점수
-  const merged = mergeFindings([...base.findings, ...filteredNer]);
-  const language = base.language;
-  let classification = classify(merged, text);
-  if (opts.applyLanguageFloor !== false) {
-    classification = applyLanguageFloor(classification, language.detected, {
-      textLength: text.length,
-      languageConfidence: language.confidence,
-    });
-  }
+  if (!changed) return base;
   return {
     ...base,
-    findings: merged,
+    findings,
     classification,
-    explanation: explain(classification, merged),
+    explanation: explain(classification, findings),
   };
 }
 
