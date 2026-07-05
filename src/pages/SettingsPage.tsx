@@ -137,6 +137,18 @@ function NerSettingsSection() {
           onChange={e => update({ nerAutoLoad: e.target.checked })}
           className="w-5 h-5 accent-[#175DDC] shrink-0 disabled:opacity-40" />
       </label>
+      <label className="flex items-center justify-between gap-3 border-t pt-3 cursor-pointer">
+        <span>
+          <span className="block text-sm font-medium">AI 등급 판정 (mDeBERTa)</span>
+          <span className="block text-[11px] text-zinc-400">
+            규칙 등급 위에 신경망(mDeBERTa) 문맥 판정을 더해 등급을 올릴 수 있음(내릴 순 없음).
+            켜면 첫 분석 시 모델(~280MB)이 다운로드됩니다. 원문은 기기를 떠나지 않습니다.
+          </span>
+        </span>
+        <input type="checkbox" checked={p.neuralGradeEnabled}
+          onChange={e => update({ neuralGradeEnabled: e.target.checked })}
+          className="w-5 h-5 accent-[#175DDC] shrink-0" />
+      </label>
     </div>
   );
 }
