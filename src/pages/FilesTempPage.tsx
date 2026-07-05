@@ -26,8 +26,9 @@ import { deserializeEntries } from '@/lib/compression/compressor';
 import { unpackInnerPayload } from '@/lib/container/inner-payload';
 import { open as openPki, verifyContainerTimestamp } from '@/lib/container/pki-operations';
 import type { TstVerifyResult } from '@/lib/tsa-verify';
-import { getCertificate } from '@/lib/crypto/key-manager';
+import { getCertificate, getFromKeyRing, addToKeyRing } from '@/lib/crypto/key-manager';
 import { useAppStore } from '@/lib/store/app-store';
+import { toast } from 'sonner';
 
 function sleep(ms: number) {
   return new Promise(r => setTimeout(r, ms));
@@ -538,6 +539,43 @@ function showFiles(files: { name: string; data: Uint8Array; size: number; type: 
   });
 }
 
+/**
+ * 받은 문서의 서명자를 신뢰하고 주소록에 추가 (증분 3 — 받기·신뢰).
+ * 봉투에는 서명 공개키만 있으므로, 암호화 공개키는 인증서 디렉터리에서 보강한다.
+ * (QrScanModal / ContactsPage 의 검증된 add 패턴 재사용)
+ */
+async function trustSender(fingerprint: string, name: string) {
+  const existing = await getFromKeyRing(fingerprint).catch(() => null);
+  if (existing) {
+    if (existing.type !== 'local') toast('이미 주소록에 있는 서명자입니다.', { icon: '✅' });
+    return;
+  }
+  try {
+    const { getCertBundleByUsername } = await import('@/lib/supabase/cert-directory');
+    const bundle = await getCertBundleByUsername('u-' + fingerprint.slice(0, 8)).catch(() => null);
+    if (!bundle || !bundle.enc_jwk_classic) {
+      toast('상대의 인증서를 찾지 못했어요 — 상대가 인증서(카드)를 공유하면 신뢰 추가할 수 있어요.', { icon: 'ℹ️', duration: 6000 });
+      return;
+    }
+    await addToKeyRing({
+      fingerprint,
+      label: bundle.display_name || name,
+      displayName: bundle.display_name,
+      email: bundle.email,
+      signingKeyJWK: {},
+      encryptionKeyJWK: bundle.enc_jwk_classic,
+      type: 'imported',
+      certClassicPem: bundle.cert_classic,
+      certKemPem: bundle.cert_kem,
+      certDsaPem: bundle.cert_dsa,
+      createdAt: Date.now(),
+    });
+    toast.success(`${bundle.display_name || name}님을 주소록에 추가했어요 — 다음부터 암호화해 보낼 수 있어요.`, { duration: 6000 });
+  } catch (e) {
+    toast.error(`신뢰 추가 실패: ${e instanceof Error ? e.message : '오류'}`);
+  }
+}
+
 // === 서명 검증 + 인증서 카드 표시 ===
 async function showVerificationResults(
   results: Array<{ fingerprint: string; label?: string; valid: boolean; timestamp: number }>,
@@ -547,9 +585,10 @@ async function showVerificationResults(
   push({ type: 'step', id: id(), label: t('filesOpen.signerCert'), status: 'done' });
   for (const v of results) {
     const cert = await getCertificate(v.fingerprint).catch(() => null);
+    const name = cert?.commonName || v.label || t('filesOpen.unknownSigner');
     push({
       type: 'cert', id: id(),
-      name: cert?.commonName || v.label || t('filesOpen.unknownSigner'),
+      name,
       email: cert?.email,
       fingerprint: v.fingerprint,
       valid: v.valid,
@@ -557,6 +596,19 @@ async function showVerificationResults(
       expiresAt: cert?.notAfter,
       logotype: cert?.logotype,
     });
+    // 유효 서명이면서 주소록에 없는 서명자 → "이 사람을 신뢰할까요?" 프롬프트
+    if (v.valid) {
+      const known = await getFromKeyRing(v.fingerprint).catch(() => null);
+      if (!known) {
+        toast(`${name}님이 서명한 문서입니다. 이 서명자를 신뢰할까요?`, {
+          duration: 20000,
+          action: {
+            label: '신뢰하고 주소록에 추가',
+            onClick: () => { void trustSender(v.fingerprint, name); },
+          },
+        });
+      }
+    }
   }
 }
 
