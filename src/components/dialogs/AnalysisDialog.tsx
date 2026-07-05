@@ -335,26 +335,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 <FileSearch className="w-5 h-5 text-[#175DDC]" /> 분석 결과 확인
               </h2>
               <p className="text-xs text-zinc-500 mt-1">
-                옵션 → 등급 → 가명처리 → 정책 검사 한 번에
+                이 문서의 민감도를 확인하고 처리 방법을 정합니다
               </p>
             </div>
-            <div className="flex items-start gap-3">
-              <div className="text-right text-[11px] leading-tight">
-                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#175DDC]/5 border border-[#175DDC]/30 text-[#175DDC] font-mono text-[10px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#175DDC]" />
-                  모델: {c.version}
-                </div>
-                <div className="text-zinc-500 mt-1">
-                  학습 기준 <b className="text-zinc-700">{modelStats.count}</b>건
-                  {modelStats.lastTs && (
-                    <> · 적용시각 <span className="font-mono">{formatTs(modelStats.lastTs)}</span></>
-                  )}
-                </div>
-              </div>
-              <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            {/* 모델/학습기준 등 전문 지표는 헤더에서 제거 — '자세히'에 존재 (괴리 완화) */}
+            <button onClick={onClose} className="p-1 hover:bg-zinc-100 rounded shrink-0">
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* 본문 */}
@@ -367,10 +354,12 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
 
             {/* ────────── STEP 1: 원본 분석 ────────── */}
             {step === 1 && <>
-            {/* 1. 사용 의도 */}
-            <section className="border rounded-lg p-3">
-              <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">1. 사용 의도</div>
-              <div className="grid grid-cols-2 gap-3">
+            {/* 사용 의도 — 기본 접힘(고급). 기본값 자동, 전문가만 조정 (괴리 완화) */}
+            <details className="border rounded-lg">
+              <summary className="cursor-pointer select-none p-3 text-xs font-semibold text-zinc-500 uppercase hover:bg-zinc-50">
+                ⚙ 고급 — 사용 의도 (보관 위치 · 암호 방식)
+              </summary>
+              <div className="grid grid-cols-2 gap-3 p-3 pt-0">
                 <div>
                   <label className="text-xs text-zinc-500">보관 위치</label>
                   <select
@@ -396,7 +385,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                   </select>
                 </div>
               </div>
-            </section>
+            </details>
 
             {/* 2-A. 원본 분석 카드 — 항상 노출 (immutable) */}
             <section className={`border-2 rounded-lg p-3 ${GRADE_COLOR[initialResult.classification.grade]}`}>
@@ -424,12 +413,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               )}
             </section>
 
-            {/* Score bar — 원본 등급 + 임계값 시각화 */}
-            <ScoreBar
-              score={initialResult.classification.score}
-              sThreshold={initialResult.classification.thresholds.S}
-              cThreshold={initialResult.classification.thresholds.C}
-            />
+            {/* 점수 막대(S=3 C=5 등 원시 지표)는 기본 화면에서 제거 — 아래 '자세히'에 존재 (괴리 완화) */}
 
             {/* 자세한 분석 — 접이식. 사용자가 원할 때 열어봄 */}
             <details className="border rounded-lg bg-zinc-50/50">
