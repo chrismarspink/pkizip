@@ -4,7 +4,8 @@
  * 아이덴티티 관리는 CertsPage(인증서 카드 면 2)로 이동됨.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload, Clock, Languages, Fingerprint, RefreshCw } from 'lucide-react';
+import { Shield, ChevronDown, Share2, Copy, Trash2, Lock, CloudUpload, Clock, Languages, Fingerprint, RefreshCw, Brain } from 'lucide-react';
+import { prefs, type NeuralNerPrefs } from '@/lib/store/preferences';
 import { ForceRefreshButton, VersionBadge } from '@/components/UpdateBanner';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +46,14 @@ export function SettingsPage() {
           <Shield className="w-4 h-4" /> {t('settings.pqc')}
         </h2>
         <PQCSettings />
+      </div>
+
+      {/* 문서 분석 (NER) — 분석 결과의 "설정에서 활성화" 링크 대상 */}
+      <div className="mb-6">
+        <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Brain className="w-4 h-4" /> 문서 분석 (이름·조직 검출)
+        </h2>
+        <NerSettingsSection />
       </div>
 
       {/* 인증서 공유 섹션 */}
@@ -96,6 +105,38 @@ export function SettingsPage() {
           <ForceRefreshButton />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ══ 문서 분석(NER) 설정 ══
+function NerSettingsSection() {
+  const [p, setP] = useState<NeuralNerPrefs>(() => prefs.neuralNer.get());
+  const update = (patch: Partial<NeuralNerPrefs>) => setP(prefs.neuralNer.set(patch));
+  return (
+    <div className="bg-white rounded-xl border p-4 space-y-3">
+      <p className="text-[11px] text-zinc-500 leading-relaxed">
+        신경망 NER 모델(~50MB)로 문서에서 <b>사람 이름·조직·장소</b>를 검출합니다. 켜면 정규식·키워드 검출에 더해
+        홍길동·박과장 같은 이름을 자동으로 찾습니다. 모든 분석은 브라우저에서 실행 — 텍스트는 서버로 전송되지 않습니다.
+      </p>
+      <label className="flex items-center justify-between gap-3 cursor-pointer">
+        <span>
+          <span className="block text-sm font-medium">NER 사용 (이름·조직·장소 검출)</span>
+          <span className="block text-[11px] text-zinc-400">끄면 정규식·키워드 기반만 사용</span>
+        </span>
+        <input type="checkbox" checked={p.nerEnabled}
+          onChange={e => update({ nerEnabled: e.target.checked })}
+          className="w-5 h-5 accent-[#175DDC] shrink-0" />
+      </label>
+      <label className="flex items-center justify-between gap-3 border-t pt-3 cursor-pointer">
+        <span>
+          <span className="block text-sm font-medium">NER 자동 로드</span>
+          <span className="block text-[11px] text-zinc-400">첫 분석 시 모델(~50MB)을 자동 다운로드</span>
+        </span>
+        <input type="checkbox" checked={p.nerAutoLoad} disabled={!p.nerEnabled}
+          onChange={e => update({ nerAutoLoad: e.target.checked })}
+          className="w-5 h-5 accent-[#175DDC] shrink-0 disabled:opacity-40" />
+      </label>
     </div>
   );
 }
