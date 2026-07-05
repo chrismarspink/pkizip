@@ -21,22 +21,22 @@ export function WizardProgress({ step, onStepClick }: Props) {
               onClick={() => isPast && onStepClick(n)}
               disabled={!isPast}
               className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition min-w-0 ${
-                isActive ? 'bg-blue-600 text-white'
-                : isPast ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
+                isActive ? 'bg-[#175DDC] text-white'
+                : isPast ? 'bg-[#175DDC]/10 text-[#175DDC] hover:bg-[#175DDC]/20 cursor-pointer'
                 : 'bg-zinc-100 text-zinc-400'
               }`}
               title={isPast ? '이 단계로 돌아가기' : undefined}
             >
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
-                isActive ? 'bg-white text-blue-600'
-                : isPast ? 'bg-blue-600 text-white'
+                isActive ? 'bg-white text-[#175DDC]'
+                : isPast ? 'bg-[#175DDC] text-white'
                 : 'bg-zinc-300 text-zinc-500'
               }`}>
                 {isPast ? '✓' : n}
               </span>
               <span className="truncate">{label}</span>
             </button>
-            {i < 2 && <span className={`text-xs ${isFuture ? 'text-zinc-300' : 'text-blue-400'}`}>→</span>}
+            {i < 2 && <span className={`text-xs ${isFuture ? 'text-zinc-300' : 'text-[#175DDC]/70'}`}>→</span>}
           </div>
         );
       })}

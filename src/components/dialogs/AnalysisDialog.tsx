@@ -332,7 +332,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
           <div className="flex items-start justify-between p-5 border-b">
             <div>
               <h2 className="text-lg font-semibold flex items-center gap-2">
-                <FileSearch className="w-5 h-5 text-blue-600" /> 분석 결과 확인
+                <FileSearch className="w-5 h-5 text-[#175DDC]" /> 분석 결과 확인
               </h2>
               <p className="text-xs text-zinc-500 mt-1">
                 옵션 → 등급 → 가명처리 → 정책 검사 한 번에
@@ -340,8 +340,8 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
             </div>
             <div className="flex items-start gap-3">
               <div className="text-right text-[11px] leading-tight">
-                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-mono text-[10px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#175DDC]/5 border border-[#175DDC]/30 text-[#175DDC] font-mono text-[10px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#175DDC]" />
                   모델: {c.version}
                 </div>
                 <div className="text-zinc-500 mt-1">
@@ -564,7 +564,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                         const pct = Math.max(0, Math.min(100, (r.contribution / maxContrib) * 100));
                         const color = r.kind === 'entity'
                           ? 'bg-red-400'
-                          : r.kind === 'keyword' ? 'bg-amber-400' : 'bg-blue-400';
+                          : r.kind === 'keyword' ? 'bg-amber-400' : 'bg-[#175DDC]/70';
                         return (
                           <tr key={`${r.kind}-${r.label}-${i}`} className="border-b last:border-b-0">
                             <td className="py-1 pr-2">
@@ -648,9 +648,9 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
 
             {/* 3-C. 사용자 최종 분류 picker (위자드 step 3 으로 이동) */}
             {false && (
-            <section className="border rounded-lg p-3 bg-blue-50/30 border-blue-200">
+            <section className="border rounded-lg p-3 bg-[#175DDC]/5 border-[#175DDC]/30">
               <div className="text-xs font-semibold text-zinc-600 uppercase mb-2 flex items-center gap-2">
-                <UserCheck className="w-3 h-3 text-blue-600" />
+                <UserCheck className="w-3 h-3 text-[#175DDC]" />
                 사용자 최종 분류
                 <span className="ml-auto text-[10px] font-normal text-zinc-400 normal-case">
                   AI 결과를 검토하고 직접 등급을 지정할 수 있습니다
@@ -669,7 +669,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                           ? g === 'C' ? 'bg-red-600 text-white border-red-600'
                           : g === 'S' ? 'bg-amber-500 text-white border-amber-500'
                                        : 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-white border-zinc-200 hover:border-blue-400'
+                          : 'bg-white border-zinc-200 hover:border-[#175DDC]/50'
                       }`}
                     >
                       <div className="font-bold text-base leading-tight">
@@ -678,7 +678,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                         }</span>
                       </div>
                       {isAi && (
-                        <div className={`text-[10px] mt-0.5 ${active ? 'opacity-90' : 'text-blue-600'}`}>
+                        <div className={`text-[10px] mt-0.5 ${active ? 'opacity-90' : 'text-[#175DDC]'}`}>
                           ✦ AI 추천
                         </div>
                       )}
@@ -691,7 +691,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 onChange={e => { setUserMemo(e.target.value); setDecisionSaved(false); }}
                 placeholder="결정 사유 (선택) — 예: 회사 외부 자료라 공개로 분류"
                 rows={2}
-                className="w-full px-2 py-1.5 text-xs border border-zinc-300 rounded resize-none focus:outline-none focus:border-blue-400"
+                className="w-full px-2 py-1.5 text-xs border border-zinc-300 rounded resize-none focus:outline-none focus:border-[#175DDC]/50"
               />
               <div className="mt-2 flex items-center gap-2">
                 {userGradeGap > 0 ? (
@@ -706,7 +706,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 <button
                   onClick={handleSaveDecision}
                   disabled={savingDecision || decisionSaved}
-                  className="ml-auto px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  className="ml-auto px-3 py-1.5 text-xs bg-[#175DDC] text-white rounded-lghover:bg-[#124BB8] disabled:bg-zinc-300 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
                   <Save className="w-3 h-3" />
                   {decisionSaved ? '저장됨 ✓' : savingDecision ? '저장 중…' : '이 결정 저장'}
@@ -802,7 +802,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                           </td>
                           <td className="py-1 pr-2 text-[11px]">
                             <span className={
-                              r.source === 'regex-kr' ? 'text-blue-700' :
+                              r.source === 'regex-kr' ? 'text-[#175DDC]' :
                               r.source === 'regex-common' ? 'text-emerald-700' :
                               'text-purple-700'
                             }>
@@ -991,7 +991,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
 
             {/* ────────── STEP 2: 처리 방식 선택 ────────── */}
             {step === 2 && (
-              <section className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50/30 space-y-3">
+              <section className="border-2 border-[#175DDC]/30 rounded-lg p-4 bg-[#175DDC]/5 space-y-3">
                 <div>
                   <div className="text-xs text-zinc-500 uppercase">원본 등급 (분석 결과)</div>
                   <div className={`mt-1 inline-flex items-center gap-2 px-2 py-1 rounded font-bold ${GRADE_COLOR[initialResult.classification.grade]}`}>
@@ -1072,16 +1072,16 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               </section>
 
               {/* 등급 결정 — AI 수락 vs 임의 지정 */}
-              <section className="border rounded-lg p-3 bg-blue-50/30 border-blue-200">
+              <section className="border rounded-lg p-3 bg-[#175DDC]/5 border-[#175DDC]/30">
                 <div className="text-xs font-semibold text-zinc-700 uppercase mb-2 flex items-center gap-2">
-                  <UserCheck className="w-3 h-3 text-blue-600" />
+                  <UserCheck className="w-3 h-3 text-[#175DDC]" />
                   최종 등급 결정
                 </div>
                 <div className="space-y-2">
                   <label className={`block p-2.5 rounded-lg border-2 cursor-pointer transition ${
                     !useManualGrade
-                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                      : 'border-zinc-200 bg-white hover:border-blue-300'
+                      ? 'border-[#175DDC] bg-[#175DDC]/5 ring-2 ring-[#175DDC]/30'
+                      : 'border-zinc-200 bg-white hover:border-[#175DDC]/40'
                   }`}>
                     <input type="radio" name="grade-decision"
                       checked={!useManualGrade}
@@ -1126,7 +1126,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                                 ? g === 'C' ? 'bg-red-600 text-white border-red-600'
                                 : g === 'S' ? 'bg-amber-500 text-white border-amber-500'
                                             : 'bg-emerald-600 text-white border-emerald-600'
-                                : 'bg-white border-zinc-200 hover:border-blue-400'
+                                : 'bg-white border-zinc-200 hover:border-[#175DDC]/50'
                             }`}
                           >
                             <div className="font-bold text-base leading-tight">
@@ -1144,13 +1144,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                       placeholder="등급 부여 사유 (필수) — 예: 회사 외부 자료라 공개로 분류"
                       rows={2}
                       className={`w-full px-2 py-1.5 text-xs border rounded resize-none focus:outline-none ${
-                        userMemo.trim().length === 0 ? 'border-amber-400' : 'border-zinc-300 focus:border-blue-400'
+                        userMemo.trim().length === 0 ? 'border-amber-400' : 'border-zinc-300 focus:border-[#175DDC]/50'
                       }`}
                     />
                     <button
                       onClick={handleSaveDecision}
                       disabled={savingDecision || decisionSaved || userMemo.trim().length === 0}
-                      className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                      className="px-3 py-1.5 text-xs bg-[#175DDC] text-white rounded-lghover:bg-[#124BB8] disabled:bg-zinc-300 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                     >
                       <Save className="w-3 h-3" />
                       {decisionSaved ? '학습 데이터 저장됨 ✓' : savingDecision ? '저장 중…' : '학습 데이터 저장'}
@@ -1218,7 +1218,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
               {step === 1 && (
                 <button
                   onClick={() => setStep(2)}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1.5"
+                  className="px-4 py-2 text-sm bg-[#175DDC] text-white rounded-lghover:bg-[#124BB8] flex items-center gap-1.5"
                 >
                   다음: 처리 방식 선택 →
                 </button>
@@ -1227,7 +1227,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 <button
                   onClick={() => setStep(3)}
                   disabled={!processingChoice}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded disabled:bg-zinc-300 disabled:cursor-not-allowed hover:bg-blue-700 flex items-center gap-1.5"
+                  className="px-4 py-2 text-sm bg-[#175DDC] text-white rounded-lgdisabled:bg-zinc-300 disabled:cursor-not-allowed hover:bg-[#124BB8] flex items-center gap-1.5"
                 >
                   다음: 최종 결정 →
                 </button>
@@ -1236,7 +1236,7 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 <button
                   onClick={handleAccept}
                   disabled={!policy?.allow || (useManualGrade && userMemo.trim().length === 0)}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded disabled:bg-zinc-300 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  className="px-4 py-2 text-sm bg-[#175DDC] text-white rounded-lgdisabled:bg-zinc-300 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
                   <Shield className="w-4 h-4" />
                   {!policy?.allow ? '정책 위반으로 차단됨'
@@ -1267,8 +1267,8 @@ function ActionButton({ active, onClick, children }: {
       onClick={onClick}
       className={`px-2 py-2 text-xs rounded border transition ${
         active
-          ? 'bg-blue-600 text-white border-blue-600'
-          : 'bg-white border-zinc-200 hover:border-blue-400'
+          ? 'bg-[#175DDC] text-white border-[#175DDC]'
+          : 'bg-white border-zinc-200 hover:border-[#175DDC]/50'
       }`}
     >
       {children}

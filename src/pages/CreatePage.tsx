@@ -609,7 +609,7 @@ export function CreatePage() {
                             toast.error('클립보드 권한이 필요합니다.');
                           }
                         }}
-                        className="text-blue-600 hover:underline">
+                        className="text-[#175DDC] hover:underline">
                         📋 클립보드에서 붙여넣기
                       </button>
                     </div>
@@ -642,7 +642,7 @@ export function CreatePage() {
                   }
                 }}
                 disabled={inputMode === 'files' ? files.length === 0 : clipText.length === 0}
-                className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30">
+                className="flex items-center gap-1.5 bg-[#175DDC] text-white px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30">
                 다음 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -660,7 +660,7 @@ export function CreatePage() {
             {analyzing && (
               <div className="bg-white border border-zinc-200 rounded-xl p-6">
                 <div className="flex items-center gap-3">
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-600 shrink-0" />
+                  <Loader2 className="w-5 h-5 animate-spin text-[#175DDC] shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium">
                       {ocrProgress ? t('create.ocrRunning', { file: ocrProgress.file }) : t('create.analyzing')}
@@ -671,7 +671,7 @@ export function CreatePage() {
                           {ocrProgress.status} · {Math.round(ocrProgress.progress * 100)}%
                         </div>
                         <div className="mt-1.5 h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500 transition-all"
+                          <div className="h-full bg-[#175DDC] transition-all"
                             style={{ width: `${Math.round(ocrProgress.progress * 100)}%` }} />
                         </div>
                         <p className="text-[10px] text-zinc-400 mt-1.5">{t('create.ocrFirstRunNote')}</p>
@@ -718,7 +718,7 @@ export function CreatePage() {
                                 : r.method === 'sidecar'     ? '동봉'
                                 :                              '미지원';
                     const labelColor = r.method === 'inline'  ? 'text-emerald-700 bg-emerald-100'
-                                     : r.method === 'sidecar' ? 'text-blue-700 bg-blue-100'
+                                     : r.method === 'sidecar' ? 'text-[#175DDC] bg-[#175DDC]/10'
                                      :                          'text-amber-700 bg-amber-100';
                     return (
                       <div key={r.filename} className="text-xs flex items-start gap-2">
@@ -728,7 +728,7 @@ export function CreatePage() {
                             <code className="font-mono text-[11px] truncate">{r.filename}</code>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${labelColor}`}>{label}</span>
                             {r.sidecarFilename && (
-                              <code className="text-[10px] text-blue-600 truncate">+ {r.sidecarFilename}</code>
+                              <code className="text-[10px] text-[#175DDC] truncate">+ {r.sidecarFilename}</code>
                             )}
                           </div>
                           {r.note && <div className="text-[11px] text-zinc-600 mt-0.5">{r.note}</div>}
@@ -842,14 +842,14 @@ export function CreatePage() {
                     placeholder={hasPinRegistered ? 'PIN 또는 비밀번호' : '키 비밀번호'}
                     className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#175DDC]"
                     autoFocus onKeyDown={e => e.key === 'Enter' && goNext()} />
-                  <button onClick={goNext} className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm">{t("common.confirm")}</button>
+                  <button onClick={goNext} className="bg-[#175DDC] text-white px-4 py-2 rounded-xl text-sm">{t("common.confirm")}</button>
                 </div>
               </div>
             )}
 
             <div className="flex justify-between mt-6">
               <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">{t("common.back")}</button>
-              <button onClick={goNext} className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium">
+              <button onClick={goNext} className="flex items-center gap-1.5 bg-[#175DDC] text-white px-5 py-2.5 rounded-xl text-sm font-medium">
                 {(needsPassword || needsRecipientSelection) ? '다음' : '생성'} <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -917,7 +917,7 @@ export function CreatePage() {
             ) : null}
             <div className="flex justify-between mt-6">
               <button onClick={() => setStep('options')} className="text-sm text-zinc-500">{t("common.back")}</button>
-              <button onClick={goNext} className="flex items-center gap-1.5 bg-zinc-900 text-white px-5 py-2.5 rounded-xl text-sm font-medium">
+              <button onClick={goNext} className="flex items-center gap-1.5 bg-[#175DDC] text-white px-5 py-2.5 rounded-xl text-sm font-medium">
                 생성 <ChevronRight className="w-4 h-4" />
               </button>
             </div>

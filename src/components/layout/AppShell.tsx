@@ -16,8 +16,8 @@ export function AppShell() {
 
       {/* 메인 콘텐츠 */}
       <main className={`flex-1 overflow-auto ${isMobile ? 'pb-16' : ''}`}>
-        {/* 상단 바: 상태 클러스터 + 사용자 메뉴 */}
-        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-zinc-100 bg-white">
+        {/* 상단 바: 상태 클러스터 + 사용자 메뉴 (노치 대응: 상단 safe-area 패딩) */}
+        <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))] border-b border-zinc-200 bg-white sticky top-0 z-30">
           <HeaderStatus />
           <UserMenu />
         </div>

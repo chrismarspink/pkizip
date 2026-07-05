@@ -10,10 +10,10 @@ export function ProcessingChoiceCard({ selected, title, desc, onClick }: Props) 
   return (
     <button
       onClick={onClick}
-      className={`text-left p-3 rounded-lg border-2 transition ${
+      className={`text-left p-4 rounded-xl border-2 transition ${
         selected
-          ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-          : 'border-zinc-200 bg-white hover:border-blue-300'
+          ? 'border-[#175DDC] bg-[#175DDC]/5'
+          : 'border-zinc-200 bg-white hover:border-[#175DDC]/40'
       }`}
     >
       <div className="font-semibold text-sm">{title}</div>
