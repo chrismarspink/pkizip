@@ -1,11 +1,16 @@
+import { debug } from "./debug";
 /**
  * TSA Client — RFC 3161 타임스탬프 요청/응답
  *
- * 브라우저에서 TSA 서버에 직접 POST (CORS 제한으로 실패 가능 → signingTime 폴백)
+ * 전송 경로는 실행 컨텍스트로 결정된다 (C5):
+ *  - PWA(브라우저): 공개 TSA가 CORS를 지원하지 않으므로(2026-07 DigiCert/Sectigo/FreeTSA/
+ *    GlobalSign 모두 미지원 확인) 직결 불가 → Edge Function 프록시 경유가 필수.
+ *  - 확장 프로그램(host 권한) 등 크로스오리진 허용 컨텍스트 또는 명시적 옵트인 → TSA 직결.
  * SHA-256(서명값) → TimeStampReq → TSA → TimeStampResp → TST DER
  */
 import * as asn1js from 'asn1js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { SUPABASE_URL } from './supabase/rest';
 import {
   checkAllTsaHealth, selectBestTsa, blacklistTsa, getTsaSettings,
   type TsaServer,
@@ -66,24 +71,42 @@ function buildTimestampRequest(hash: Uint8Array, nonce: Uint8Array): Uint8Array 
   return new Uint8Array(req.toBER());
 }
 
-// Supabase Edge Function 프록시 (CORS 우회)
-const TSA_PROXY_URL = 'https://ikyhpuerwljxypyzkpiw.supabase.co/functions/v1/tsa-proxy';
+// Supabase Edge Function 프록시 (CORS 우회) — 백엔드 URL은 C4 단일 소스에서 도출
+export const TSA_PROXY_URL = `${SUPABASE_URL}/functions/v1/tsa-proxy`;
 
-/** 단일 TSA에 타임스탬프 요청 (직접 → 실패 시 Edge Function 프록시 폴백) */
-async function requestTst(
+/**
+ * TSA 직결 가능 여부.
+ * PWA는 CORS로 직결 불가 → false(프록시 경유). 확장 프로그램(chrome.runtime.id + host 권한)
+ * 또는 사용자가 명시적으로 켠 경우에만 true.
+ */
+export function isDirectTsaCapable(): boolean {
+  // 브라우저 확장 컨텍스트 (host_permissions로 크로스오리진 허용)
+  const g = globalThis as { chrome?: { runtime?: { id?: string } } };
+  if (g.chrome?.runtime?.id) return true;
+  // 명시적 옵트인 (예: CORS 지원 사설 TSA를 쓰는 배포)
+  try {
+    return localStorage.getItem('pkizip-tsa-allow-direct') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** 단일 TSA에 타임스탬프 요청. 컨텍스트에 따라 직결 또는 프록시 경유. */
+export async function requestTst(
   server: TsaServer,
   reqDer: Uint8Array,
   timeoutMs: number,
 ): Promise<Uint8Array> {
-  // 직접 호출 시도
-  try {
-    return await rawTsaPost(server.url, reqDer, timeoutMs);
-  } catch (directErr) {
-    const msg = directErr instanceof Error ? directErr.message : String(directErr);
-    console.warn(`[PKIZIP-TSA] 직접 호출 실패 (${server.name}): ${msg} → 프록시 시도`);
+  if (isDirectTsaCapable()) {
+    // 확장/직결 가능 컨텍스트: TSA 직결 (프록시 미사용). 실패는 상위 루프가 다음 TSA로 폴백.
+    return rawTsaPost(server.url, reqDer, timeoutMs);
   }
+  // PWA 기본 경로: CORS 우회 프록시 (공개 TSA는 CORS 미지원이라 직결 시도 자체를 생략)
+  return proxyTsaPost(server.url, reqDer, timeoutMs);
+}
 
-  // CORS 우회: Edge Function 프록시
+/** Edge Function 프록시를 통한 TSA POST */
+async function proxyTsaPost(tsaUrl: string, reqDer: Uint8Array, timeoutMs: number): Promise<Uint8Array> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -91,7 +114,7 @@ async function requestTst(
       method: 'POST',
       headers: {
         'Content-Type': 'application/timestamp-query',
-        'x-tsa-url': server.url,
+        'x-tsa-url': tsaUrl,
       },
       body: reqDer as unknown as BodyInit,
       signal: controller.signal,
@@ -173,9 +196,9 @@ export async function getTimestampToken(
 
   for (const server of sorted) {
     try {
-      console.log(`[PKIZIP-TSA] 요청: ${server.name} (${server.url})`);
+      debug.log(`[PKIZIP-TSA] 요청: ${server.name} (${server.url})`);
       const tstDer = await requestTst(server, reqDer, settings.timeoutMs);
-      console.log(`[PKIZIP-TSA] 성공: ${server.name} (${tstDer.length}B)`);
+      debug.log(`[PKIZIP-TSA] 성공: ${server.name} (${tstDer.length}B)`);
 
       return {
         success: true,
@@ -186,13 +209,13 @@ export async function getTimestampToken(
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[PKIZIP-TSA] 실패: ${server.name} — ${msg}`);
+      debug.warn(`[PKIZIP-TSA] 실패: ${server.name} — ${msg}`);
       blacklistTsa(server.id);
     }
   }
 
   // 전체 실패 → signingTime 폴백
-  console.warn('[PKIZIP-TSA] 모든 TSA 실패 — signingTime 폴백');
+  debug.warn('[PKIZIP-TSA] 모든 TSA 실패 — signingTime 폴백');
   return {
     success: false,
     method: 'signingTime',

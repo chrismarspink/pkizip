@@ -3,6 +3,7 @@
  */
 import { create } from 'zustand';
 import { supabase } from './client';
+import { getAccessToken } from './rest';
 import type { User, Session } from '@supabase/supabase-js';
 
 export interface Profile {
@@ -41,11 +42,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: true,
 
   signIn: async (email, password) => {
+    initAuth(); // 로그인 시점에 상태 리스너 부착 (솔로 여정에서는 부착 안 됨)
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
   },
 
   signUp: async (email, password) => {
+    initAuth();
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
   },
@@ -81,12 +84,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 }));
 
-// 인증 상태 변경 리스너
-supabase.auth.onAuthStateChange(async (_event, session) => {
-  useAuthStore.setState({ session, user: session?.user ?? null, loading: false });
-  if (session?.user) {
-    await useAuthStore.getState().loadProfile();
-    // TSA 기본 인증서 등록 (최초 로그인 시)
-    import('../tsa-certs').then(m => m.ensureTsaCerts(session.user.id)).catch(() => {});
+// 인증 부팅은 명시적 initAuth()로만 시작한다 (한 번만 부착).
+// 솔로 사용자(로그인 이력 없음)는 리스너·프로필 조회를 건너뛰어 서버에 접속하지 않는다.
+let authListenerAttached = false;
+
+export function initAuth(): void {
+  if (authListenerAttached) return;
+  authListenerAttached = true;
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    useAuthStore.setState({ session, user: session?.user ?? null, loading: false });
+    if (session?.user) {
+      await useAuthStore.getState().loadProfile();
+      // TSA 기본 인증서 등록 (최초 로그인 시)
+      import('../tsa-certs').then(m => m.ensureTsaCerts(session.user.id)).catch(() => {});
+    }
+  });
+}
+
+// 이전 로그인 세션이 남아 있을 때만 자동 부팅 → 세션 복원.
+// 없으면 서버 접속 없이 즉시 비로그인 상태로 확정.
+if (typeof window !== 'undefined') {
+  if (getAccessToken() !== null) {
+    initAuth();
+  } else {
+    useAuthStore.setState({ loading: false });
   }
-});
+}

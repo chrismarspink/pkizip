@@ -72,14 +72,66 @@ const toB64 = (b: Uint8Array) => {
 };
 const frB64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
-async function deriveKey(password: string, salt: Uint8Array, usage: KeyUsage[]): Promise<CryptoKey> {
+// 신규 백업 KDF 강도. 앱 전역(key-manager/pin/encryption)이 600k이므로 시드 백업도 통일.
+// 기존 100k 백업은 저장된 kdf_iterations 값으로 복호화하여 하위호환 유지.
+const KDF_ITERATIONS = 600_000;
+
+async function deriveKey(
+  password: string, salt: Uint8Array, iterations: number, usage: KeyUsage[],
+): Promise<CryptoKey> {
   const km = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations: 100_000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations, hash: 'SHA-256' },
     km, { name: 'AES-GCM', length: 256 }, false, usage,
   );
+}
+
+/** 서버 저장/전송에 쓰이는 니모닉 암호문 페이로드 (직렬화 필드) */
+export interface EncryptedMnemonicPayload {
+  encrypted_blob: string;
+  kdf_salt: string;
+  kdf_iterations: number;
+  iv: string;
+}
+
+/** 니모닉 → 암호화 페이로드 (순수 함수, 네트워크 무관 — 테스트 가능) */
+export async function encryptMnemonicPayload(
+  mnemonic: string, password: string, iterations: number = KDF_ITERATIONS,
+): Promise<EncryptedMnemonicPayload> {
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt, iterations, ['encrypt']);
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, key, new TextEncoder().encode(mnemonic),
+  );
+  return {
+    encrypted_blob: toB64(new Uint8Array(ct)),
+    kdf_salt: toB64(salt),
+    kdf_iterations: iterations,
+    iv: toB64(iv),
+  };
+}
+
+/**
+ * 암호화 페이로드 → 니모닉 (순수 함수). 하위호환 핵심:
+ * 복호화 반복횟수를 페이로드의 kdf_iterations로 결정 (구 100k·신규 600k 모두 열림).
+ */
+export async function decryptMnemonicPayload(
+  payload: EncryptedMnemonicPayload, password: string,
+): Promise<string> {
+  const key = await deriveKey(
+    password, frB64(payload.kdf_salt), payload.kdf_iterations ?? 100_000, ['decrypt'],
+  );
+  try {
+    const pt = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: frB64(payload.iv) }, key, frB64(payload.encrypted_blob),
+    );
+    return new TextDecoder().decode(pt);
+  } catch {
+    throw new Error('백업 패스워드가 올바르지 않습니다');
+  }
 }
 
 export interface BackupEntry {
@@ -114,20 +166,11 @@ export async function backupMnemonic(
     throw new Error(`최대 ${MAX_BACKUPS}개까지 백업 가능합니다. 기존 백업을 삭제한 후 다시 시도하세요.`);
   }
 
-  const salt = crypto.getRandomValues(new Uint8Array(32));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(backupPassword, salt, ['encrypt']);
-  const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv }, key, new TextEncoder().encode(mnemonic),
-  );
-
+  const payload = await encryptMnemonicPayload(mnemonic, backupPassword);
   const body = {
     user_id: userId,
     identity_id: identityId,
-    encrypted_blob: toB64(new Uint8Array(ct)),
-    kdf_salt: toB64(salt),
-    kdf_iterations: 100_000,
-    iv: toB64(iv),
+    ...payload,
     hint: hint ?? null,
     updated_at: new Date().toISOString(),
   };
@@ -158,15 +201,8 @@ export async function restoreMnemonic(
   const data = rows?.[0];
   if (!data) throw new Error('백업을 찾을 수 없습니다');
 
-  const key = await deriveKey(backupPassword, frB64(data.kdf_salt), ['decrypt']);
-  try {
-    const pt = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: frB64(data.iv) }, key, frB64(data.encrypted_blob),
-    );
-    return new TextDecoder().decode(pt);
-  } catch {
-    throw new Error('백업 패스워드가 올바르지 않습니다');
-  }
+  // 하위호환: 저장된 반복횟수로 복호화 (구 백업 100k, 신규 600k)
+  return decryptMnemonicPayload(data as EncryptedMnemonicPayload, backupPassword);
 }
 
 /** 특정 백업 삭제 */

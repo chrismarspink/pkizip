@@ -12,3 +12,9 @@
 export function toBuffer(data: Uint8Array): ArrayBuffer {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }
+
+/**
+ * Node 23+ Uint8Array<ArrayBufferLike> → Web Crypto BufferSource 호환 캐스트 헬퍼.
+ * (signing/key-manager/biometric/encryption/pin 에서 공용)
+ */
+export const buf = (data: Uint8Array): BufferSource => data as unknown as BufferSource;

@@ -37,3 +37,6 @@ next-env.d.ts
 
 # Project context (no release)
 CLAUDE.md
+
+# Internal strategy/analysis (미수정 보안 위협·비즈니스 전략 — 공개 금지)
+docs/pkizip-improvement-strategy.md
