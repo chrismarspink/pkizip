@@ -654,49 +654,63 @@ export function CreatePage() {
         {/* Step 1.5: 분석 — 텍스트 추출 + PII + 등급 + 정책 */}
         {step === 'analyze' && (
           <motion.div key="analyze" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-            <h2 className="text-lg font-bold mb-1">{t("create.analysis")}</h2>
-            <p className="text-sm text-zinc-500 mb-4">
-              파일 내용을 분석해 보안등급(C/S/O)을 판정하고, 사용 의도에 맞는 처리 옵션을 자동 추천합니다.
-              <br />분석은 100% 브라우저에서 실행 — 텍스트가 서버로 전송되지 않습니다.
-            </p>
-            {analyzing && (
-              <div className="bg-white border border-zinc-200 rounded-xl p-6">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="w-5 h-5 animate-spin text-[#175DDC] shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">
-                      {ocrProgress ? t('create.ocrRunning', { file: ocrProgress.file }) : t('create.analyzing')}
+            {(analyzing || !analysisInitial) && (
+              <>
+                <h2 className="text-lg font-bold mb-1">{t("create.analysis")}</h2>
+                <p className="text-sm text-zinc-500 mb-4">
+                  파일 내용을 분석해 보안등급(C/S/O)을 판정하고, 사용 의도에 맞는 처리 옵션을 자동 추천합니다.
+                  <br />분석은 100% 브라우저에서 실행 — 텍스트가 서버로 전송되지 않습니다.
+                </p>
+                {analyzing && (
+                  <div className="bg-white border border-zinc-200 rounded-xl p-6">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 animate-spin text-[#175DDC] shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium">
+                          {ocrProgress ? t('create.ocrRunning', { file: ocrProgress.file }) : t('create.analyzing')}
+                        </div>
+                        {ocrProgress && (
+                          <>
+                            <div className="text-[11px] text-zinc-500 mt-1 truncate">
+                              {ocrProgress.status} · {Math.round(ocrProgress.progress * 100)}%
+                            </div>
+                            <div className="mt-1.5 h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-[#175DDC] transition-all"
+                                style={{ width: `${Math.round(ocrProgress.progress * 100)}%` }} />
+                            </div>
+                            <p className="text-[10px] text-zinc-400 mt-1.5">{t('create.ocrFirstRunNote')}</p>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    {ocrProgress && (
-                      <>
-                        <div className="text-[11px] text-zinc-500 mt-1 truncate">
-                          {ocrProgress.status} · {Math.round(ocrProgress.progress * 100)}%
-                        </div>
-                        <div className="mt-1.5 h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-[#175DDC] transition-all"
-                            style={{ width: `${Math.round(ocrProgress.progress * 100)}%` }} />
-                        </div>
-                        <p className="text-[10px] text-zinc-400 mt-1.5">{t('create.ocrFirstRunNote')}</p>
-                      </>
-                    )}
                   </div>
+                )}
+                {!analyzing && !analysisInitial && (
+                  <div className="bg-white border border-zinc-200 rounded-xl p-6">
+                    <p className="text-sm text-zinc-600 mb-3">{t("create.noAnalysis")}</p>
+                    <button onClick={() => setStep('files')}
+                      className="text-sm bg-zinc-100 px-3 py-1.5 rounded">{t("create.retry")}</button>
+                  </div>
+                )}
+                <div className="flex justify-between mt-4">
+                  <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">← {t("common.back")}</button>
+                  <button onClick={goNext}
+                    className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800">
+                    분석 건너뛰기 →
+                  </button>
                 </div>
-              </div>
+              </>
             )}
-            {!analyzing && !analysisInitial && (
-              <div className="bg-white border border-zinc-200 rounded-xl p-6">
-                <p className="text-sm text-zinc-600 mb-3">{t("create.noAnalysis")}</p>
-                <button onClick={() => setStep('files')}
-                  className="text-sm bg-zinc-100 px-3 py-1.5 rounded">{t("create.retry")}</button>
-              </div>
+            {/* 분석 결과 — 모달이 아니라 위저드 단계에 인라인 (괴리 제거, 옵션 1) */}
+            {!analyzing && analysisInitial && (
+              <AnalysisDialog
+                inline
+                open={true}
+                initialResult={analysisInitial}
+                onClose={() => { setAnalysisSkipped(true); setStep('options'); }}
+                onAccept={handleAnalysisAccept}
+              />
             )}
-            <div className="flex justify-between mt-4">
-              <button onClick={() => setStep('files')} className="text-sm text-zinc-500 hover:text-zinc-800">← {t("common.back")}</button>
-              <button onClick={goNext}
-                className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800">
-                분석 건너뛰기 →
-              </button>
-            </div>
           </motion.div>
         )}
 
@@ -1046,15 +1060,7 @@ export function CreatePage() {
         }}
       />
 
-      {/* v2 — 분석 결과 + 사용자 결정 다이얼로그 */}
-      {step === 'analyze' && analysisInitial && (
-        <AnalysisDialog
-          open={true}
-          initialResult={analysisInitial}
-          onClose={() => { setAnalysisSkipped(true); setStep('options'); }}
-          onAccept={handleAnalysisAccept}
-        />
-      )}
+      {/* 분석 결과는 위저드 '분석' 단계에 인라인으로 렌더됨 (오버레이 모달 제거) */}
     </div>
   );
 }
