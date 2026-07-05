@@ -65,6 +65,8 @@ export function CreatePage() {
     if (mode === 'classical') return 'classic';
     return 'hybrid';
   });
+  // 암호 방식(Classic/Hybrid/PQC)·포맷 용어는 기본 숨김 — 전문가만 펼침 (제안: 용어 은닉)
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [recipients, setRecipients] = useState<Set<string>>(new Set());
@@ -743,35 +745,42 @@ export function CreatePage() {
               </div>
             )}
 
-            {/* 암호 모드 선택 (최상단) */}
-            <div className="bg-white border border-zinc-200 rounded-xl p-4 mb-3 space-y-2">
-              <label className="text-xs font-medium text-zinc-700">{t("create.cryptoAlgo")}</label>
-              <div className="grid grid-cols-3 gap-2">
-                {([
-                  { value: 'classic', label: 'Classic', desc: 'ECDSA / ECDH', color: 'zinc' },
-                  { value: 'hybrid', label: 'Hybrid', desc: 'Classic + PQC', color: 'green' },
-                  { value: 'pqc-only', label: 'PQC Only', desc: 'ML-KEM / ML-DSA', color: 'violet' },
-                ] as const).map(m => {
-                  const selected = cryptoMode === m.value;
-                  return (
-                    <button key={m.value} onClick={() => setCryptoMode(m.value)}
-                      className={`text-left rounded-lg px-3 py-2.5 border-2 transition-all ${
-                        selected
-                          ? m.color === 'violet' ? 'border-violet-500 bg-violet-50'
-                          : m.color === 'green' ? 'border-[#175DDC] bg-[#175DDC]/5'
-                          : 'border-zinc-800 bg-zinc-50'
-                          : 'border-zinc-100 hover:border-zinc-300'
-                      }`}>
-                      <div className={`text-xs font-bold ${selected
-                        ? m.color === 'violet' ? 'text-violet-700' : m.color === 'green' ? 'text-[#175DDC]' : 'text-zinc-800'
-                        : 'text-zinc-500'
-                      }`}>{m.label}</div>
-                      <div className="text-[10px] text-zinc-400 mt-0.5">{m.desc}</div>
-                    </button>
-                  );
-                })}
+            {/* 고급 옵션 토글 — 암호 방식(Classic/Hybrid/PQC)은 기본 숨김 (제안: 용어 은닉) */}
+            <button onClick={() => setShowAdvanced(v => !v)}
+              className="text-xs text-zinc-500 hover:text-[#175DDC] flex items-center gap-1 mb-2">
+              ⚙ 고급 옵션 (암호 방식) {showAdvanced ? '▴' : '▾'}
+            </button>
+            {/* 암호 방식 선택 — 기본 접힘(고급). 일반 사용자는 안 봐도 됨. 기본 Hybrid. */}
+            {showAdvanced && (
+              <div className="bg-white border border-zinc-200 rounded-xl p-4 mb-3 space-y-2">
+                <label className="text-xs font-medium text-zinc-700">{t("create.cryptoAlgo")}</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: 'classic', label: 'Classic', desc: 'ECDSA / ECDH', color: 'zinc' },
+                    { value: 'hybrid', label: 'Hybrid', desc: 'Classic + PQC', color: 'green' },
+                    { value: 'pqc-only', label: 'PQC Only', desc: 'ML-KEM / ML-DSA', color: 'violet' },
+                  ] as const).map(m => {
+                    const selected = cryptoMode === m.value;
+                    return (
+                      <button key={m.value} onClick={() => setCryptoMode(m.value)}
+                        className={`text-left rounded-lg px-3 py-2.5 border-2 transition-all ${
+                          selected
+                            ? m.color === 'violet' ? 'border-violet-500 bg-violet-50'
+                            : m.color === 'green' ? 'border-[#175DDC] bg-[#175DDC]/5'
+                            : 'border-zinc-800 bg-zinc-50'
+                            : 'border-zinc-100 hover:border-zinc-300'
+                        }`}>
+                        <div className={`text-xs font-bold ${selected
+                          ? m.color === 'violet' ? 'text-violet-700' : m.color === 'green' ? 'text-[#175DDC]' : 'text-zinc-800'
+                          : 'text-zinc-500'
+                        }`}>{m.label}</div>
+                        <div className="text-[10px] text-zinc-400 mt-0.5">{m.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-3">
               <OptionCard checked={options.compress} onChange={() => toggleOption('compress')} icon={<Package className="w-5 h-5" />} title={t("create.compress")} desc={t("create.compressDesc")} />
@@ -782,15 +791,13 @@ export function CreatePage() {
                 title={t("create.signed")}
                 desc={
                   options.enveloped
-                    ? 'Enveloped 포함 중 — 끄면 Enveloped 도 함께 해제됩니다'
-                    : cryptoMode === 'pqc-only' ? 'ML-DSA-87 전자서명'
-                    : cryptoMode === 'hybrid' ? 'ECDSA + ML-DSA 하이브리드 서명'
-                    : 'ECDSA P-256 전자서명'
+                    ? '받는 사람만 열람에 포함됨 — 끄면 함께 해제됩니다'
+                    : '이 파일을 내가 보냈다는 증명(서명)을 첨부합니다'
                 }
                 disabled={!hasAnyIdentity}
               />
-              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#175DDC]" />} title={t("create.enveloped")} desc={cryptoMode === 'pqc-only' ? 'ML-KEM-1024 + ML-DSA-87' : cryptoMode === 'hybrid' ? 'ECDH + ML-KEM 하이브리드' : 'ECDH P-256 + ECDSA'} disabled={!hasAnyIdentity} />
-              <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title={t("create.encrypted")} desc={t("create.passwordAesGcm")} />
+              <OptionCard checked={options.enveloped} onChange={() => toggleOption('enveloped')} icon={<Shield className="w-5 h-5 text-[#175DDC]" />} title={t("create.enveloped")} desc="지정한 받는 사람만 열 수 있게 암호화합니다" disabled={!hasAnyIdentity} />
+              <OptionCard checked={options.encrypted} onChange={() => toggleOption('encrypted')} icon={<Lock className="w-5 h-5 text-amber-500" />} title={t("create.encrypted")} desc="비밀번호를 아는 사람만 열 수 있습니다" />
               {(() => {
                 const convertibleCount = files.filter(f => isConvertibleToPdf(f.name)).length;
                 return (
@@ -819,17 +826,19 @@ export function CreatePage() {
               />
             )}
 
-            <div className="bg-white border border-zinc-200 rounded-xl p-3 mt-3 text-xs text-zinc-600 flex items-center gap-2 flex-wrap">
-              생성 타입: <span className="font-bold text-zinc-800">{cmsType}Message</span>
-              {willSign && cryptoMode !== 'classic' && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-violet-600 text-white">Q</span>
-              )}
-              {willSign && (
-                <span className="text-[10px] text-zinc-400">
-                  ({cryptoMode === 'hybrid' ? 'Classic + PQC' : cryptoMode === 'pqc-only' ? 'PQC Only' : 'Classic'})
-                </span>
-              )}
-            </div>
+            {showAdvanced && (
+              <div className="bg-white border border-zinc-200 rounded-xl p-3 mt-3 text-xs text-zinc-600 flex items-center gap-2 flex-wrap">
+                생성 타입: <span className="font-bold text-zinc-800">{cmsType}Message</span>
+                {willSign && cryptoMode !== 'classic' && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-violet-600 text-white">Q</span>
+                )}
+                {willSign && (
+                  <span className="text-[10px] text-zinc-400">
+                    ({cryptoMode === 'hybrid' ? 'Classic + PQC' : cryptoMode === 'pqc-only' ? 'PQC Only' : 'Classic'})
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* 키 잠금 해제 인라인 */}
             {needsUnlock && willSign && !isKeyLoaded && (
