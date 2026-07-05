@@ -36,6 +36,8 @@ interface Props {
   initialResult: AnalysisResult;
   onClose: () => void;
   onAccept: (decision: AnalysisDecision) => void;
+  /** true면 모달 오버레이 없이 페이지에 인라인으로 렌더 (생성 위저드의 '분석' 단계에 흡수) */
+  inline?: boolean;
 }
 
 export interface AnalysisDecision {
@@ -67,7 +69,7 @@ const REASON_KIND_LABEL: Record<string, string> = {
   language: '언어',
 };
 
-export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props) {
+export function AnalysisDialog({ open, initialResult, onClose, onAccept, inline = false }: Props) {
   // Step 1: 의도 (디폴트는 prefs)
   const [intent, setIntent] = useState(() => {
     const w = prefs.workflow.get();
@@ -320,13 +322,15 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-        onClick={onClose}
+        className={inline ? '' : 'fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4'}
+        onClick={inline ? undefined : onClose}
       >
         <motion.div
           initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
-          className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden"
-          onClick={e => e.stopPropagation()}
+          className={inline
+            ? 'bg-white border border-zinc-200 rounded-xl flex flex-col overflow-hidden'
+            : 'bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden'}
+          onClick={inline ? undefined : (e => e.stopPropagation())}
         >
           {/* 헤더 */}
           <div className="flex items-start justify-between p-5 border-b">
