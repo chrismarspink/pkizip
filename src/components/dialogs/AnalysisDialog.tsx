@@ -407,10 +407,13 @@ export function AnalysisDialog({ open, initialResult, onClose, onAccept }: Props
                 <div className="text-2xl font-bold w-10 text-center">{initialResult.classification.grade}</div>
                 <div className="flex-1">
                   <div className="font-semibold">{GRADE_LABEL[initialResult.classification.grade]}</div>
+                  {/* 점수 대신 한 문장 — 원시 지표(score·임계값)는 아래 '자세히'에서만 (제안 증분 4) */}
                   <div className="text-xs opacity-80 mt-0.5">
-                    원본 score <b>{initialResult.classification.score}</b> · 신뢰도{' '}
-                    {(initialResult.classification.confidence * 100).toFixed(0)}%
-                    · 임계값 S=<b>{initialResult.classification.thresholds.S}</b> C=<b>{initialResult.classification.thresholds.C}</b>
+                    {initialResult.classification.confidence >= 0.8
+                      ? '높은 확신으로 판정했어요'
+                      : initialResult.classification.confidence >= 0.6
+                        ? '이렇게 판정했어요'
+                        : '등급 경계 — 확인이 필요해요'}
                   </div>
                 </div>
               </div>
