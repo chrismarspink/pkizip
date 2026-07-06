@@ -14,6 +14,7 @@ import { CompliancePage } from '@/pages/CompliancePage';
 import { StatsPage } from '@/pages/StatsPage';
 import { MePage } from '@/pages/MePage';
 import { AdminPage } from '@/pages/AdminPage';
+import { OpenPage } from '@/pages/OpenPage';
 import { TeamLayout } from '@/components/team/TeamLayout';
 import { TeamDashboardPage } from '@/pages/team/TeamDashboardPage';
 import { TeamMembersPage } from '@/pages/team/TeamMembersPage';
@@ -34,6 +35,9 @@ export function App() {
     <BrowserRouter basename={basename}>
       <UpdateBanner />
       <Routes>
+        {/* 무설치 열람 — AppShell(네비/로그인) 밖 공개 랜딩. 수신자는 앱 없이 링크만으로 접근 */}
+        <Route path="/open/:token" element={<OpenPage />} />
+
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/create" element={<CreatePage />} />

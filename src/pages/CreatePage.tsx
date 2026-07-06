@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store/app-store';
 import type { FileEntry } from '@/lib/compression/compressor';
 import { SigningConsentDialog } from '@/components/dialogs/SigningConsentDialog';
+import { SafeLinkShare } from '@/components/create/SafeLinkShare';
 import { CertificateSelectorList } from '@/components/cms/CertificateSelectorList';
 import { OptionCard } from '@/components/cms/OptionCard';
 import { Stepper, type StepItem } from '@/components/cms/Stepper';
@@ -1052,6 +1053,8 @@ export function CreatePage() {
                 </div>
               );
             })()}
+
+            <SafeLinkShare files={files} />
 
             <div className="flex gap-3 justify-center">
               <button onClick={handleDownload} className="flex items-center gap-2 bg-[#175DDC] text-white px-6 py-2.5 rounded-xl text-sm font-medium">
