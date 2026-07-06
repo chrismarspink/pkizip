@@ -86,6 +86,8 @@ export function CreatePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisSkipped, setAnalysisSkipped] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<{ file: string; progress: number; status: string } | null>(null);
+  /** T3 mDeBERTa 대용량 청크 진행률 (구간 i/total) */
+  const [neuralProgress, setNeuralProgress] = useState<{ current: number; total: number; pct: number } | null>(null);
   const [selectedIdentityId, setSelectedIdentityId] = useState<string | null>(null);
   const [resultData, setResultData] = useState<Uint8Array | null>(null);
   const [resultName, setResultName] = useState('');
@@ -233,6 +235,7 @@ export function CreatePage() {
   const enterAnalyzeStep = async () => {
     setAnalyzing(true);
     setOcrProgress(null);
+    setNeuralProgress(null);
     setStep('analyze');   // analyzing 표시 위해 step 먼저 전환
     try {
       const extracted = await extractAll(files, {
@@ -270,7 +273,9 @@ export function CreatePage() {
         ocrEngine: extracted.ocrEngine,
         ocrLanguages: extracted.ocrLanguages,
         ocrConfidence: extracted.ocrConfidence,
+        onNeuralProgress: (p) => setNeuralProgress({ current: p.current, total: p.total, pct: p.pct }),
       }).catch(() => baseResult);
+      setNeuralProgress(null);
       setAnalysisInitial(result);
       setAnalysisSkipped(false);
       // 추출 결과 보존 — 가/익명화 sidecar 모드 + 이미지 마스킹에서 재사용
@@ -315,6 +320,7 @@ export function CreatePage() {
     } finally {
       setAnalyzing(false);
       setOcrProgress(null);
+      setNeuralProgress(null);
     }
   };
 
@@ -667,7 +673,9 @@ export function CreatePage() {
                       <Loader2 className="w-5 h-5 animate-spin text-[#175DDC] shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium">
-                          {ocrProgress ? t('create.ocrRunning', { file: ocrProgress.file }) : t('create.analyzing')}
+                          {ocrProgress ? t('create.ocrRunning', { file: ocrProgress.file })
+                            : neuralProgress ? 'AI 등급 분석 중 (mDeBERTa)'
+                            : t('create.analyzing')}
                         </div>
                         {ocrProgress && (
                           <>
@@ -679,6 +687,17 @@ export function CreatePage() {
                                 style={{ width: `${Math.round(ocrProgress.progress * 100)}%` }} />
                             </div>
                             <p className="text-[10px] text-zinc-400 mt-1.5">{t('create.ocrFirstRunNote')}</p>
+                          </>
+                        )}
+                        {neuralProgress && neuralProgress.total > 1 && (
+                          <>
+                            <div className="text-[11px] text-zinc-500 mt-1">
+                              대용량 문서 청크 분석 · {neuralProgress.current}/{neuralProgress.total} 구간
+                            </div>
+                            <div className="mt-1.5 h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-[#175DDC] transition-all"
+                                style={{ width: `${Math.round(neuralProgress.pct * 100)}%` }} />
+                            </div>
                           </>
                         )}
                       </div>

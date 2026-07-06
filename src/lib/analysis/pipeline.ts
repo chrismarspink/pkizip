@@ -18,6 +18,7 @@ import { prefs } from '../store/preferences';
 import type {
   AnalysisResult, AnonymizationResult, DowngradeIteration, Finding, Grade,
 } from './types';
+import type { ClassifyProgress } from '../classify/windowing';
 
 export interface AnalyzeOptions {
   /** OCR 적용 (이미 호출 측에서 적용했으면 ocr 메타만 전달) */
@@ -31,6 +32,8 @@ export interface AnalyzeOptions {
   applyLanguageFloor?: boolean;
   /** PII 탐지 minScore */
   minScore?: number;
+  /** T3 mDeBERTa 대용량 청크 진행률 콜백 (구간 i/total) */
+  onNeuralProgress?: (p: ClassifyProgress) => void;
 }
 
 /**
@@ -135,7 +138,9 @@ export async function analyzeAsync(
         import('../classify/windowing'),
       ]);
       const zsLocale = ({ ko: 'ko', ja: 'ja', en: 'en', 'zh-CN': 'zh-CN', zh: 'zh-CN' } as Record<string, string>)[language.detected] ?? 'ko';
-      const zs = await classifyWindowed(text, createZeroShotInfer({ locale: zsLocale }));
+      const zs = await classifyWindowed(text, createZeroShotInfer({ locale: zsLocale }), {
+        onProgress: opts.onNeuralProgress,
+      });
       const toOSC: Record<string, Grade> = { OPEN: 'O', SENSITIVE: 'S', CONFIDENTIAL: 'C' };
       const GLABEL: Record<Grade, string> = { C: '위험 (Critical)', S: '민감 (Sensitive)', O: '공개 (Open)' };
       const nGrade = toOSC[zs.grade];
