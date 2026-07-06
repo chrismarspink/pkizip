@@ -188,6 +188,18 @@ export function FilesTempPage() {
                 // Inner payload 파싱 → 서명 발견 여부
                 try {
                   const inner = unpackInnerPayload(decrypted);
+                  // 암호화 계층 안에 숨겨진 분류 등급 — 복호화 후에만 노출
+                  if (inner.meta?.classification) {
+                    const c = inner.meta.classification;
+                    const label = c.grade === 'C' ? t('filesOpen.gradeC')
+                                : c.grade === 'S' ? t('filesOpen.gradeS')
+                                : t('filesOpen.gradeO');
+                    push({
+                      type: 'text', id: id(),
+                      content: t('filesOpen.docGrade', { label, pct: Math.round((c.confidence ?? 0) * 100) }),
+                      tone: c.grade === 'O' ? 'success' : 'warning',
+                    });
+                  }
                   if (inner.signatures?.length) {
                     push({ type: 'text', id: id(), content: t('filesOpen.innerSignatures', { n: inner.signatures.length }), tone: 'warning' });
                     await verifyInnerSignatures(inner.signatures, inner.data, push, update);

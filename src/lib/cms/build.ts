@@ -113,6 +113,13 @@ async function buildEncrypted(workingFiles: FileEntry[], ctx: BuildContext) {
     name: f.name, originalSize: f.size, compressedSize: 0, hash: '', type: f.type, lastModified: f.lastModified,
   }));
 
+  // 분류 등급을 암호화 계층 안(inner-payload meta)에 기록 — 복호화해야만 보임.
+  // 평문 헤더에 넣지 않아 'CONFIDENTIAL' 여부가 봉투 외부로 새지 않는다.
+  const sealMeta = ctx.analysisDecision
+    ? decisionToSealMeta(ctx.analysisDecision, ctx.keyIdentity?.signingKey.fingerprint)
+    : undefined;
+  const innerMeta = sealMeta?.classification ? { classification: sealMeta.classification } : undefined;
+
   let innerData: Uint8Array;
   let info: string;
   if (ctx.options.sign && ctx.keyIdentity) {
@@ -123,11 +130,11 @@ async function buildEncrypted(workingFiles: FileEntry[], ctx: BuildContext) {
       ctx.keyIdentity.signingKey.fingerprint,
     );
     const sigs = serializeSignerInfos([signerInfo]);
-    innerData = packInnerPayload(compressed, sigs ?? undefined);
+    innerData = packInnerPayload(compressed, sigs ?? undefined, innerMeta);
     info = 'EncryptedMessage (서명 포함)';
     algos.push('AES-256-GCM (비밀번호)', 'ECDSA P-256 (서명)');
   } else {
-    innerData = packInnerPayload(compressed);
+    innerData = packInnerPayload(compressed, undefined, innerMeta);
     info = 'EncryptedMessage';
     algos.push('AES-256-GCM (비밀번호)');
   }
