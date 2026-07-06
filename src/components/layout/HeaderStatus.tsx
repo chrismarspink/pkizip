@@ -1,11 +1,11 @@
 /**
  * HeaderStatus — 상단 바 좌측 상태 클러스터.
  *
- * 4개 영역:
+ * 3개 영역:
  *   1) 활성 인증서 (드롭다운으로 빠른 전환)
  *   2) 시스템 상태 (온라인/오프라인 + 버전 + 업데이트 + 저장소)
- *   3) PQC 모드 배지
- *   4) TSA 연결 상태
+ *   3) 보안 배지 — 양자내성 암호 + 타임스탬프(TSA) 를 사용자 언어 단일 칩으로 통합
+ *      (기술 용어 PQC/TSA 는 펼침 팝오버 안으로 숨김)
  *
  * 모바일 (<640px) 에선 인증서만 표시 (공간 부족).
  */
@@ -34,8 +34,7 @@ export function HeaderStatus() {
       <div className="w-px h-6 bg-zinc-200 flex-shrink-0" />
       <SystemStatus compact={isMobile} />
       {!isMobile && <div className="w-px h-6 bg-zinc-200 flex-shrink-0" />}
-      <PqcModeBadge compact={isMobile} />
-      <TsaStatusBadge compact={isMobile} />
+      <SecurityBadge compact={isMobile} />
     </div>
   );
 }
@@ -195,40 +194,13 @@ function SystemStatus({ compact = false }: { compact?: boolean }) {
 }
 
 // ─────────────────────────────────────────────
-// 3. PQC 모드 배지
+// 3. 보안 배지 — 양자내성 암호 + 타임스탬프(TSA) 통합 단일 칩
+//    상시 노출은 사용자 언어("보안")로, 기술 상세(PQC/TSA)는 팝오버로 숨김
 // ─────────────────────────────────────────────
 
-function PqcModeBadge({ compact = false }: { compact?: boolean }) {
+function SecurityBadge({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation();
   const { pqcConfig } = useAppStore();
-  const enabled = pqcConfig.kemEnabled || pqcConfig.dsaEnabled;
-  const mode = pqcConfig.kemMode || pqcConfig.dsaMode || 'classic';
-
-  const label = enabled
-    ? mode === 'pqc-only' ? 'PQC Only'
-    : mode === 'hybrid' ? t('header.pqcHybrid')
-    : `PQC ${mode}`
-    : t('header.pqcClassic');
-
-  return (
-    <Link to="/settings" title={t('header.pqcCurrent', { label })}
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border flex-shrink-0 transition ${
-        enabled
-          ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
-          : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200'
-      }`}>
-      <Cpu className="w-3 h-3" />
-      {!compact && <span className="text-[10px]">{label}</span>}
-    </Link>
-  );
-}
-
-// ─────────────────────────────────────────────
-// 4. TSA 연결 상태
-// ─────────────────────────────────────────────
-
-function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
-  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [results, setResults] = useState<TsaHealthCache[]>([]);
@@ -239,8 +211,8 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     void runCheck();
     // 5분 주기
-    const t = setInterval(() => void runCheck(), 5 * 60 * 1000);
-    return () => clearInterval(t);
+    const iv = setInterval(() => void runCheck(), 5 * 60 * 1000);
+    return () => clearInterval(iv);
   }, []);
 
   useEffect(() => {
@@ -263,46 +235,72 @@ function TsaStatusBadge({ compact = false }: { compact?: boolean }) {
     }
   }
 
-  // 요약 — 응답 가능한 서버 수 (-2 는 Mixed Content 로 확인 불가, 실패로 카운트 X)
+  // 양자내성 암호 상태
+  const pqcEnabled = pqcConfig.kemEnabled || pqcConfig.dsaEnabled;
+  const pqcMode = pqcConfig.kemMode || pqcConfig.dsaMode || 'classic';
+  const pqcLabel = pqcEnabled
+    ? pqcMode === 'pqc-only' ? 'PQC Only'
+    : pqcMode === 'hybrid' ? t('header.pqcHybrid')
+    : `PQC ${pqcMode}`
+    : t('header.pqcClassic');
+
+  // TSA 요약 — 응답 가능한 서버 수 (-2 는 Mixed Content 로 확인 불가, 실패로 카운트 X)
   const checkable = results.filter(r => r.responseMs !== -2);
   const reachable = checkable.filter(r => r.responseMs > 0 && !isBlacklisted(r));
   const allFailed = checkable.length > 0 && reachable.length === 0;
-  const status: 'ok' | 'partial' | 'fail' | 'checking' =
+  const tsaStatus: 'ok' | 'partial' | 'fail' | 'checking' =
     checking ? 'checking'
     : allFailed ? 'fail'
     : reachable.length === results.length ? 'ok'
     : 'partial';
 
-  const status_label = `TSA ${reachable.length}/${checkable.length}`;
-  const cfg = {
-    checking: { Icon: Loader2, color: 'text-zinc-500 bg-zinc-100 border-zinc-200', label: 'TSA …', spin: true },
-    ok:       { Icon: Check,      color: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: status_label },
-    partial:  { Icon: AlertCircle, color: 'text-amber-700 bg-amber-50 border-amber-200',   label: status_label },
-    fail:     { Icon: AlertCircle, color: 'text-red-700 bg-red-50 border-red-200',   label: `TSA ✗ ${reachable.length}/${checkable.length}` },
-  } as const;
-  const { Icon, color, label, spin } = cfg[status];
+  // 칩 색상은 양자내성 암호 활성 여부로 (보안 강도 신호), TSA 상태는 도트로 표시
+  const chipColor = pqcEnabled
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+    : 'bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200';
+  const dotColor =
+    tsaStatus === 'ok' ? 'bg-emerald-500'
+    : tsaStatus === 'partial' ? 'bg-amber-500'
+    : tsaStatus === 'fail' ? 'bg-red-500'
+    : 'bg-zinc-300';
 
   return (
     <div ref={ref} className="relative flex-shrink-0">
       <button onClick={() => setOpen(s => !s)}
-        title={t('header.tsaReach', { ok: reachable.length, total: results.length })}
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition hover:opacity-80 ${color}`}>
-        <Icon className={`w-3 h-3 ${spin ? 'animate-spin' : ''}`} />
-        {!compact && <span className="text-[10px]">{label}</span>}
+        title={t('header.securityTooltip')}
+        className={`relative inline-flex items-center gap-1 px-1.5 py-0.5 rounded border transition ${chipColor}`}>
+        <Shield className="w-3.5 h-3.5" />
+        {!compact && <span className="text-[10px] font-medium">{t('header.security')}</span>}
+        {/* TSA 상태 도트 — 확인 중이 아닐 때만 노출 */}
+        {tsaStatus !== 'checking' && (
+          <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-white ${dotColor}`} />
+        )}
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-1 w-[420px] bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
           <div className="px-3 py-2 border-b flex items-center justify-between bg-zinc-50">
-            <div>
-              <div className="text-xs font-semibold text-zinc-700">{t('header.tsaStatus')}</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">
-                {t('header.tsaPolicy')}
-              </div>
-            </div>
+            <div className="text-xs font-semibold text-zinc-700">{t('header.securityStatus')}</div>
             <button onClick={() => setOpen(false)} className="p-0.5 hover:bg-zinc-200 rounded">
               <X className="w-3.5 h-3.5" />
             </button>
+          </div>
+
+          {/* 섹션 A — 양자내성 암호 */}
+          <Link to="/settings" onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2.5 border-b hover:bg-zinc-50 transition">
+            <Cpu className={`w-4 h-4 flex-shrink-0 ${pqcEnabled ? 'text-violet-600' : 'text-zinc-400'}`} />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-zinc-700">{t('header.quantumCrypto')}</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">{pqcLabel}</div>
+            </div>
+            <span className="text-[10px] text-blue-600 flex-shrink-0">{t('header.changeInSettings')}</span>
+          </Link>
+
+          {/* 섹션 B — 타임스탬프(TSA) */}
+          <div className="px-3 py-2 border-b bg-zinc-50/50">
+            <div className="text-xs font-semibold text-zinc-700">{t('header.timestampAuthority')}</div>
+            <div className="text-[10px] text-zinc-500 mt-0.5">{t('header.tsaPolicy')}</div>
           </div>
           <div className="max-h-72 overflow-y-auto">
             {servers.map(srv => {
