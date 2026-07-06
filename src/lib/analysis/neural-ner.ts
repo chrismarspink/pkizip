@@ -13,6 +13,7 @@
  * 출력: pii-detector 의 Finding[] 와 동일 형태 → pipeline 이 그대로 합침
  */
 import type { Finding } from './types';
+import { CHAR_CHUNK, CHAR_OVERLAP, MAX_CHUNKS } from '../classify/windowing';
 
 // transformers.js 의 token-classification 파이프라인 동적 import
 type Pipeline = (text: string) => Promise<Array<{
@@ -145,48 +146,101 @@ function mapLabel(rawLabel: string): string | null {
 }
 
 /**
+ * 오프셋 추적 char 윈도우 분할 (순수 함수 — 테스트 가능).
+ * 경계에서 잘린 엔티티 보존을 위해 overlap 만큼 겹치고, maxWindows 로 비용 캡.
+ * @returns windows: 각 {스캔 텍스트, 원문 내 절대 시작 오프셋}, total: 캡 없을 때의 전체 윈도우 수
+ */
+export function splitWindows(
+  text: string, size: number, overlap: number, maxWindows: number,
+): { windows: Array<{ text: string; offset: number }>; total: number } {
+  if (text.length <= size) return { windows: [{ text, offset: 0 }], total: 1 };
+  const step = Math.max(1, size - overlap);
+  const windows: Array<{ text: string; offset: number }> = [];
+  let total = 0;
+  for (let start = 0; start < text.length; start += step) {
+    total += 1;
+    if (windows.length < maxWindows) windows.push({ text: text.slice(start, start + size), offset: start });
+    if (start + size >= text.length) break;
+  }
+  return { windows, total };
+}
+
+/**
  * 텍스트 → 신경망 NER findings.
  * 모델 미로드 상태면 빈 배열 반환 (silent — 호출 측 영향 없음).
+ *
+ * 대용량 대응: 이전엔 앞 4000자만 보고 나머지를 버렸으나(silent truncation),
+ * 이제 문서 전체를 오프셋 추적 char 윈도우로 나눠 각 윈도우에서 추론하고
+ * 절대 오프셋으로 합친다. 경계에서 잘린 엔티티는 overlap 으로 보존하고,
+ * 겹치는 구간의 중복 엔티티는 (type,start,end) 로 제거한다.
+ * windowing.ts 의 T3 경로와 동일한 상수(CHAR_CHUNK/CHAR_OVERLAP/MAX_CHUNKS)를 재사용.
  */
 export async function detectNer(
   text: string,
-  opts: { minScore?: number; maxLength?: number } = {},
+  opts: { minScore?: number; windowSize?: number; maxWindows?: number } = {},
 ): Promise<Finding[]> {
   // 로컬 캡처 — await 중 dispose() 가 _state.pipeline 을 null 로 만들어도 안전
   const pipeline = _state.pipeline;
   if (!_state.loaded || !pipeline) return [];
   const minScore = opts.minScore ?? 0.7;
-  const maxLength = opts.maxLength ?? 4000;
+  const size = opts.windowSize ?? CHAR_CHUNK;
+  const overlap = CHAR_OVERLAP;
+  const maxWindows = opts.maxWindows ?? MAX_CHUNKS;
 
-  const sample = text.length > maxLength ? text.slice(0, maxLength) : text;
-  let raw: any;
-  try {
-    raw = await pipeline(sample);
-  } catch (e) {
-    console.warn('[neural-ner] inference failed:', e);
-    return [];
+  // 오프셋 추적 char 윈도우 — 짧으면 단일 윈도우(offset 0)로 기존과 동일 동작
+  const { windows, total } = splitWindows(text, size, overlap, maxWindows);
+  if (total > windows.length) {
+    // 비용 캡 초과 — 무음 truncation 금지, 로깅
+    const covered = Math.round((windows[windows.length - 1].offset + size) / 1000);
+    console.warn(`[neural-ner] 문서가 커서 앞 ${windows.length}/${total} 윈도우만 스캔 (약 ${covered}k자). 나머지는 미스캔.`);
   }
 
-  if (!Array.isArray(raw)) return [];
+  const all: Finding[] = [];
+  for (const win of windows) {
+    let raw: any;
+    try {
+      raw = await pipeline(win.text);
+    } catch (e) {
+      console.warn('[neural-ner] inference failed (window skipped):', e);
+      continue; // 한 윈도우가 실패해도 나머지는 진행
+    }
+    if (Array.isArray(raw)) groupBio(raw, win.text, win.offset, minScore, all);
+  }
 
-  // BIO 토큰 그룹 합치기 (B-PER + I-PER → 하나의 PERSON entity)
-  const findings: Finding[] = [];
+  // 오버랩 경계에서 중복 검출된 엔티티 제거
+  return dedupeFindings(all);
+}
+
+/** BIO 토큰 그룹 합치기 (B-PER + I-PER → 하나의 PERSON entity). 윈도우-상대 오프셋 → 절대 오프셋. */
+function groupBio(
+  raw: any[], windowText: string, offset: number, minScore: number, out: Finding[],
+): void {
   let cur: { entityType: string; start: number; end: number; tokens: string[]; scores: number[] } | null = null;
+  const flush = (c: NonNullable<typeof cur>) => {
+    const avgScore = c.scores.reduce((s, x) => s + x, 0) / c.scores.length;
+    const matchText = windowText.slice(c.start, c.end) || c.tokens.join('');
+    if (matchText.trim().length < 2) return;
+    out.push({
+      entityType: c.entityType,
+      start: c.start + offset,
+      end: c.end + offset,
+      score: Math.round(avgScore * 1000) / 1000,
+      text: matchText,
+      recognizer: `neural-ner (${_state.modelId})`,
+      source: 'koner',
+    });
+  };
   for (const item of raw) {
     const labelRaw = item.entity || item.entity_group || '';
     const label = mapLabel(labelRaw);
-    if (!label) {
-      if (cur) { flush(cur, findings); cur = null; }
-      continue;
-    }
-    if (item.score < minScore) {
-      if (cur) { flush(cur, findings); cur = null; }
+    if (!label || item.score < minScore) {
+      if (cur) { flush(cur); cur = null; }
       continue;
     }
     const isBegin = /^B-/i.test(labelRaw) || !cur;
     const sameType = cur && cur.entityType === label;
     if (isBegin || !sameType) {
-      if (cur) flush(cur, findings);
+      if (cur) flush(cur);
       cur = {
         entityType: label,
         start: item.start ?? 0,
@@ -200,23 +254,20 @@ export async function detectNer(
       cur.scores.push(item.score);
     }
   }
-  if (cur) flush(cur, findings);
-  return findings;
+  if (cur) flush(cur);
+}
 
-  function flush(c: NonNullable<typeof cur>, out: Finding[]) {
-    const avgScore = c.scores.reduce((s, x) => s + x, 0) / c.scores.length;
-    const matchText = sample.slice(c.start, c.end) || c.tokens.join('');
-    if (matchText.trim().length < 2) return;
-    out.push({
-      entityType: c.entityType,
-      start: c.start,
-      end: c.end,
-      score: Math.round(avgScore * 1000) / 1000,
-      text: matchText,
-      recognizer: `neural-ner (${_state.modelId})`,
-      source: 'koner',
-    });
+/** 오버랩 구간에서 중복 검출된 동일 엔티티 제거 (type|start|end 기준, 첫 항목 유지) */
+function dedupeFindings(findings: Finding[]): Finding[] {
+  const seen = new Set<string>();
+  const out: Finding[] = [];
+  for (const f of findings) {
+    const key = `${f.entityType}|${f.start}|${f.end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(f);
   }
+  return out;
 }
 
 /** 디버그용 — 메모리 정리 */
