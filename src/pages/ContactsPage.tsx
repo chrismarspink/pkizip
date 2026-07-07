@@ -8,6 +8,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { QrScanModal } from '@/components/qr/QrScanModal';
 import { useAuthStore } from '@/lib/supabase/auth-store';
 import { searchCertBundles, type CertBundle } from '@/lib/supabase/cert-directory';
+import { checkAndPromoteDeposits } from '@/lib/supabase/envelopes';
 import {
   addToKeyRing, getAllKeyRingEntries, getFromKeyRing, removeFromKeyRing, type PublicKeyEntry,
 } from '@/lib/crypto/key-manager';
@@ -72,6 +73,20 @@ export function ContactsPage() {
     setMyKeyring(list.filter(e => e.type === 'imported'));
   }, []);
   useEffect(() => { reloadKeyring(); }, [reloadKeyring]);
+
+  // 점진적 신뢰: 내가 보낸 안전 링크에 수신자가 공개키를 등록했으면 검증 후 주소록 승급
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const promoted = await checkAndPromoteDeposits();
+        if (promoted.length > 0) {
+          await reloadKeyring();
+          toast.success(`안전 링크 수신자 ${promoted.length}명의 공개키를 주소록에 추가했어요 — 다음엔 코드 없이 보낼 수 있어요.`);
+        }
+      } catch { /* 오프라인 등은 조용히 무시 */ }
+    })();
+  }, [user, reloadKeyring]);
 
   const handleSearch = useCallback((q: string) => {
     setQuery(q);
