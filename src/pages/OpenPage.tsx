@@ -8,8 +8,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Lock, Download, ShieldCheck, AlertTriangle, Loader2, FileText } from 'lucide-react';
-import { fetchEnvelope, downloadEnvelopeBlob, openEnvelopeBlob } from '@/lib/supabase/envelopes';
+import { fetchEnvelope, downloadEnvelopeBlob, openEnvelopeBlob, depositRecipientKey } from '@/lib/supabase/envelopes';
+import { generateAndStoreReceivedKey } from '@/lib/supabase/link-store';
 import { parseOtc, normalizeOtc } from '@/lib/crypto/otc';
+import { KeyRound } from 'lucide-react';
 import type { FileEntry } from '@/lib/compression/compressor';
 
 type Phase = 'loading' | 'ready' | 'decrypted' | 'gone';
@@ -35,6 +37,9 @@ export function OpenPage() {
   const [error, setError] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState(false);
   const [files, setFiles] = useState<FileEntry[]>([]);
+  const [slotOpen, setSlotOpen] = useState(false);
+  const [usedSecret, setUsedSecret] = useState<string | null>(null);
+  const [deposit, setDeposit] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
 
   // 진입 시 게이트 통과 + 암호문 다운로드
   useEffect(() => {
@@ -47,6 +52,7 @@ export function OpenPage() {
         if (cancelled) return;
         setBlob(bytes);
         setSizeBytes(info.sizeBytes || bytes.byteLength);
+        setSlotOpen(info.hasRecipientSlot);
         setPhase('ready');
       } catch {
         if (!cancelled) setPhase('gone'); // 만료·소진·부재 동일 처리
@@ -64,6 +70,7 @@ export function OpenPage() {
     try {
       const entries = await openEnvelopeBlob(blob, secret);
       setFiles(entries);
+      setUsedSecret(secret);
       setPhase('decrypted');
     } catch {
       // AES-GCM 태그 실패 = 잘못된 OTC (또는 손상)
@@ -72,6 +79,18 @@ export function OpenPage() {
       setDecrypting(false);
     }
   }, [blob, secret]);
+
+  const makeKey = useCallback(async () => {
+    if (!token || !usedSecret) return;
+    setDeposit('working');
+    try {
+      const { publicJwk, fingerprint } = await generateAndStoreReceivedKey();
+      await depositRecipientKey(token, usedSecret, publicJwk, fingerprint);
+      setDeposit('done');
+    } catch {
+      setDeposit('error');
+    }
+  }, [token, usedSecret]);
 
   const download = (f: FileEntry) => {
     const url = URL.createObjectURL(new Blob([f.data as unknown as BlobPart], { type: f.type || 'application/octet-stream' }));
@@ -166,6 +185,28 @@ export function OpenPage() {
               <div className="text-[11px] text-zinc-400 mt-1">
                 파일은 이 브라우저에서만 복호화됐습니다. 서버는 원문을 볼 수 없습니다.
               </div>
+
+              {/* 점진적 신뢰: 다음엔 코드 없이 받기 */}
+              {slotOpen && deposit !== 'done' && (
+                <div className="mt-2 border-t border-zinc-100 pt-3">
+                  <button onClick={makeKey} disabled={deposit === 'working'}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#175DDC] text-[#175DDC] text-sm font-medium hover:bg-[#175DDC]/5 disabled:opacity-50">
+                    {deposit === 'working'
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> 열쇠 만드는 중…</>
+                      : <><KeyRound className="w-4 h-4" /> 다음엔 코드 없이 받기 — 내 열쇠 만들기</>}
+                  </button>
+                  <div className="text-[11px] text-zinc-400 mt-1.5 leading-relaxed">
+                    이 기기에 열쇠를 만들어 보낸 사람에게 <b>공개키만</b> 전달합니다.
+                    개인키는 기기를 떠나지 않습니다. 다음부터는 코드 없이 받을 수 있어요.
+                  </div>
+                  {deposit === 'error' && <div className="text-[11px] text-red-600 mt-1">열쇠 등록에 실패했습니다(이미 등록됐거나 링크 만료).</div>}
+                </div>
+              )}
+              {deposit === 'done' && (
+                <div className="mt-2 border-t border-zinc-100 pt-3 flex items-center gap-1.5 text-sm text-emerald-700">
+                  <ShieldCheck className="w-4 h-4" /> 열쇠를 전달했습니다. 다음부터 코드 없이 받을 수 있어요.
+                </div>
+              )}
             </div>
           )}
         </div>
